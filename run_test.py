@@ -10,13 +10,13 @@ import time
 #==============================================================================
 
 
-flag_dictionary_initialization = False
-flag_database_sql = False
+flag_dictionary_initialization = True
+flag_database_sql = True
 flag_database_hdf5 = False
-flag_sampler_all = False
-flag_sampler_shell = False
+flag_sampler_all = True
+flag_sampler_shell = True
 flag_sampler_slurm = False
-flag_model_physnet = False
+flag_model_physnet = True
 flag_train_physnet = True
 flag_ase_physnet = True
 
@@ -791,10 +791,11 @@ if flag_train_physnet:
         data_file='data/nms_nh3.db',
         model_directory='test/physnet',
         model_num_threads=2,
-        trainer_max_epochs=100,
+        trainer_max_epochs=10,
         )
     trainer = model.get_trainer()
     model.train()
+    model.test(test_directory='test/physnet')
 
 # Test ASE calculator
 if flag_ase_physnet:
@@ -827,24 +828,29 @@ if flag_ase_physnet:
         model_dipole = calc.get_dipole_moment(system)
         
         # Compare results
-        print(
-            "Reference and model energy (error): "
-            + f"{system_energy:.4f} eV, {model_energy:.4f} eV "
-            + f"({system_energy - model_energy:.4f} eV)")
-        print(
-            "Reference and model forces on nitrogen (mean error): "
-            + f"{system_forces[0]} eV/Ang, {model_forces[0]} eV/Ang "
-            + f"({np.mean(system_forces[0] - model_forces[0]):.4f} eV/Ang)")
-        print(
-            "Reference and model dipole (mean error): "
-            + f"{system_dipole} eAng, {model_dipole} eAng "
-            + f"({np.mean(system_dipole - model_dipole):.4f} eAng)")
-        
+        if False:
+            print(
+                "Reference and model energy (error): "
+                + f"{system_energy:.4f} eV, {model_energy:.4f} eV "
+                + f"({system_energy - model_energy:.4f} eV)"
+                )
+            print(
+                "Reference and model forces on nitrogen (mean error): "
+                + f"{system_forces[0]} eV/Ang, {model_forces[0]} eV/Ang "
+                + f"({np.mean(system_forces[0] - model_forces[0]):.4f} eV/Ang)"
+                )
+            print(
+                "Reference and model dipole (mean error): "
+                + f"{system_dipole} eAng, {model_dipole} eAng "
+                + f"({np.mean(system_dipole - model_dipole):.4f} eAng)"
+                )
+
         # Append to result list
         results_energy[idata, 0] = system_energy
         results_energy[idata, 1] = model_energy
-        
+
     # Show RMSE
     rmse_energy = np.sqrt(
         np.mean((results_energy[:, 0] - results_energy[:, 1])**2))
     print(f"RMSE(energy) = {rmse_energy:.4f} eV")
+

@@ -6,7 +6,9 @@ from .base import DenseLayer
 
 from .. import utils
 
-__all__ = ['PaiNNInteraction', 'PaiNNMixing', 'PaiNNOutput']
+__all__ = [
+    'PaiNNInteraction', 'PaiNNMixing', 
+    'PaiNNOutput_scalar', 'PaiNNOutput_tensor']
 
 class PaiNNInteraction(torch.nn.Module):
     """
@@ -147,7 +149,7 @@ class PaiNNMixing(torch.nn.Module):
             activation_fn=activation_fn,
             bias=False,
             device=device,
-            dtype=dtype
+            dtype=dtype,
             )
         self.mixing = torch.nn.Sequential(
             DenseLayer(
@@ -194,7 +196,7 @@ class PaiNNMixing(torch.nn.Module):
         
         # Compute scalar and vectorial feature vector update
         ds = ds + dsv*torch.sum(U*V, dim=1, keepdim=True)
-        dv = dv*_V
+        dv = dv*V
         
         # Update feature and message vector 
         sfeatures = sfeatures + ds
@@ -258,7 +260,7 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         
         """
         
-        super(PaiNNGatedEquivarience).__init__()
+        super(PaiNNGatedEquivarience, self).__init__()
         
         # Input and output feature vector dimensions
         self.scalar_n_input = scalar_n_input
@@ -267,7 +269,7 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         self.vector_n_output = vector_n_output
         
         # Number of hidden layer
-        self.n_hidden = n_hidden
+        self.hidden_n_neurons = hidden_n_neurons
         
         # Dense module to branch vector features for normalization to a scalar
         # feature vector and keeping a vector representation for scaling
@@ -275,26 +277,26 @@ class PaiNNGatedEquivarience(torch.nn.Module):
             vector_n_input,
             2*vector_n_output,
             activation_fn=None,
-            bias=false,
+            bias=False,
             weight_init=weight_init,
             device=device,
             dtype=dtype)
-        
+
         # Mixed scalar/norm(vector) representation network
-        self.mixed_scalars = nn.Sequential(
+        self.mixed_scalars = torch.nn.Sequential(
             DenseLayer(
                 scalar_n_input + vector_n_output,
-                n_hidden,
-                activation=hidden_activation,
+                hidden_n_neurons,
+                activation_fn=hidden_activation_fn,
                 bias=bias,
                 weight_init=weight_init,
                 bias_init=bias_init,
                 device=device,
                 dtype=dtype),
             DenseLayer(
-                n_hidden,
+                hidden_n_neurons,
                 scalar_n_output + vector_n_output,
-                activation=None,
+                activation_fn=None,
                 bias=bias,
                 weight_init=weight_init,
                 bias_init=bias_init,
@@ -309,18 +311,19 @@ class PaiNNGatedEquivarience(torch.nn.Module):
 
     def forward(
         self,
-        sfeatures: torch.Tensor,
-        vfeatures: torch.Tensor,
+        features: List[torch.Tensor],
     ) -> List[torch.Tensor]:
         """
         Forward pass of the gated equivariant block.
         
         Parameter
         ---------
-        sfeatures: torch.tensor(N_atoms, n_atombasis)
-            Scalar atomic feature vectors
-        vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
-            Vector atomic feature vectors
+        features: list(torch.tensor)
+            List of scalar and vector feature vectors:
+            sfeatures: torch.tensor(N_atoms, n_atombasis)
+                Scalar atomic feature vectors
+            vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
+                Vector atomic feature vectors
         
         Returns
         -------
@@ -330,6 +333,9 @@ class PaiNNGatedEquivarience(torch.nn.Module):
             Modified vector atomic feature vectors
         
         """
+        
+        # Extract scalar and vector features
+        sfeatures, vfeatures = features
         
         # Branch vector features
         vmix = self.branch_vector(vfeatures)
@@ -352,8 +358,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
 
         # Apply scalar activation function
         sfeatures_out = self.scalar_activation_fn(sfeatures_out)
-        
-        return sfeatures_out, vfeatures_out
+
+        return (sfeatures_out, vfeatures_out)
 
 
 class PaiNNOutput_scalar(torch.nn.Module):
@@ -495,7 +501,7 @@ class PaiNNOutput_scalar(torch.nn.Module):
         
         # Transform to result properties
         result = self.output(features)
-        
+
         return result
 
 
@@ -578,13 +584,13 @@ class PaiNNOutput_tensor(torch.nn.Module):
         
         """
         
-        super(PaiNNOutput_scalar, self).__init__()
+        super(PaiNNOutput_tensor, self).__init__()
 
         # Check input
         _ = utils.check_input_args(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=self._default_output_scalar,
+            check_default=self._default_output_tensor,
             check_dtype=None)
 
         # Check hidden scalar layer neuron options
@@ -608,12 +614,12 @@ class PaiNNOutput_tensor(torch.nn.Module):
             n_neurons_list = [self.n_atombasis, self.n_property]
 
         # Check hidden layer neuron options
-        if hidden_n_neurons is None:
+        if self.hidden_n_neurons is None:
             hidden_n_neurons_list = n_neurons_list[:-1]
-        elif utils.is_integer(hidden_n_neurons):
-            hidden_n_neurons_list = [hidden_n_neurons]*self.n_layer
+        elif utils.is_integer(self.hidden_n_neurons):
+            hidden_n_neurons_list = [self.hidden_n_neurons]*self.n_layer
         else:
-            hidden_n_neurons_list = list(hidden_n_neurons)[:self.n_layer]
+            hidden_n_neurons_list = list(self.hidden_n_neurons)[:self.n_layer]
 
         # Initialize output module
         self.output = torch.nn.Sequential()
@@ -640,13 +646,13 @@ class PaiNNOutput_tensor(torch.nn.Module):
         # Append output layer
         self.output.append(
             PaiNNGatedEquivarience(
-                scalar_n_neurons_list[-2],
-                scalar_n_neurons_list[-2],
-                scalar_n_neurons_list[-1],
-                scalar_n_neurons_list[-1],
-                tensor_n_neurons_list[-2],
+                n_neurons_list[-2],
+                n_neurons_list[-2],
+                n_neurons_list[-1],
+                n_neurons_list[-1],
+                hidden_n_neurons_list[-1],
                 scalar_activation_fn=self.scalar_activation_fn,
-                tensor_activation_fn=None,
+                hidden_activation_fn=None,
                 bias=self.bias_last,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
@@ -692,7 +698,9 @@ class PaiNNOutput_tensor(torch.nn.Module):
         """
         
         # Transform to scalar and vector results
-        scalar_result, vector_result = self.output(sfeatures, vfeatures)
-        
+        scalar_result, vector_result = self.output(
+            (sfeatures, vfeatures)
+            )
+        print(scalar_result.shape, vector_result.shape)
         return scalar_result, vector_result
         

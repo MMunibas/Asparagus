@@ -195,7 +195,10 @@ class Input_PaiNN(torch.nn.Module):
         positions: torch.Tensor,
         idx_i: torch.Tensor,
         idx_j: torch.Tensor,
-        pbc_offset: Optional[torch.Tensor] = None,
+        pbc_offset_ij: Optional[torch.Tensor] = None,
+        idx_u: Optional[torch.Tensor] = None,
+        idx_v: Optional[torch.Tensor] = None,
+        pbc_offset_uv: Optional[torch.Tensor] = None,
     ) -> List[torch.Tensor]:
         """
         Forward pass of the input module.
@@ -210,8 +213,14 @@ class Input_PaiNN(torch.nn.Module):
             Atom i pair index
         idx_j : torch.Tensor(N_pairs)
             Atom j pair index
-        pbc_offset : torch.Tensor(N_pairs, 3), optional, default None
+        pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
             Position offset from periodic boundary condition
+        idx_u : torch.Tensor(N_pairs), optional, default None
+            Long-range atom u pair index
+        idx_v : torch.Tensor(N_pairs), optional, default None
+            Long-range atom v pair index
+        pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
+            Long-range position offset from periodic boundary condition
 
         Returns
         -------
@@ -225,25 +234,40 @@ class Input_PaiNN(torch.nn.Module):
             Atom pair distance cutoffs
         rbfs: torch.tensor(N_pairs, n_radialbasis)
             Atom pair radial basis functions
+        distances_uv: torch.tensor(N_pairs_uv)
+            Long-range atom pair distances
 
         """
         
         # Collect atom feature vectors
-        features = self.atom_features[atomic_numbers]
+        features = self.atom_features(atomic_numbers)
         
         # Compute pair connection vector
-        if pbc_offset is None:
+        if pbc_offset_ij is None:
             vectors = positions[idx_j] - positions[idx_i]
         else:
-            vectors = positions[idx_j] - positions[idx_i] + pbc_offset
+            vectors = positions[idx_j] - positions[idx_i] + pbc_offset_ij
 
         # Compute pair distances
         distances = torch.norm(vectors, dim=-1)
-        
+
+        # Compute long-range cutoffs
+        if pbc_offset_uv is None and idx_u is not None:
+            distances_uv = torch.norm(
+                positions[idx_u] - positions[idx_v], dim=-1)
+        elif idx_u is not None:
+            distances_uv = torch.norm(
+                positions[idx_v] - positions[idx_u] + pbc_offset_uv, dim=-1)
+        else:
+            distances_uv = distances
+
+        # Compute distance cutoff values
+        cutoffs = self.cutoff(distances)
+
         # Compute radial basis functions
-        rbfs, cutoff = self.input_radial_fn(distances)
+        rbfs = self.radial_fn(distances)
         
-        return features, distances, vectors, cutoff, rbfs
+        return features, distances, vectors, cutoffs, rbfs, distances_uv
 
 
 #======================================
@@ -687,8 +711,11 @@ class Output_PaiNN(torch.nn.Module):
         
         # Check defined output properties
         for prop in properties_all:
+            # Prevent property repetition 
+            if prop in properties_list:
+                continue
             # Check if property is available
-            if prop in self._default_property_assignment:
+            elif prop in self._default_property_assignment:
                 instructions = self._default_property_assignment[prop]
                 # Add custom output options if defined
                 if prop in self.output_properties_options:
@@ -823,28 +850,29 @@ class Output_PaiNN(torch.nn.Module):
             hidden_activation_fn = layer.get_activation_fn(
                 options.get('hidden_activation_fn'))
 
-            # Get combined scalar and tensor property tag, skip if already done
-            prop_tuple = tuple(options.get('properties'))
-            prop_tag = '_&_'.join([str(p) for p in prop_tuple])
-            self.output_tag_properties[prop_tag] = prop_tuple
-            if prop_tag in self.output_tag_properties:
-                continue
-
             # Check essential number of property output parameter
             if options.get('n_property') is None:
                 raise SynaxError(
                     "Number of output properties 'n_property' for property "
                     + f"{prop:s} is not defined!")
-            self.output_n_property[prop_tag] = options.get('n_property')
+            self.output_n_property[prop] = options.get('n_property')
+
+            # Get combined scalar and tensor property tag, skip if already done
+            prop_tuple = tuple(options.get('properties'))
+            prop_tag = '_&_'.join([str(p) for p in prop_tuple])
+            if prop_tag in self.output_tag_properties:
+                continue
+            self.output_tag_properties[prop_tag] = prop_tuple
 
             # Initialize scalar output block
-            self.output_property_scalar_block[prop_tag] = (
-                painn_layers.PaiNNOutput_scalar(
+            self.output_property_tensor_block[prop_tag] = (
+                painn_layers.PaiNNOutput_tensor(
                     self.n_atombasis,
                     options.get('n_property'),
                     n_layer=options.get('n_layer'),
                     n_neurons=options.get('n_neurons'),
-                    activation_fn=activation_fn,
+                    scalar_activation_fn=scalar_activation_fn,
+                    hidden_activation_fn=hidden_activation_fn,
                     bias_layer=options.get('bias_last'),
                     bias_last=options.get('bias_last'),
                     weight_init_layer=options.get('weight_init_layer'),
@@ -857,7 +885,9 @@ class Output_PaiNN(torch.nn.Module):
         
         # Initialize property scaling dictionary and atomic energy shift
         self.set_property_scaling(self.output_scaling_parameter)
-        
+
+        return
+
     def set_property_scaling(
         self,
         scaling_parameter: Dict[str, List[float]],
@@ -923,7 +953,8 @@ class Output_PaiNN(torch.nn.Module):
     
     def forward(
         self,
-        features_list: List[torch.Tensor],
+        sfeatures: torch.Tensor,
+        vfeatures: torch.Tensor,
         atomic_numbers: Optional[torch.Tensor] = None,
         properties: Optional[List[str]] = None,
     ) -> Dict[str, torch.Tensor]:
@@ -967,7 +998,7 @@ class Output_PaiNN(torch.nn.Module):
                 continue
             
             # Compute prediction
-            output_prediction[prop] = output_block(sfeatures, vfeatures)
+            output_prediction[prop] = output_block(sfeatures)
             
             # Flatten prediction for scalar properties
             if self.output_n_property[prop] == 1:
@@ -995,6 +1026,11 @@ class Output_PaiNN(torch.nn.Module):
             if self.output_n_property[sprop] == 1:
                 output_prediction[sprop] = torch.flatten(
                     output_prediction[sprop], start_dim=0)
+                
+            # Flatten prediction for single vector properties
+            if self.output_n_property[vprop] == 1:
+                output_prediction[vprop] = (
+                    output_prediction[vprop].reshape(-1, 3))
 
         # Apply property scaling
         for prop, scaling in self.output_scaling.items():

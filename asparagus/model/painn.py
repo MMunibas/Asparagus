@@ -330,6 +330,68 @@ class Model_PaiNN(torch.nn.Module):
             'model_switch_range': self.model_switch_range,
             }
 
+    def set_property_scaling(
+        self, 
+        scaling_parameter: Optional[Dict[str, List[float]]] = None,
+        atomic_energies_shifts: Optional[Dict[Union[int, str], float]] = None
+    ):
+        """
+        Prepare property scaling factor and shift terms and set atomic type
+        energies shift.
+        
+        """
+        
+        # Set property scaling factors and shift terms
+        if scaling_parameter is not None:
+            self.output_module.set_property_scaling(scaling_parameter)
+
+        # Set atomic type energies shift
+        if atomic_energies_shifts is not None:
+            self.output_module.set_atomic_energies_shift(
+                atomic_energies_shifts)
+
+        return
+
+    def get_trainable_parameters(
+        self,
+        no_weight_decay: Optional[bool] = True,
+    ) -> Dict[str, List]:
+        """
+        Return a  dictionary of lists for different optimizer options.
+
+        Parameters
+        ----------
+        no_weight_decay: bool, optional, default True
+            Separate parameters on which weight decay should not be applied
+
+        Returns
+        -------
+        dict(str, List)
+            Dictionary of trainable model parameters. Contains 'default' entry
+            for all parameters not affected by special treatment. Further
+            entries are, if true, the parameter names of the input
+        """
+
+        # Trainable parameter dictionary
+        trainable_parameters = {}
+        trainable_parameters['default'] = []
+        if no_weight_decay:
+            trainable_parameters['no_weight_decay'] = []
+
+        # Iterate over all trainable model parameters
+        for name, parameter in self.named_parameters():
+            # Catch all parameters to not apply weight decay on
+            if no_weight_decay and 'scaling' in name.split('.')[0].split('_'):
+                trainable_parameters['no_weight_decay'].append(parameter)
+            elif no_weight_decay and 'shift' in name.split('.')[0].split('_'):
+                trainable_parameters['no_weight_decay'].append(parameter)
+            elif no_weight_decay and 'dispersion_model' in name.split('.')[0]:
+                trainable_parameters['no_weight_decay'].append(parameter)
+            else:
+                trainable_parameters['default'].append(parameter)
+
+        return trainable_parameters
+
     def forward(
         self,
         batch: Dict[str, torch.Tensor]
@@ -384,26 +446,48 @@ class Model_PaiNN(torch.nn.Module):
         idx_j = batch['idx_j']
         sys_i = batch['sys_i']
         
+        # Long-range atom pair cutoff
+        if batch.get('idx_u') is None:
+            idx_u = idx_i
+            idx_v = idx_j
+        else:
+            idx_u = batch.get('idx_u')
+            idx_v = batch.get('idx_v')
+
         # PBC: Offset method
-        pbc_offset = batch.get('pbc_offset')
+        pbc_offset_ij = batch.get('pbc_offset_ij')
+        pbc_offset_uv = batch.get('pbc_offset_uv')
         
         # PBC: Supercluster method
         pbc_atoms = batch.get('pbc_atoms')
-        pbc_idx = batch.get('pbc_idx')
+        pbc_idx_pointer = batch.get('pbc_idx')
         pbc_idx_j = batch.get('pbc_idx_j')
                 
         # Activate back propagation if derivatives with regard to
         # atom positions is requested.
-        if self.model_gradient:
+        if self.model_forces:
             positions.requires_grad_(True)
 
         # Run input model
-        features, distances, vectors, cutoff, rbfs = self.input_model(
-            atomic_numbers, positions, idx_i, idx_j, pbc_offset=pbc_offset)
+        features, distances, vectors, cutoff, rbfs, distances_uv = (
+            self.input_module(
+                atomic_numbers, positions, 
+                idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
+                idx_u=idx_u, idx_v=idx_v, pbc_offset_uv=pbc_offset_uv)
+            )
 
         # Run graph model
-        sfeatures, efeatures = self.graph_model(
+        sfeatures, efeatures = self.graph_module(
             features, distances, vectors, cutoff, rbfs, idx_i, idx_j)
         
         # Run output model
+        results = self.output_module(
+            sfeatures,
+            efeatures,
+            atomic_numbers=atomic_numbers)
         
+        for prop, item in results.items():
+            print(prop, item.shape)
+        exit()
+        
+        return results

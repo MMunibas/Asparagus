@@ -467,7 +467,7 @@ class Model_PhysNet(torch.nn.Module):
     def get_trainable_parameters(
         self,
         no_weight_decay: Optional[bool] = True,
-    ):
+    ) -> Dict[str, List]:
         """
         Return a  dictionary of lists for different optimizer options.
 

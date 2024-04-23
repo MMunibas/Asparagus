@@ -223,7 +223,7 @@ class Input_PhysNet(torch.nn.Module):
             Atom i pair index
         idx_j : torch.Tensor(N_pairs)
             Atom j pair index
-        pbc_offset : torch.Tensor(N_pairs, 3), optional, default None
+        pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
             Position offset from periodic boundary condition
         idx_u : torch.Tensor(N_pairs), optional, default None
             Long-range atom u pair index
@@ -263,12 +263,10 @@ class Input_PhysNet(torch.nn.Module):
         # Compute long-range cutoffs
         if pbc_offset_uv is None and idx_u is not None:
             distances_uv = torch.norm(
-                positions[idx_u] - positions[idx_v],
-                dim=-1)
+                positions[idx_u] - positions[idx_v], dim=-1)
         elif idx_u is not None:
             distances_uv = torch.norm(
-                positions[idx_v] - positions[idx_u] + pbc_offset_uv,
-                dim=-1)
+                positions[idx_v] - positions[idx_u] + pbc_offset_uv, dim=-1)
         else:
             distances_uv = distances
 
