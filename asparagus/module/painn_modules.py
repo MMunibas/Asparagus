@@ -266,7 +266,7 @@ class Input_PaiNN(torch.nn.Module):
 
         # Compute radial basis functions
         rbfs = self.radial_fn(distances)
-        
+
         return features, distances, vectors, cutoffs, rbfs, distances_uv
 
 
@@ -716,28 +716,46 @@ class Output_PaiNN(torch.nn.Module):
                 continue
             # Check if property is available
             elif prop in self._default_property_assignment:
+                
+                # Get default property output block instruction
                 instructions = self._default_property_assignment[prop]
+                
+                # Check and get instruction for certain conditions
+                if utils.is_dictionary(instructions):
+                    # Select property-dependent output instructions
+                    for case_prop, case_instructions in instructions.items():
+                        if case_prop == 'default':
+                            instructions = instructions.get('default')
+                        elif case_prop in properties_all:
+                            instructions = case_instructions
+                            break
+                
                 # Add custom output options if defined
                 if prop in self.output_properties_options:
+                    
                     # Add property and output options
                     properties_list.append(prop)
-                    out_type = (
-                        self.output_properties_options[prop]['output_type'])
+                    
+                    # Check output options for completeness by adding 
+                    # default options for undefined keyword arguments
+                    option = self.output_properties_options[prop]
+                    if instructions[0] is not None:
+                        option = {**instructions[0], **option}
+
+                    # Assign output block to scalar or tensor property list
+                    out_type = option.get('output_type')
                     if out_type == 'scalar':
-                        properties_options_scalar[prop] = (
-                            self.output_properties_options[prop])
+                        properties_options_scalar[prop] = option
                     elif out_type == 'tensor':                        
-                        properties_options_tensor[prop] = (
-                            self.output_properties_options[prop])
+                        properties_options_tensor[prop] = option
                     else:
                         raise SyntaxError(
                             "Costum output block options for property "
                             + f"{prop:s} has unknown type '{out_type:s}'!")
+
                 # If skip label is found in instructions
-                elif (
-                    utils.is_array_like(instructions)
-                    and instructions[0] is None
-                ):
+                elif instructions[0] is None:
+
                     # Check dependencies and skip property
                     if any([
                         prop_required not in properties_all
@@ -749,10 +767,13 @@ class Output_PaiNN(torch.nn.Module):
                             + "which is not defined!")
                     else:
                         pass
-                # If output instructions are given
-                elif utils.is_array_like(instructions):
+
+                # Else  output instructions are given
+                else:
+
                     # Add property
                     properties_list.append(prop)
+
                     # Prepare output block options
                     option = instructions[0]
                     if len(instructions) == 1:
@@ -762,26 +783,7 @@ class Output_PaiNN(torch.nn.Module):
                         properties_options_tensor[prop] = option
                     else:
                         raise SyntaxError()
-                # If case sensitive output instructions are given
-                elif utils.is_dictionary(instructions):
-                    # Get respective output instructions
-                    for case_prop, case_instructions in instructions.items():
-                        if case_prop == 'default':
-                            instructions = instructions.get('default')
-                        elif case_prop in properties_all:
-                            instructions = case_instructions
-                            break
-                    # Add property
-                    properties_list.append(prop)
-                    # Prepare output block options
-                    option = instructions[0]
-                    if len(instructions) == 1:
-                        properties_options_scalar[prop] = option
-                    elif len(instructions) > 1 and 'properties' in option:
-                        option['properties'][instructions[1]] = prop
-                        properties_options_tensor[prop] = option
-                    else:
-                        raise SyntaxError()
+
             else:
                 raise NotImplementedError(
                     f"Output module of type {self.output_type:s} does not "
@@ -999,7 +1001,7 @@ class Output_PaiNN(torch.nn.Module):
             
             # Compute prediction
             output_prediction[prop] = output_block(sfeatures)
-            
+
             # Flatten prediction for scalar properties
             if self.output_n_property[prop] == 1:
                 output_prediction[prop] = torch.flatten(
@@ -1035,7 +1037,11 @@ class Output_PaiNN(torch.nn.Module):
         # Apply property scaling
         for prop, scaling in self.output_scaling.items():
             (scale, shift) = scaling[atomic_numbers].T
+            compatible_shape = (
+                [atomic_numbers.shape[0]]
+                + (len(output_prediction[prop].shape) - 1)*[1])
             output_prediction[prop] = (
-                output_prediction[prop]*scale + shift)
+                output_prediction[prop]*scale.reshape(compatible_shape)
+                + shift.reshape(compatible_shape))
 
         return output_prediction

@@ -10,15 +10,19 @@ import time
 #==============================================================================
 
 
-flag_dictionary_initialization = True
-flag_database_sql = True
+flag_dictionary_initialization = False
+flag_database_sql = False
 flag_database_hdf5 = False
-flag_sampler_all = True
-flag_sampler_shell = True
+flag_sampler_all = False
+flag_sampler_shell = False
 flag_sampler_slurm = False
-flag_model_physnet = True
-flag_train_physnet = True
-flag_ase_physnet = True
+
+flag_model_physnet = False
+flag_train_physnet = False
+flag_ase_physnet = False
+
+flag_model_painn = True
+flag_train_painn = True
 
 
 #==============================================================================
@@ -771,7 +775,7 @@ if flag_sampler_slurm:
 # Initialize PhysNet model calculator
 if flag_model_physnet:
     
-    config_file = 'test/model.json'
+    config_file = 'test/model_physnet.json'
     model = asparagus.Asparagus(
         config_file=config_file,
         model_type='physnet')
@@ -785,7 +789,7 @@ if flag_model_physnet:
 # Initialize PhysNet model training
 if flag_train_physnet:
     
-    config_file = 'test/train.json'
+    config_file = 'test/train_physnet.json'
     model = asparagus.Asparagus(
         config_file=config_file,
         data_file='data/nms_nh3.db',
@@ -803,7 +807,7 @@ if flag_ase_physnet:
     from ase import Atoms
     
     # Get ASE model calculator
-    config_file = 'test/train.json'
+    config_file = 'test/train_physnet.json'
     model = asparagus.Asparagus(
         config_file=config_file)
     calc = model.get_ase_calculator()
@@ -853,4 +857,33 @@ if flag_ase_physnet:
     rmse_energy = np.sqrt(
         np.mean((results_energy[:, 0] - results_energy[:, 1])**2))
     print(f"RMSE(energy) = {rmse_energy:.4f} eV")
+
+# Initialize PaiNN model calculator
+if flag_model_painn:
+
+    config_file = 'test/model_painn.json'
+    model = asparagus.Asparagus(
+        config_file=config_file,
+        model_type='painn')
+    mcalc = model.get_model_calculator(
+        model_directory='test/painn') # Default model type: 'PhysNet'
+    model.set_model_calculator(
+        model_directory='test/painn')
+    model.set_model_calculator(
+        model_calculator=mcalc)
+
+# Initialize PaiNN model training
+if flag_train_painn:
+
+    config_file = 'test/train_painn.json'
+    model = asparagus.Asparagus(
+        config_file=config_file,
+        data_file='data/nms_nh3.db',
+        model_directory='test/painn',
+        model_num_threads=2,
+        trainer_max_epochs=10,
+        )
+    trainer = model.get_trainer()
+    model.train()
+    model.test(test_directory='test/painn')
 

@@ -701,6 +701,6 @@ class PaiNNOutput_tensor(torch.nn.Module):
         scalar_result, vector_result = self.output(
             (sfeatures, vfeatures)
             )
-        print(scalar_result.shape, vector_result.shape)
+
         return scalar_result, vector_result
         

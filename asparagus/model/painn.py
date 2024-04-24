@@ -462,7 +462,7 @@ class Model_PaiNN(torch.nn.Module):
         pbc_atoms = batch.get('pbc_atoms')
         pbc_idx_pointer = batch.get('pbc_idx')
         pbc_idx_j = batch.get('pbc_idx_j')
-                
+
         # Activate back propagation if derivatives with regard to
         # atom positions is requested.
         if self.model_forces:
@@ -479,15 +479,81 @@ class Model_PaiNN(torch.nn.Module):
         # Run graph model
         sfeatures, efeatures = self.graph_module(
             features, distances, vectors, cutoff, rbfs, idx_i, idx_j)
-        
+
         # Run output model
         results = self.output_module(
             sfeatures,
             efeatures,
             atomic_numbers=atomic_numbers)
-        
-        for prop, item in results.items():
-            print(prop, item.shape)
-        exit()
-        
+
+        # Scale atomic charges to ensure correct total charge
+        if self.model_atomic_charges:
+            charge_deviation = (
+                charge - utils.segment_sum(
+                    results['atomic_charges'], sys_i, device=self.device)
+                / atoms_number
+                )
+            results['atomic_charges'] = (
+                results['atomic_charges'] + charge_deviation[sys_i])
+
+        # Compute property - Energy
+        if self.model_energy:
+            results['energy'] = torch.squeeze(
+                utils.segment_sum(
+                    results['atomic_energies'], sys_i, device=self.device)
+                )
+
+        # Compute gradients and Hessian if demanded
+        if self.model_forces:
+
+            gradient = torch.autograd.grad(
+                torch.sum(results['energy']),
+                positions,
+                create_graph=True)[0]
+
+            # Avoid crashing if forces are none
+            if gradient is not None:
+                results['forces'] = -gradient
+            else:
+                logger.warning(
+                    "WARNING:\nError in force calculation "
+                    + "(backpropagation)!")
+                results['forces'] = torch.zeros_like(positions)
+
+            if self.model_hessian:
+                hessian = results['energy'].new_zeros(
+                    (gradient.size(0), gradient.size(0)))
+                for ig in range(gradient.size(0)):
+                    hessian_ig = torch.autograd.grad(
+                        [gradient[ig]],
+                        positions,
+                        retain_graph=(ig < gradient.size(0)))[0]
+                    if hessian_ig is not None:
+                        hessian[ig] = hessian_ig.view(-1)
+                results['hessian'] = hessian
+
+        # Compute molecular dipole
+        if self.model_dipole:
+            # Compute molecular dipole moment from atomic charges
+            if pbc_atoms is None:
+                results['dipole'] = utils.segment_sum(
+                    results['atomic_charges'][..., None]*positions,
+                    sys_i, device=self.device).reshape(-1, 3)
+            else:
+                results['dipole'] = utils.segment_sum(
+                    results['atomic_charges'][..., None]
+                    *positions[pbc_atoms],
+                    sys_i, device=self.device).reshape(-1, 3)
+            # Refine molecular dipole moment with atomic dipole moments
+            if self.model_atomic_dipoles:
+                results['dipole'] = (
+                    results['dipole'] + utils.segment_sum(
+                        results['atomic_dipoles'], sys_i,
+                        device=self.device).reshape(-1, 3)
+                    )
+
+        #for prop, item in results.items():
+            #print(prop, item.shape)
+            #print(item)
+        #exit()
         return results
