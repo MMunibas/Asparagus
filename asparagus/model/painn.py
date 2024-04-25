@@ -43,6 +43,19 @@ class Model_PaiNN(torch.nn.Module):
     model_switch_range: float, optional, default 2.0
         Atom interaction cutoff switch range to switch of interaction to zero.
         If 'model_cuton' is defined, this input will be ignored.
+    model_repulsion: bool, optional, default False
+        Use close-range atom repulsion model.
+    model_repulsion_trainable: bool, optional, default True
+        If True, repulsion model parameter are trainable. Else, default
+        parameter values are fix.
+    model_electrostatic: bool, optional, default True
+        Use electrostatic potential between atomic charges for energy
+        prediction.
+    model_dispersion: bool, optional, default True
+        Use Grimme's D3 dispersion model for energy prediction.
+    model_dispersion_trainable: bool, optional, default True
+        If True, empirical parameter in the D3 dispersion model are
+        trainable. If False, empirical parameter are fixed to default
     model_num_threads: int, optional, default 4
         Sets the number of threads used for intraop parallelism on CPU.
 
@@ -55,6 +68,11 @@ class Model_PaiNN(torch.nn.Module):
         'model_cutoff':                 12.0,
         'model_cuton':                  None,
         'model_switch_range':           2.0,
+        'model_repulsion':              True,
+        'model_repulsion_trainable':    True,
+        'model_electrostatic':          True,
+        'model_dispersion':             True,
+        'model_dispersion_trainable':   True,
         'model_num_threads':            4,
         }
 
@@ -65,6 +83,11 @@ class Model_PaiNN(torch.nn.Module):
         'model_cutoff':                 [utils.is_numeric],
         'model_cuton':                  [utils.is_numeric, utils.is_None],
         'model_switch_range':           [utils.is_numeric],
+        'model_repulsion':              [utils.is_bool],
+        'model_repulsion_trainable':    [utils.is_bool],
+        'model_electrostatic':          [utils.is_bool],
+        'model_dispersion':             [utils.is_bool],
+        'model_dispersion_trainable':   [utils.is_bool],
         'model_num_threads':            [utils.is_integer],
         }
 
@@ -84,6 +107,11 @@ class Model_PaiNN(torch.nn.Module):
         model_cutoff: Optional[float] = None,
         model_cuton: Optional[float] = None,
         model_switch_range: Optional[float] = None,
+        model_repulsion: Optional[bool] = None,
+        model_repulsion_trainable: Optional[bool] = None,
+        model_electrostatic: Optional[bool] = None,
+        model_dispersion: Optional[bool] = None,
+        model_dispersion_trainable: Optional[bool] = None,
         model_num_threads: Optional[int] = None,
         device: Optional[str] = None,
         dtype: Optional[str] = None,
@@ -207,6 +235,25 @@ class Model_PaiNN(torch.nn.Module):
         else:
             self.model_switch_range = self.model_cutoff - self.model_cuton
 
+        # Check repulsion, electrostatic and dispersion module requirement
+        if self.model_repulsion and not self.model_energy:
+            raise SyntaxError(
+                "Repulsion energy contribution is requested without "
+                + "having 'energy' assigned as model property!")
+        if self.model_electrostatic and not self.model_energy:
+            raise SyntaxError(
+                "Electrostatic energy contribution is requested without "
+                + "having 'energy' assigned as model property!")
+        if self.model_electrostatic and not self.model_atomic_charges:
+            raise SyntaxError(
+                "Electrostatic energy contribution is requested without "
+                + "having 'atomic_charges' or 'dipole' assigned as model "
+                + "property!")
+        if self.model_dispersion and not self.model_energy:
+            raise SyntaxError(
+                "Dispersion energy contribution is requested without "
+                + "having 'energy' assigned as model property!")
+
         # Update global configuration dictionary
         config_update = {
             'model_properties': self.model_properties,
@@ -288,6 +335,51 @@ class Model_PaiNN(torch.nn.Module):
                 dtype=self.dtype,
                 **kwargs)
 
+        # Assign atom repulsion module
+        if self.model_repulsion:
+            
+            # Get Ziegler-Biersack-Littmark style nuclear repulsion potential
+            self.repulsion_module = module.ZBL_repulsion(
+                unit_properties=self.model_unit_properties,
+                trainable=self.model_repulsion_trainable,
+                device=self.device,
+                dtype=self.dtype,
+                **kwargs)
+
+        # Assign electrostatic interaction module
+        if self.model_electrostatic:
+
+            # Get electrostatic point charge model calculator
+            self.electrostatic_module = module.PC_shielded_electrostatics(
+                cutoff = self.model_cutoff,
+                cutoff_short_range=config.get('input_radial_cutoff'),
+                unit_properties=self.model_unit_properties,
+                device=self.device,
+                dtype=self.dtype,
+                **kwargs)
+
+        # Assign dispersion interaction module
+        if self.model_dispersion:
+            
+            # Grep dispersion correction parameters
+            d3_s6 = config.get("model_dispersion_d3_s6")
+            d3_s8 = config.get("model_dispersion_d3_s8")
+            d3_a1 = config.get("model_dispersion_d3_a1")
+            d3_a2 = config.get("model_dispersion_d3_a2")
+            
+            # Get Grimme's D3 dispersion model calculator
+            self.dispersion_module = module.D3_dispersion(
+                self.model_cutoff,
+                cuton=self.model_cuton,
+                unit_properties=self.model_unit_properties,
+                d3_s6=d3_s6,
+                d3_s8=d3_s8,
+                d3_a1=d3_a1,
+                d3_a2=d3_a2,
+                trainable=self.model_dispersion_trainable,
+                device=self.device,
+                dtype=self.dtype)
+
         return
 
     def __str__(self):
@@ -308,18 +400,21 @@ class Model_PaiNN(torch.nn.Module):
             info = {**info, **self.graph_module.get_info()}
         if hasattr(self.output_module, "get_info"):
             info = {**info, **self.output_module.get_info()}
-        #if self.model_repulsion:
-            #pass
-        #if (
-            #self.model_electrostatic 
-            #and hasattr(self.electrostatic_module, "get_info")
-        #):
-            #info = {**info, **self.electrostatic_module.get_info()}
-        #if (
-            #self.model_dispersion
-            #and hasattr(self.dispersion_module, "get_info")
-        #):
-            #info = {**info, **self.dispersion_module.get_info()}
+        if (
+            self.model_repulsion
+            and hasattr(self.repulsion_module, "get_info")
+        ):
+            info = {**info, **self.repulsion_module.get_info()}
+        if (
+            self.model_electrostatic 
+            and hasattr(self.electrostatic_module, "get_info")
+        ):
+            info = {**info, **self.electrostatic_module.get_info()}
+        if (
+            self.model_dispersion
+            and hasattr(self.dispersion_module, "get_info")
+        ):
+            info = {**info, **self.dispersion_module.get_info()}
 
         return {
             **info, 
@@ -328,6 +423,11 @@ class Model_PaiNN(torch.nn.Module):
             'model_cutoff': self.model_cutoff,
             'model_cuton': self.model_cuton,
             'model_switch_range': self.model_switch_range,
+            'model_repulsion': self.model_repulsion,
+            'model_repulsion_trainable': self.model_repulsion_trainable,
+            'model_electrostatic': self.model_electrostatic,
+            'model_dispersion': self.model_dispersion,
+            'model_dispersion_trainable': self.model_dispersion_trainable,
             }
 
     def set_property_scaling(
@@ -349,6 +449,41 @@ class Model_PaiNN(torch.nn.Module):
         if atomic_energies_shifts is not None:
             self.output_module.set_atomic_energies_shift(
                 atomic_energies_shifts)
+
+        return
+
+    def set_unit_properties(
+        self,
+        model_unit_properties: Dict[str, str],
+    ):
+        """
+        Set or change unit property parameter in respective model layers
+        
+        Parameter
+        ---------
+        model_unit_properties: dict
+            Unit labels of the predicted model properties
+
+        """
+
+        # Change unit properties for electrostatic and dispersion layers
+        if self.model_electrostatic:
+            # Synchronize total and atomic charge units
+            if model_unit_properties.get('charge') is not None:
+                model_unit_properties['atomic_charges'] = (
+                    model_unit_properties.get('charge'))
+            elif model_unit_properties.get('atomic_charges') is not None:
+                model_unit_properties['charge'] = (
+                    model_unit_properties.get('atomic_charges'))
+            else:
+                raise SyntaxError(
+                    "For electrostatic potential contribution either the"
+                    + "model unit for the 'charge' or 'atomic_charges' must "
+                    + "be defined!")
+            self.electrostatic_module.set_unit_properties(
+                model_unit_properties)
+        if self.model_dispersion:
+            self.dispersion_module.set_unit_properties(model_unit_properties)
 
         return
 
@@ -469,7 +604,7 @@ class Model_PaiNN(torch.nn.Module):
             positions.requires_grad_(True)
 
         # Run input model
-        features, distances, vectors, cutoff, rbfs, distances_uv = (
+        features, distances, vectors, cutoffs, rbfs, distances_uv = (
             self.input_module(
                 atomic_numbers, positions, 
                 idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
@@ -478,13 +613,27 @@ class Model_PaiNN(torch.nn.Module):
 
         # Run graph model
         sfeatures, efeatures = self.graph_module(
-            features, distances, vectors, cutoff, rbfs, idx_i, idx_j)
+            features, distances, vectors, cutoffs, rbfs, idx_i, idx_j)
 
         # Run output model
         results = self.output_module(
             sfeatures,
             efeatures,
             atomic_numbers=atomic_numbers)
+
+        # Add repulsion model contribution
+        if self.model_repulsion:
+            results['atomic_energies'] = (
+                results['atomic_energies']
+                + self.repulsion_module(
+                    atomic_numbers, distances, cutoffs, idx_i, idx_j))
+
+        # Add dispersion model contributions
+        if self.model_dispersion:
+            results['atomic_energies'] = (
+                results['atomic_energies']
+                + self.dispersion_module(
+                    atomic_numbers, distances_uv, idx_u, idx_v))
 
         # Scale atomic charges to ensure correct total charge
         if self.model_atomic_charges:
@@ -495,6 +644,14 @@ class Model_PaiNN(torch.nn.Module):
                 )
             results['atomic_charges'] = (
                 results['atomic_charges'] + charge_deviation[sys_i])
+
+        # Add electrostatic model contribution
+        if self.model_electrostatic:
+            # Apply electrostatic model
+            results['atomic_energies'] = (
+                results['atomic_energies']
+                + self.electrostatic_module(
+                    results, distances_uv, idx_u, idx_v))
 
         # Compute property - Energy
         if self.model_energy:
@@ -534,6 +691,7 @@ class Model_PaiNN(torch.nn.Module):
 
         # Compute molecular dipole
         if self.model_dipole:
+
             # Compute molecular dipole moment from atomic charges
             if pbc_atoms is None:
                 results['dipole'] = utils.segment_sum(
@@ -544,6 +702,7 @@ class Model_PaiNN(torch.nn.Module):
                     results['atomic_charges'][..., None]
                     *positions[pbc_atoms],
                     sys_i, device=self.device).reshape(-1, 3)
+
             # Refine molecular dipole moment with atomic dipole moments
             if self.model_atomic_dipoles:
                 results['dipole'] = (
@@ -555,5 +714,5 @@ class Model_PaiNN(torch.nn.Module):
         #for prop, item in results.items():
             #print(prop, item.shape)
             #print(item)
-        #exit()
+
         return results

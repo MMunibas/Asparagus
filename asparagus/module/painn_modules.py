@@ -411,7 +411,7 @@ class Graph_PaiNN(torch.nn.Module):
         features: torch.Tensor,
         distances: torch.Tensor,
         vectors: torch.Tensor,
-        cutoff: torch.Tensor,
+        cutoffs: torch.Tensor,
         rbfs: torch.Tensor,
         idx_i: torch.Tensor, 
         idx_j: torch.Tensor,
@@ -448,7 +448,7 @@ class Graph_PaiNN(torch.nn.Module):
         
         # Apply feature-wise, continuous-filter convolution
         descriptors = (
-            self.descriptors_filter(rbfs[:, None, :])*cutoff[:, None, None])
+            self.descriptors_filter(rbfs[:, None, :])*cutoffs[:, None, None])
         descriptors_list = torch.split(
             descriptors, 3*self.n_atombasis, dim=-1)
         

@@ -9,6 +9,8 @@ import torch
 from .. import utils
 from .. import settings
 
+__all__ = ["D3_dispersion"]
+
 #======================================
 # Grimme Dispersion Correction
 #======================================
@@ -63,6 +65,10 @@ class D3_dispersion(torch.nn.Module):
         dtype: Optional[object] = torch.float64,
         **kwargs
     ):
+        """
+        Initialize Grimme D3 dispersion model.
+        
+        """
 
         super(D3_dispersion, self).__init__()
 

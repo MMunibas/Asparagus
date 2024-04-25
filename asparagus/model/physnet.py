@@ -45,6 +45,9 @@ class Model_PhysNet(torch.nn.Module):
         If 'model_cuton' is defined, this input will be ignored.
     model_repulsion: bool, optional, default False
         Use close-range atom repulsion model.
+    model_repulsion_trainable: bool, optional, default True
+        If True, repulsion model parameter are trainable. Else, default
+        parameter values are fix.
     model_electrostatic: bool, optional, default True
         Use electrostatic potential between atomic charges for energy
         prediction.
@@ -66,6 +69,7 @@ class Model_PhysNet(torch.nn.Module):
         'model_cuton':                  None,
         'model_switch_range':           2.0,
         'model_repulsion':              False,
+        'model_repulsion_trainable':    True,
         'model_electrostatic':          True,
         'model_dispersion':             True,
         'model_dispersion_trainable':   True,
@@ -80,6 +84,7 @@ class Model_PhysNet(torch.nn.Module):
         'model_cuton':                  [utils.is_numeric, utils.is_None],
         'model_switch_range':           [utils.is_numeric],
         'model_repulsion':              [utils.is_bool],
+        'model_repulsion_trainable':    [utils.is_bool],
         'model_electrostatic':          [utils.is_bool],
         'model_dispersion':             [utils.is_bool],
         'model_dispersion_trainable':   [utils.is_bool],
@@ -103,6 +108,7 @@ class Model_PhysNet(torch.nn.Module):
         model_cuton: Optional[float] = None,
         model_switch_range: Optional[float] = None,
         model_repulsion: Optional[bool] = None,
+        model_repulsion_trainable: Optional[bool] = None,
         model_electrostatic: Optional[bool] = None,
         model_dispersion: Optional[bool] = None,
         model_dispersion_trainable: Optional[bool] = None,
@@ -226,7 +232,11 @@ class Model_PhysNet(torch.nn.Module):
                 "Lower atom pair cutoff distance 'model_cuton' is negative "
                 + f"({self.model_cuton:.2f})!")
         
-        # Check module electrostatic and dispersion module requirement
+        # Check repulsion, electrostatic and dispersion module requirement
+        if self.model_repulsion and not self.model_energy:
+            raise SyntaxError(
+                "Repulsion energy contribution is requested without "
+                + "having 'energy' assigned as model property!")
         if self.model_electrostatic and not self.model_energy:
             raise SyntaxError(
                 "Electrostatic energy contribution is requested without "
@@ -324,7 +334,14 @@ class Model_PhysNet(torch.nn.Module):
 
         # Assign atom repulsion module
         if self.model_repulsion:
-            pass
+            
+            # Get Ziegler-Biersack-Littmark style nuclear repulsion potential
+            self.repulsion_module = module.ZBL_repulsion(
+                unit_properties=self.model_unit_properties,
+                trainable=self.model_repulsion_trainable,
+                device=self.device,
+                dtype=self.dtype,
+                **kwargs)
 
         # Assign electrostatic interaction module
         if self.model_electrostatic:
@@ -360,7 +377,6 @@ class Model_PhysNet(torch.nn.Module):
                 device=self.device,
                 dtype=self.dtype)
 
-
         return
 
     def __str__(self):
@@ -381,8 +397,11 @@ class Model_PhysNet(torch.nn.Module):
             info = {**info, **self.graph_module.get_info()}
         if hasattr(self.output_module, "get_info"):
             info = {**info, **self.output_module.get_info()}
-        if self.model_repulsion:
-            pass
+        if (
+            self.model_repulsion
+            and hasattr(self.electrostatic_module, "get_info")
+        ):
+            info = {**info, **self.repulsion_module.get_info()}
         if (
             self.model_electrostatic 
             and hasattr(self.electrostatic_module, "get_info")
@@ -402,6 +421,7 @@ class Model_PhysNet(torch.nn.Module):
             'model_cuton': self.model_cuton,
             'model_switch_range': self.model_switch_range,
             'model_repulsion': self.model_repulsion,
+            'model_repulsion_trainable': self.model_repulsion_trainable,
             'model_electrostatic': self.model_electrostatic,
             'model_dispersion': self.model_dispersion,
             'model_dispersion_trainable': self.model_dispersion_trainable,
@@ -605,7 +625,10 @@ class Model_PhysNet(torch.nn.Module):
         
         # Add repulsion model contribution
         if self.model_repulsion:
-            pass
+            results['atomic_energies'] = (
+                results['atomic_energies']
+                + self.repulsion_module(
+                    atomic_numbers, distances, cutoffs, idx_i, idx_j))
 
         # Add dispersion model contributions
         if self.model_dispersion:
@@ -630,8 +653,7 @@ class Model_PhysNet(torch.nn.Module):
             results['atomic_energies'] = (
                 results['atomic_energies']
                 + self.electrostatic_module(
-                    results['atomic_charges'], 
-                    distances_uv, idx_u, idx_v))
+                    results, distances_uv, idx_u, idx_v))
 
         # Compute property - Energy
         if self.model_energy:

@@ -1,3 +1,4 @@
+import numpy as np
 from typing import Optional, List, Dict, Tuple, Union, Any
 
 import torch
@@ -114,7 +115,7 @@ class PC_shielded_electrostatics(torch.nn.Module):
 
     def forward(
         self,
-        atomic_charges: torch.Tensor,
+        properties: Dict[str, torch.Tensor],
         distances: torch.Tensor,
         idx_i: torch.Tensor,
         idx_j: torch.Tensor,
@@ -125,8 +126,8 @@ class PC_shielded_electrostatics(torch.nn.Module):
 
         Parameters
         ----------
-        atomic_charges : torch.Tensor
-            Atomic charges
+        properties: dict
+            system properties including atomic charges
         distances : torch.Tensor
             Distances between all atom pairs in the batch.
         idx_i : torch.Tensor
@@ -141,7 +142,10 @@ class PC_shielded_electrostatics(torch.nn.Module):
         
         """
 
-        # Gather atomic charges
+        # Grep atomic charges
+        atomic_charges = properties['atomic_charges']
+
+        # Gather atomic charge pairs
         atomic_charges_i = torch.gather(atomic_charges, 0, idx_i)
         atomic_charges_j = torch.gather(atomic_charges, 0, idx_j)
 

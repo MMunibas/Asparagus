@@ -15,6 +15,10 @@ from .output import (
     get_output_module
 )
 
+from .repulsion import (
+    ZBL_repulsion
+)
+
 from .electrostatics import (
     PC_shielded_electrostatics
 )
