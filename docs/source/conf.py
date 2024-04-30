@@ -2,8 +2,7 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath(os.path.join('.','..', '..')))
-# sys.path.insert(1,os.path.abspath(os.path.join('.','..', '..')))
+sys.path.insert(0, os.path.abspath(os.path.join('.','..','..')))
 # -- Project information
 
 project = 'Asparagus Bundle'
@@ -11,7 +10,7 @@ copyright = '2024, L.I.Vazquez-Salazar, K. Toepfer & M. Meuwly'
 author = 'L.I.Vazquez-Salazar & K. Toepfer'
 
 release = '0.1'
-version = '0.2.0'
+version = '0.2.1'
 
 # -- General configuration
 
@@ -32,7 +31,20 @@ intersphinx_mapping = {
     'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
 }
 
-autodoc_mock_imports = ['ase', 'torch', 'torch-ema', 'numpy', 'tensorboard', 'xtb','h5py','pandas','matplotlib','seaborn','scipy','pytest','.src']
+autodoc_mock_imports = [
+    'numpy',
+    'ase',
+    'torch',
+    'torch-ema',
+    'tensorboard',
+    'xtb',
+    'h5py',
+    'pandas',
+    'matplotlib',
+    'seaborn',
+    'scipy',
+    'pytest',
+    '.src',]
 
 intersphinx_disabled_domains = ['std']
 
