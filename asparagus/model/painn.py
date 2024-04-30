@@ -68,7 +68,7 @@ class Model_PaiNN(torch.nn.Module):
         'model_cutoff':                 12.0,
         'model_cuton':                  None,
         'model_switch_range':           2.0,
-        'model_repulsion':              True,
+        'model_repulsion':              False,
         'model_repulsion_trainable':    True,
         'model_electrostatic':          True,
         'model_dispersion':             True,
@@ -710,9 +710,5 @@ class Model_PaiNN(torch.nn.Module):
                         results['atomic_dipoles'], sys_i,
                         device=self.device).reshape(-1, 3)
                     )
-
-        #for prop, item in results.items():
-            #print(prop, item.shape)
-            #print(item)
 
         return results

@@ -1,6 +1,6 @@
 
 import sys
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/KaiAsparagus')
+sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
 
 from asparagus.sample import MetaSampler
 
@@ -50,12 +50,13 @@ sampler = MetaSampler(
 sampler.run()
 
 
-# Start training a default PhysNet model.
+# Start training a default PaiNN model (model_type='painn').
 from asparagus import Asparagus
 model = Asparagus(
-    config='nh3_meta.json',
+    config='nh3_painn.json',
     data_file='nh3_meta.db',
-    model_directory='model_nh3_meta',
+    model_type='painn',
+    model_directory='model_nh3_painn',
     model_properties=['energy', 'forces', 'dipole'],
     trainer_max_epochs=1_000,
     )

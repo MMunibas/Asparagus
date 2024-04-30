@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Tuple, Union, Any
 import torch
 
 from .. import utils
-#from .. import layers
+from .. import layer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,10 +49,11 @@ class PyCharmm_Calculator:
         If 'ml_fluctuating_charges' is True, the atomic charges of the ML
         atoms are ignored (usually set to zero anyways) and their atomic
         charge prediction is used.
-    mlmm_rcut: float
-        Max. cutoff distance for ML/MM electrostatic interactions
-    mlmm_width: float
-        Cutoff width for ML/MM electrostatic interactions
+    mlmm_cutoff: float
+        Interaction cutoff distance for ML/MM electrostatic interactions
+    mlmm_cuton: float
+        Lower atom pair distance to start interaction switch-off for ML/MM
+        electrostatic interactions
     dtype: dtype object, optional, default torch.float64
         Data type of the calculator
     **kwargs
@@ -68,8 +69,8 @@ class PyCharmm_Calculator:
         ml_charge: float,
         ml_fluctuating_charges: bool,
         mlmm_atomic_charges: List[float],
-        mlmm_rcut: float,
-        mlmm_width: float,
+        mlmm_cutoff: float,
+        mlmm_cuton: float,
         dtype=torch.float64,
         **kwargs
     ):
@@ -122,9 +123,8 @@ class PyCharmm_Calculator:
         self.mlmm_idxa = torch.arange(self.mlmm_num_atoms, dtype=torch.int64)
 
         # Non-bonding interaction range
-        self.mlmm_rcut = torch.tensor(mlmm_rcut, dtype=self.dtype)
-        self.mlmm_rcut2 = torch.tensor(mlmm_rcut**2, dtype=self.dtype)
-        self.mlmm_width = torch.tensor(mlmm_width, dtype=self.dtype)
+        self.mlmm_cutoff = torch.tensor(mlmm_cutoff, dtype=self.dtype)
+        self.mlmm_cuton = torch.tensor(mlmm_cuton, dtype=self.dtype)
 
         ################################
         # # # Set Model Calculator # # #
@@ -165,31 +165,29 @@ class PyCharmm_Calculator:
 
         # Get model interaction cutoff and set evaluation mode
         if self.model_ensemble:
-            self.interaction_cutoff = 0.0
+            #self.interaction_cutoff = 0.0
             for calc in self.model_calculator_list:
-                cutoff = calc.model_interaction_cutoff
-                if self.interaction_cutoff < cutoff:
-                    self.interaction_cutoff = cutoff
+                #cutoff = calc.model_interaction_cutoff
+                #if self.interaction_cutoff < cutoff:
+                    #self.interaction_cutoff = cutoff
                 calc.eval()
         else:
-            self.interaction_cutoff = (
-                self.model_calculator.model_interaction_cutoff)
+            #self.interaction_cutoff = (
+                #self.model_calculator.model_interaction_cutoff)
             self.model_calculator.eval()
 
         # Check cutoff of CHARMM and the ML model
-        self.max_rcut = np.max([self.interaction_cutoff, self.mlmm_rcut])
+        #self.max_rcut = np.max([self.interaction_cutoff, self.mlmm_rcut])
 
         # Get property unit conversions from model units to CHARMM units
         self.model_unit_properties = (
             self.model_calculator.model_unit_properties)
-        #self.charmm_unit_properties = {}
         self.model2charmm_unit_conversion = {}
 
         # Positions unit conversion
         conversion, _ = utils.check_units(
             CHARMM_calculator_units['positions'],
             self.model_unit_properties['positions'])
-        #self.charmm_unit_properties['positions'] = conversion
         self.model2charmm_unit_conversion['positions'] = conversion
 
         # Implemented property units conversion
@@ -197,7 +195,6 @@ class PyCharmm_Calculator:
             conversion, _ = utils.check_units(
                 CHARMM_calculator_units[prop],
                 self.model_unit_properties[prop])
-            #self.charmm_unit_properties[prop] = conversion
             self.model2charmm_unit_conversion[prop] = conversion
 
         # Initialize the non-bonded interaction calculator
@@ -212,9 +209,9 @@ class PyCharmm_Calculator:
                 dtype=self.dtype)
 
             self.electrostatics_calc = Electrostatic_shift(
-                self.mlmm_rcut,
-                self.mlmm_width,
-                self.max_rcut,
+                self.mlmm_cutoff,
+                self.mlmm_cuton,
+                #self.max_rcut,
                 self.ml_idxp,
                 self.mlmm_atomic_charges,
                 kehalf=self.kehalf,
@@ -431,23 +428,24 @@ class Electrostatic_shift:
 
     def __init__(
         self,
-        mlmm_rcut: torch.Tensor,
-        mlmm_width: torch.Tensor,
-        max_rcut: torch.Tensor,
+        mlmm_cutoff: torch.Tensor,
+        mlmm_cuton: torch.Tensor,
+        #max_rcut: torch.Tensor,
         ml_idxp: torch.Tensor,
         mlmm_atomic_charges: torch.Tensor,
         kehalf: torch.Tensor,
-        switch_fn='CHARMM',
+        switch_fn='Poly6_range',
     ):
 
-        self.mlmm_rcut = mlmm_rcut
+        self.mlmm_cutoff = mlmm_cutoff
+        self.mlmm_cutoff2 = mlmm_cutoff**2
+        self.mlmm_cuton = mlmm_cuton
         self.ml_idxp = ml_idxp
         self.mlmm_atomic_charges = mlmm_atomic_charges
-        self.max_rcut2 = max_rcut**2
 
         # Initialize the class for cutoff
-        switch_class = layers.get_cutoff_fn(switch_fn)
-        self.switch_fn = switch_class(mlmm_rcut, mlmm_width)
+        self.switch_fn = layer.get_cutoff_fn(switch_fn)(
+            self.mlmm_cutoff, self.mlmm_cuton)
         self.kehalf = kehalf
 
     def calculate_mlmm_interatomic_distances(
@@ -465,7 +463,7 @@ class Electrostatic_shift:
         
         # Interacting atom pair distances within cutoff
         sum_distances = torch.sum((Ru - Rv)**2, dim=1)
-        selection = sum_distances < self.max_rcut2
+        selection = sum_distances < self.mlmm_cutoff2
         Duv = torch.sqrt(sum_distances[selection])
         
         # Reduce the indexes to consider only interacting pairs (selection)
@@ -491,7 +489,7 @@ class Electrostatic_shift:
 
         # Shifted Coulomb energy
         qq = 2.0*self.kehalf*Qau*Qav
-        Eele = qq/Duv - qq/self.mlmm_rcut*(2.0 - Duv/self.mlmm_rcut)
+        Eele = qq/Duv - qq/self.mlmm_cutoff*(2.0 - Duv/self.mlmm_cutoff)
 
         return torch.sum(switchoff*Eele)
 

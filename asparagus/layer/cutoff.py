@@ -7,8 +7,8 @@ import torch
 from .. import utils
 
 __all__ = [
-    'get_cutoff_fn', 'Poly6Cutoff', 'Poly6Cutoff_Width', 'CosineCutoff',
-    'CosineCutoff_Width']
+    'get_cutoff_fn', 'Poly6Cutoff', 'Poly6Cutoff_range', 'CosineCutoff',
+    'CosineCutoff_range']
 
 #======================================
 # Cutoff functions
@@ -78,10 +78,10 @@ class Poly6Cutoff(torch.nn.Module):
             torch.zeros_like(distance))
 
 
-class Poly6Cutoff_Width(torch.nn.Module):
+class Poly6Cutoff_range(torch.nn.Module):
     """
     2nd derivative smooth polynomial cutoff function of 6th order,
-    within the range cutoff - width < x < cutoff
+    within the range cuton < x < cutoff
 
     $$f(x) = 1 - 6x^{5} + 15x^{4} - 10x^{3}$$
     with $$(x - cutoff - width) = distance/width$$
@@ -91,9 +91,9 @@ class Poly6Cutoff_Width(torch.nn.Module):
     Parameters
     ----------
     cutoff: float
-        Cutoff distance
-    width: float
-        Cutoff width defining cutoff range (cutoff - width) to (cutoff)
+        Upper Cutoff distance of cutoff range
+    cuton: float
+        Lower Cutoff distance of cutoff range
     device: str, optional, default 'cpu'
         Device type for model variable allocation
     dtype: dtype object, optional, default 'torch.float64'
@@ -104,7 +104,7 @@ class Poly6Cutoff_Width(torch.nn.Module):
     def __init__(
         self,
         cutoff: float,
-        width: float,
+        cuton: float,
         device: Optional[str] = 'cpu',
         dtype: Optional[object] = torch.float64,
     ):
@@ -116,7 +116,8 @@ class Poly6Cutoff_Width(torch.nn.Module):
 
         # Set cutoff value in the register for model parameters
         self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype))
-        self.register_buffer("width", torch.tensor([width], dtype=dtype))
+        self.register_buffer("cuton", torch.tensor([cuton], dtype=dtype))
+        self.width = cutoff - cuton
 
         return
 
@@ -135,33 +136,33 @@ class Poly6Cutoff_Width(torch.nn.Module):
         Returns
         -------
         torch.Tensor
-            Cutoff values of input distance tensor
+            Cutoff function values of input distance tensor
 
         """
 
-        x = (distance - self.cutoff + self.width)/self.width
+        x = (distance - self.cuton)/self.width
 
-        cutoff = torch.where(
+        switch = torch.where(
             distance < self.cutoff,
             torch.ones_like(distance),
             torch.zeros_like(distance)
             )
 
-        cutoff = torch.where(
+        switch = torch.where(
             torch.logical_and(
-                (distance > self.cutoff - self.width),
+                (distance > self.cuton),
                 (distance < self.cutoff)
             ),
             1.0 + ((-6.0*x + 15.0)*x - 10.0)*x**3,
-            cutoff)
+            switch)
 
-        return cutoff 
+        return switch 
 
 
 class CosineCutoff(torch.nn.Module):
     """
     Behler-style cosine cutoff module, 
-    within the range cutoff - width < x < cutoff
+    within the range 0 < x < cutoff
     [source https://github.com/atomistic-machine-learning/schnetpack/blob/
         master/src/schnetpack/nn/cutoff.py]
 
@@ -221,7 +222,7 @@ class CosineCutoff(torch.nn.Module):
             torch.zeros_like(distance))
 
 
-class CosineCutoff_Width(torch.nn.Module):
+class CosineCutoff_range(torch.nn.Module):
     """
     Behler-style cosine cutoff module.
     [source https://github.com/atomistic-machine-learning/schnetpack/blob/
@@ -237,9 +238,9 @@ class CosineCutoff_Width(torch.nn.Module):
     Parameters
     ----------
     cutoff: float
-        Cutoff distance
-    width: float
-        Cutoff width defining cutoff range (cutoff - width) to (cutoff)
+        Upper Cutoff distance of cutoff range
+    cuton: float
+        Lower Cutoff distance of cutoff range
     device: str, optional, default 'cpu'
         Device type for model variable allocation
     dtype: dtype object, optional, default 'torch.float64'
@@ -261,6 +262,8 @@ class CosineCutoff_Width(torch.nn.Module):
 
         # Set cutoff value in the register for model parameters
         self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype))
+        self.register_buffer("cuton", torch.tensor([cuton], dtype=dtype))
+        self.width = cutoff - cuton
 
         return
         
@@ -280,27 +283,27 @@ class CosineCutoff_Width(torch.nn.Module):
         Returns
         -------
         torch.Tensor
-            Cutoff values of input distance tensor
+            Cutoff function values of input distance tensor
 
         """
         
-        x = (distance - self.cutoff + self.width)/self.width
+        x = (distance - self.cuton)/self.width
         
-        cutoff = torch.where(
+        switch = torch.where(
             distance < self.cutoff,
             torch.ones_like(distance),
             torch.zeros_like(distance)
             )
 
-        cutoff = torch.where(
+        switch = torch.where(
             torch.logical_and(
-                (distance > self.cutoff - self.width),
+                (distance > self.cuton),
                 (distance < self.cutoff)
             ),
             0.5*(torch.cos(x*math.pi) + 1.0),
-            cutoff)
+            switch)
 
-        return cutoff
+        return switch
 
 #======================================
 # Function assignment
@@ -309,9 +312,9 @@ class CosineCutoff_Width(torch.nn.Module):
 functions_avaiable = {
     'default'.lower(): Poly6Cutoff,
     'Poly6'.lower(): Poly6Cutoff,
-    'Poly6_Width'.lower(): Poly6Cutoff_Width,
+    'Poly6_range'.lower(): Poly6Cutoff_range,
     'Cosine'.lower(): CosineCutoff,
-    'Cosine_Width'.lower(): CosineCutoff_Width,
+    'Cosine_range'.lower(): CosineCutoff_range,
     }
 
 
