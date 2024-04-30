@@ -1,7 +1,6 @@
 Installation
 ===================================
 
-
 Asparagus Bundle is a package that depends majorly on Pytorch and the Atomic Simulation Environment (ASE).
 Other than that, it is designed to rely on just a few of packages and is written fully in Python without the need for compilation.
 We recommend that you use a virtual environment to install Asparagus.
@@ -53,8 +52,8 @@ and activate the virtual environment by the command:
 
 **Note**: If you are using Miniconda, just replace ``mamba`` by ``conda``.
 
-Installation
--------------
+Install Asparagus
+-----------------
 
 To install Asparagus first clone the repository:
 
