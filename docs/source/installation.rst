@@ -9,15 +9,20 @@ We recommend that you use a virtual environment to install Asparagus.
 Dependencies
 --------------
 
-Asparagus depends on the following packages:
+Asparagus depends on the following packages, which will be (except for Python itself) automatically managed when installing Asparagus via `pip` or `python setup.py install` (see below):
 
    * Python_ :math:`\geq` 3.8 (**DO NOT** (for the moment) use 3.9)
-   * PyTorch :math:`\geq` 2.0
-   * Torch-ema :math:`\geq` 0.3
-   * TensorBoard :math:`\geq` 2.4
-   * Atomic Simulation Environment (ASE)  :math:`\geq` 3.22
+   * ASE_ (Atomic Simulation Environment)  :math:`\geq` 3.22
+   * PyTorch_ :math:`\geq` 2.0
+   * Torch-ema_ :math:`\geq` 0.3
+   * TensorBoard_ :math:`\geq` 2.4
+   
 
 .. _Python: https://www.python.org/
+.. _PyTorch: https://pytorch.org/
+.. _ASE: https://wiki.fysik.dtu.dk/ase/#
+.. _Torch-ema: https://github.com/fadel/pytorch_ema
+.. _Tensorboard: https://www.tensorflow.org/tensorboard
 
 Optional:
 
