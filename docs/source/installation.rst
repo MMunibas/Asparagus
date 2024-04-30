@@ -9,7 +9,7 @@ We recommend that you use a virtual environment to install Asparagus.
 Dependencies
 --------------
 
-Asparagus depends on the following packages, which will be (except for Python itself) automatically managed when installing Asparagus via `pip` or `python setup.py install` (see below):
+Asparagus depends on the following packages, which will be (except for Python itself) automatically managed when installing Asparagus via ``pip`` or ```python setup.py install``` (see below):
 
    * Python_ :math:`\geq` 3.8 (**DO NOT** (for the moment) use 3.9)
    * ASE_ (Atomic Simulation Environment)  :math:`\geq` 3.22
