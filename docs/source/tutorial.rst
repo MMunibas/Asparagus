@@ -1,5 +1,5 @@
 
-Asparagus - Tutorials
+Tutorials
 ===================================
 
 --------
@@ -36,10 +36,11 @@ Model Selection and Training
 * Model Training
 
 -----------------
-About
+Model Application
 -----------------
 
-Please check out the :doc:`about` section for further information.
+* as ASE Calculator
+* as CHARMM(PyCHARMM) custom energy function (ML/MM simulation)
 
 .. note::
 
