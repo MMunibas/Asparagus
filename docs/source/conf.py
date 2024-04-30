@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join('.','..', '..')))
 # sys.path.insert(1,os.path.abspath(os.path.join('.','..', '..')))
 # -- Project information
 
-project = 'Asparagus bundle'
+project = 'Asparagus Bundle'
 copyright = '2024, L.I.Vazquez-Salazar, K. Toepfer & M. Meuwly'
 author = 'L.I.Vazquez-Salazar & K. Toepfer'
 
