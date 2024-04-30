@@ -31,6 +31,10 @@ class DataLoader(torch.utils.data.DataLoader):
         Callable function that prepare and return batch data
     data_pin_memory: bool, optional, default False
         If True data are loaded to GPU
+    device: str, optional, default 'cpu'
+        Device type for data allocation
+    dtype: dtype object, optional, default 'torch.float64'
+        Reference data type to convert to
 
     """
 
@@ -42,6 +46,8 @@ class DataLoader(torch.utils.data.DataLoader):
         data_num_workers: int,
         data_collate_fn: Optional[object] = None,
         data_pin_memory: Optional[bool] = False,
+        device: Optional[str] = 'cpu',
+        dtype: Optional[str] = torch.float64,
         **kwargs
     ):
         """
@@ -70,6 +76,10 @@ class DataLoader(torch.utils.data.DataLoader):
         
         # Initialize neighbor list function class parameter
         self.neighbor_list = None
+        
+        # Assign reference data conversion parameter
+        self.device = device
+        self.dtype = dtype
 
         return
 
@@ -78,8 +88,8 @@ class DataLoader(torch.utils.data.DataLoader):
         cutoff: Optional[Union[float, List[float]]] = np.inf,
         store: Optional[bool] = False,
         func_neighbor_list: Optional[str] = 'torchrs',
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
     ):
         """
         Initialize neighbor list function
@@ -93,6 +103,12 @@ class DataLoader(torch.utils.data.DataLoader):
 
         """
         
+        # Check input parameter
+        if device is None:
+            device = self.device
+        if dtype is None:
+            dtype = self.dtype
+
         # Initialize neighbor list creator
         self.neighbor_list = utils.TorchNeighborListRangeSeparated(
             cutoff, device, dtype)
@@ -130,7 +146,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 sys_ij: (Npairs,) torch.Tensor
 
         """
-
+        
         # Collected batch system properties
         coll_batch = {}
 
@@ -139,28 +155,36 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Get atoms number per system segment
         coll_batch['atoms_number'] = torch.tensor(
-            [b['atoms_number'] for b in batch])
+            [b['atoms_number'] for b in batch],
+            device=self.device, dtype=torch.int64)
 
         # System segment index of atom i
         coll_batch['sys_i'] = torch.repeat_interleave(
             torch.arange(Nsys, dtype=torch.int64), 
-            repeats=coll_batch['atoms_number'], dim=0)
+            repeats=coll_batch['atoms_number'], dim=0).to(
+                device=self.device, dtype=torch.int64)
 
         # Atomic numbers properties
         coll_batch['atomic_numbers'] = torch.cat(
-            [b['atomic_numbers'] for b in batch], 0).to(torch.int64)
+            [b['atomic_numbers'] for b in batch], 0).to(
+                device=self.device, dtype=torch.int64)
 
         # Periodic boundary conditions
         coll_batch['positions'] = torch.cat(
-            [b['positions'] for b in batch], 0).to(torch.float64)
+            [b['positions'] for b in batch], 0).to(
+                device=self.device, dtype=self.dtype)
 
         # Periodic boundary conditions
         coll_batch['pbc'] = torch.cat(
-            [b['pbc'] for b in batch], 0).to(torch.bool).reshape(Nsys, 3)
+            [b['pbc'] for b in batch], 0).to(
+                device=self.device, dtype=torch.bool
+                ).reshape(Nsys, 3)
 
         # Unit cell sizes
         coll_batch['cell'] = torch.cat(
-            [b['cell'] for b in batch], 0).reshape(Nsys, -1)
+            [b['cell'] for b in batch], 0).to(
+                device=self.device, dtype=self.dtype
+                ).reshape(Nsys, -1)
 
         # Compute the cumulative segment size number
         atomic_numbers_cumsum = torch.cat(
@@ -168,7 +192,8 @@ class DataLoader(torch.utils.data.DataLoader):
                 torch.zeros((1,), dtype=coll_batch['sys_i'].dtype),
                 torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
             ],
-            dim=0)
+            dim=0).to(
+                device=self.device, dtype=torch.int64)
         
         # Iterate over batch properties
         skip_props = [
@@ -186,12 +211,14 @@ class DataLoader(torch.utils.data.DataLoader):
                 # Concatenate tensor data
                 if batch[0][prop_i].size():
                     coll_batch[prop_i] = torch.cat(
-                        [b[prop_i] for b in batch], 0).to(torch.float64)
+                        [b[prop_i] for b in batch], 0).to(
+                            device=self.device, dtype=self.dtype)
 
                 # Concatenate numeric data
                 else:
                     coll_batch[prop_i] = torch.tensor(
-                        [b[prop_i] for b in batch]).to(torch.float64)
+                        [b[prop_i] for b in batch]).to(
+                            device=self.device, dtype=self.dtype)
 
         # Compute pair indices and position offsets
         if self.neighbor_list is None:

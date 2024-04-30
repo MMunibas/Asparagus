@@ -238,9 +238,9 @@ class CosineCutoff_range(torch.nn.Module):
     Parameters
     ----------
     cutoff: float
-        Upper Cutoff distance of cutoff range
+        Upper cutoff distance of cutoff range
     cuton: float
-        Lower Cutoff distance of cutoff range
+        Lower cutoff distance of cutoff range
     device: str, optional, default 'cpu'
         Device type for model variable allocation
     dtype: dtype object, optional, default 'torch.float64'

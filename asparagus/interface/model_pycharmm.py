@@ -31,7 +31,7 @@ class PyCharmm_Calculator:
 
     Parameters
     ----------
-    model_calculator: object
+    model_calculator: torch.nn.Module
         Asparagus model calculator object with already loaded parameter set
     ml_atom_indices: list(int)
         List of atom indices referring to the ML treated atoms in the total 
@@ -63,7 +63,7 @@ class PyCharmm_Calculator:
 
     def __init__(
         self,
-        model_calculator: Union[object, List[object]],
+        model_calculator: Union[torch.nn.Module, List[torch.nn.Module]],
         ml_atom_indices: List[int],
         ml_atomic_numbers: List[int],
         ml_charge: float,
@@ -72,11 +72,10 @@ class PyCharmm_Calculator:
         mlmm_cutoff: float,
         mlmm_cuton: float,
         dtype=torch.float64,
-        **kwargs
     ):
 
         # Assign dtype
-        self.dtype = dtype
+        self.dtype = model_calculator.dtype #dtype
 
         ################################
         # # # Set PyCHARMM Options # # #

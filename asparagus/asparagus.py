@@ -862,3 +862,54 @@ class Asparagus():
             label=label)
 
         return ase_calculator
+
+    def get_pycharmm_calculator(
+        self,
+        config: Optional[Union[str, dict, object]] = None,
+        config_file: Optional[str] = None,
+        model_checkpoint: Optional[int] = None,
+        **kwargs
+    ) -> Callable:
+        """
+        Return PyCHARMM calculator class object of the initialized model 
+        calculator.
+
+        Parameters
+        ----------
+        config: (str, dict, object), optional, default 'self.config'
+            Either the path to json file (str), dictionary (dict) or
+            settings.config class object of model parameters
+        config_file: str, optional, default see settings.default['config_file']
+            Path to json file (str)
+        model_checkpoint: int, optional, default None
+            If None, load best model checkpoint. Otherwise define a checkpoint
+            index number of the respective checkpoint file.
+
+        Returns
+        -------
+        callable object
+            PyCHARMM calculator object
+        """
+
+        ###################################
+        # # # Assign Model Calculator # # #
+        ###################################
+        
+        if self.model_calculator is None:
+            model_calculator = self.get_model_calculator(
+                config=config,
+                config_file=config_file,
+                model_checkpoint=model_checkpoint,
+                **kwargs)
+        else:
+            model_calculator = self.model_calculator
+
+        #######################################
+        # # # Prepare PyCHARMM Calculator # # #
+        #######################################
+
+        pycharmm_calculator = interface.PyCharmm_Calculator(
+            model_calculator,
+            **kwargs)
+
+        return pycharmm_calculator

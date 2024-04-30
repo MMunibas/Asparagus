@@ -72,6 +72,7 @@ class DataContainer():
         'data_source' if available.
     data_seed: (int, float), optional, default: np.random.randint(1E6)
         Define seed for random data splitting.
+
     """
 
     def __init__(
