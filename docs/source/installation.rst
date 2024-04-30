@@ -11,15 +11,19 @@ Dependencies
 
 Asparagus depends on the following packages:
 
-   .. Python: https://www.python.org/ :math:`\geq` 3.8 (**DO NOT** (for the moment) use 3.9)
-   .. PyTorch :math:`\geq` 2.0
-   .. Torch-ema :math:`\geq` 0.3
-   .. TensorBoard :math:`\geq` 2.4
-   .. Atomic Simulation Environment (ASE)  :math:`\geq` 3.22
+   * Python_ :math:`\geq` 3.8 (**DO NOT** (for the moment) use 3.9)
+   * PyTorch :math:`\geq` 2.0
+   * Torch-ema :math:`\geq` 0.3
+   * TensorBoard :math:`\geq` 2.4
+   * Atomic Simulation Environment (ASE)  :math:`\geq` 3.22
+
+.. _Python: https://www.python.org/
 
 Optional:
 
-   .. _Python: https://www.python.org/
+   * XTb_
+
+.. _XTb: https://xtb-docs.readthedocs.io/en/latest/#
 
 
 Setting up the environment
