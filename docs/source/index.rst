@@ -15,6 +15,7 @@ potential energy surface from sampling to production.
     :caption: Contents:
 
     installation
+    tutorial
     config_file
     about
     contribute
@@ -30,19 +31,19 @@ Please check out the :doc:`installation` section for further information.
 Getting Started
 ---------------
 
-Add here examples
-
+Please check the :doc:`tutorial` or :doc:`example` section
 
 --------------------
 Configuration File
 --------------------
+
 Check out the :doc:`config_file` section for further information.
 
 -----------------
 Api Documentation
 -----------------
-:doc:`api`
 
+:doc:`api`
 
 -----------------
 About
