@@ -1421,7 +1421,7 @@ class NormalModeSampler(sample.Sampler):
         """
 
         Rx = self.R(Nmodes, vib_fcnts, vib_temp)
-        sample_positions = np.zeros_like(initial_positions)
+        sample_positions = initial_positions.copy()
 
         for imode, mode_i in enumerate(vib_modes):
             if vib_include[imode]:
