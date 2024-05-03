@@ -748,24 +748,24 @@ class MetaConstraint:
                 dcvdR[icv, cvi[2]] = -fcb
             # Dihedral angle
             elif len(cvi)==4:
-                ## Connection vectors
-                #ab = atoms.positions[cvi[0]] - atoms.positions[cvi[1]]
-                #cb = atoms.positions[cvi[2]] - atoms.positions[cvi[1]]
-                #dc = atoms.positions[cvi[3]] - atoms.positions[cvi[2]]
-                #bc = -cb
+                # Connection vectors
+                ab = atoms.positions[cvi[0]] - atoms.positions[cvi[1]]
+                cb = atoms.positions[cvi[2]] - atoms.positions[cvi[1]]
+                dc = atoms.positions[cvi[3]] - atoms.positions[cvi[2]]
+                bc = -cb
                 ## Plane vectors
-                #aa = np.cross(ab, bc)
-                #bb = np.cross(dc, bc)
+                aa = np.cross(ab, bc)
+                bb = np.cross(dc, bc)
                 ## Vector distances
-                #d2aa = np.sum(aa**2)
-                #d2bb = np.sum(bb**2)
-                #d2bc = np.sum(bc**2)
-                #dbc = np.sqrt(d2bc)
-                #dinvab = 1./np.sqrt(d2aa*d2bb)
-                ## Vector angles
-                #cabcd = dinvab*np.sum(aa*bb)
-                #cabcd = np.clip(cabcd, -1.0, 1.0)
-                #sabcd = dbc*dinvab*np.sum(aa*dc)
+                d2aa = np.sum(aa**2)
+                d2bb = np.sum(bb**2)
+                d2bc = np.sum(bc**2)
+                dbc = np.sqrt(d2bc)
+                dinvab = 1./np.sqrt(d2aa*d2bb)
+                # Vector angles
+                cabcd = dinvab*np.sum(aa*bb)
+                cabcd = np.clip(cabcd, -1.0, 1.0)
+                sabcd = dbc*dinvab*np.sum(aa*dc)
                 ## Dihedral multiplicity scalars 
                 ## (multiplicity: number of minima in dihedral 0° to 360°)
                 ## Here: multiplicity equal 1

@@ -117,10 +117,14 @@ class D3_dispersion(torch.nn.Module):
             self.d3_a2 = torch.nn.Parameter(
                 torch.tensor([d3_a2], dtype=dtype)).to(device)
         else:
-            self.register_buffer("d3_s6", torch.tensor([d3_s6], dtype=dtype, device=device))
-            self.register_buffer("d3_s8", torch.tensor([d3_s8], dtype=dtype, device=device))
-            self.register_buffer("d3_a1", torch.tensor([d3_a1], dtype=dtype, device=device))
-            self.register_buffer("d3_a2", torch.tensor([d3_a2], dtype=dtype, device=device))
+            self.register_buffer(
+                "d3_s6", torch.tensor([d3_s6], device=device, dtype=dtype))
+            self.register_buffer(
+                "d3_s8", torch.tensor([d3_s8], device=device, dtype=dtype))
+            self.register_buffer(
+                "d3_a1", torch.tensor([d3_a1], device=device, dtype=dtype))
+            self.register_buffer(
+                "d3_a2", torch.tensor([d3_a2], device=device, dtype=dtype))
         self.d3_k1 = torch.tensor([16.000], dtype=dtype).to(device)
         self.d3_k2 = torch.tensor([4./3.], dtype=dtype).to(device)
         self.d3_k3 = torch.tensor([-4.000], dtype=dtype).to(device)
@@ -174,10 +178,12 @@ class D3_dispersion(torch.nn.Module):
         # Energies: Hartree to model
         self.register_buffer(
             "distances_model2Bohr", 
-            torch.tensor([factor_positions], dtype=self.dtype, device=self.device))
+            torch.tensor(
+                [factor_positions], device=self.device, dtype=self.dtype))
         self.register_buffer(
             "energies_Hatree2model", 
-            torch.tensor([factor_energy], dtype=self.dtype, device=self.device))
+            torch.tensor(
+                [factor_energy], device=self.device, dtype=self.dtype))
 
         return
 

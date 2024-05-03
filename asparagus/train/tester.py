@@ -348,6 +348,7 @@ class Tester:
 
             # Loop over data batches
             for batch in datasubset:
+
                 # Predict model properties from data batch
                 prediction = model_calculator(batch)
 
@@ -380,7 +381,8 @@ class Tester:
                     test_reference[prop] += list(data_reference)
 
                 # Store atom numbers
-                test_prediction['atoms_number'] += list(batch['atoms_number'].cpu().numpy())
+                test_prediction['atoms_number'] += list(
+                    batch['atoms_number'].cpu().numpy())
 
             # Print metrics
             if verbose:

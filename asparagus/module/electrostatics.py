@@ -65,7 +65,8 @@ class PC_shielded_electrostatics(torch.nn.Module):
 
         # Assign switch_fn
         switch_class = layer.get_cutoff_fn(switch_fn)
-        self.switch_fn = switch_class(self.cutoff_short_range, device=device, dtype=dtype)
+        self.switch_fn = switch_class(
+            self.cutoff_short_range, device=self.device, dtype=self.dtype)
 
         # Set property units for parameter scaling
         self.set_unit_properties(unit_properties)

@@ -10,19 +10,21 @@ import time
 #==============================================================================
 
 
-flag_dictionary_initialization = True
-flag_database_sql = True
+flag_dictionary_initialization = False
+flag_database_sql = False
 flag_database_hdf5 = False
-flag_sampler_all = True
-flag_sampler_shell = True
+flag_sampler_all = False
+flag_sampler_shell = False
 flag_sampler_slurm = False
 
-flag_model_physnet = True
-flag_train_physnet = True
-flag_ase_physnet = True
+flag_model_physnet = False
+flag_train_physnet = False
+flag_ase_physnet = False
 
-flag_model_painn = True
-flag_train_painn = True
+flag_model_painn = False
+flag_train_painn = False
+
+flag_train_cuda = True
 
 
 #==============================================================================
@@ -887,3 +889,18 @@ if flag_train_painn:
     model.train()
     model.test(test_directory='test/painn')
 
+# Initialize PhysNet model training
+if flag_train_cuda:
+    
+    config_file = 'test/train_cuda.json'
+    model = asparagus.Asparagus(
+        config_file=config_file,
+        data_file='data/nms_nh3.db',
+        model_directory='test/cuda',
+        trainer_max_epochs=10,
+        device='cuda',
+        model_device='cuda',
+        )
+    trainer = model.get_trainer()
+    model.train()
+    model.test(test_directory='test/cuda')

@@ -46,7 +46,8 @@ class Poly6Cutoff(torch.nn.Module):
         super(Poly6Cutoff, self).__init__()
 
         # Set cutoff value in the register for model parameters
-        self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype, device=device))
+        self.register_buffer(
+            "cutoff", torch.tensor([cutoff], device=device, dtype=dtype))
 
         return
 
@@ -115,8 +116,10 @@ class Poly6Cutoff_range(torch.nn.Module):
         super(Poly6Cutoff_range, self).__init__()
 
         # Set cutoff value in the register for model parameters
-        self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype))
-        self.register_buffer("cuton", torch.tensor([cuton], dtype=dtype))
+        self.register_buffer(
+            "cutoff", torch.tensor([cutoff], device=device, dtype=dtype))
+        self.register_buffer(
+            "cuton", torch.tensor([cuton], device=device, dtype=dtype))
         self.width = cutoff - cuton
 
         return
@@ -190,7 +193,8 @@ class CosineCutoff(torch.nn.Module):
         super(CosineCutoff, self).__init__()
 
         # Set cutoff value in the register for model parameters
-        self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype, device=device))
+        self.register_buffer(
+            "cutoff", torch.tensor([cutoff], device=device, dtype=dtype))
 
         return
 
@@ -262,8 +266,10 @@ class CosineCutoff_range(torch.nn.Module):
         super(CosineCutoff_range, self).__init__()
 
         # Set cutoff value in the register for model parameters
-        self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype, device=device))
-        self.register_buffer("cuton", torch.tensor([cuton], dtype=dtype, device=device))
+        self.register_buffer(
+            "cutoff", torch.tensor([cutoff], device=device, dtype=dtype))
+        self.register_buffer(
+            "cuton", torch.tensor([cuton], device=device, dtype=dtype))
         self.width = cutoff - cuton
 
         return
