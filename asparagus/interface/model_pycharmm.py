@@ -17,11 +17,13 @@ __all__ = ['PyCharmm_Calculator']
 CHARMM_calculator_units = {
     'positions':        'Ang',
     'energy':           'kcal/mol',
+    'atomic_energies':  'kcal/mol',
     'forces':           'kcal/mol/Ang',
     'hessian':          'kcal/mol/Ang/Ang',
     'charge':           'e',
     'atomic_charges':   'e',
     'dipole':           'e*Ang',
+    'atomic_dipoles':   'e*Ang',
     }
 
 
@@ -64,13 +66,13 @@ class PyCharmm_Calculator:
     def __init__(
         self,
         model_calculator: Union[torch.nn.Module, List[torch.nn.Module]],
-        ml_atom_indices: List[int],
-        ml_atomic_numbers: List[int],
-        ml_charge: float,
-        ml_fluctuating_charges: bool,
-        mlmm_atomic_charges: List[float],
-        mlmm_cutoff: float,
-        mlmm_cuton: float,
+        ml_atom_indices: Optional[List[int]] = None,
+        ml_atomic_numbers: Optional[List[int]] = None,
+        ml_charge: Optional[float] = None,
+        ml_fluctuating_charges: Optional[bool] = None,
+        mlmm_atomic_charges: Optional[List[float]] = None,
+        mlmm_cutoff: Optional[float] = None,
+        mlmm_cuton: Optional[float] = None,
         dtype=torch.float64,
     ):
 
@@ -186,14 +188,14 @@ class PyCharmm_Calculator:
         # Positions unit conversion
         conversion, _ = utils.check_units(
             CHARMM_calculator_units['positions'],
-            self.model_unit_properties['positions'])
+            self.model_unit_properties.get('positions'))
         self.model2charmm_unit_conversion['positions'] = conversion
 
         # Implemented property units conversion
         for prop in self.implemented_properties:
             conversion, _ = utils.check_units(
                 CHARMM_calculator_units[prop],
-                self.model_unit_properties[prop])
+                self.model_unit_properties.get(prop))
             self.model2charmm_unit_conversion[prop] = conversion
 
         # Initialize the non-bonded interaction calculator
@@ -220,15 +222,6 @@ class PyCharmm_Calculator:
 
             self.electrostatics_calc = None
 
-# Note: It needs to create a dictionary that contains the following values:
-#         atoms_number = batch['atoms_number']
-#         atomic_numbers = batch['atomic_numbers']
-#         positions = batch['positions']
-#         idx_i = batch['idx_i']
-#         idx_j = batch['idx_j']
-#         charge = batch['charge']
-#         idx_seg = batch['atoms_seg']
-#         pbc_offset = batch.get('pbc_offset')
     def calculate_charmm(
         self,
         Natom: int,
@@ -324,7 +317,7 @@ class PyCharmm_Calculator:
         ml_idxi = torch.tensor(idxi[:Nmlp], dtype=torch.int64)
         ml_idxj = torch.tensor(idxj[:Nmlp], dtype=torch.int64)
         ml_idxjp = torch.tensor(idxjp[:Nmlp], dtype=torch.int64)
-        atoms_seg = torch.zeros(self.ml_num_atoms, dtype=torch.int64)
+        ml_sysi = torch.zeros(self.ml_num_atoms, dtype=torch.int64)
         # ML-MM pair indices and pointer
         mlmm_idxu = torch.tensor(
             idxu[:Nmlmmp], dtype=torch.int64)
@@ -343,13 +336,14 @@ class PyCharmm_Calculator:
         atoms_batch['charge'] = self.ml_charge
         atoms_batch['idx_i'] = ml_idxi
         atoms_batch['idx_j'] = ml_idxj
-        atoms_batch['atoms_seg'] = atoms_seg
+        atoms_batch['sys_i'] = ml_sysi
         
         # PBC options
-        atoms_batch['pbc_offset'] = None
-        atoms_batch['atom_indices'] = self.ml_atom_indices
-        atoms_batch['idx_jp'] = ml_idxjp
-        atoms_batch['idx_p'] = self.ml_idxp
+        atoms_batch['pbc_offset_ij'] = None
+        atoms_batch['pbc_offset_uv'] = None
+        atoms_batch['pbc_atoms'] = self.ml_atom_indices
+        atoms_batch['pbc_idx'] = self.ml_idxp
+        atoms_batch['pbc_idx_j'] = ml_idxjp
 
         # Compute model properties
         results = {}

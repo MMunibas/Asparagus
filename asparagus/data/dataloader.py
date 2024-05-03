@@ -141,9 +141,11 @@ class DataLoader(torch.utils.data.DataLoader):
                 charge: (Natoms,) torch.Tensor
                 idx_i: (Npairs,) torch.Tensor
                 idx_j: (Npairs,) torch.Tensor
-                pbc_offset: (Npairs, 3) torch.Tensor
+                pbc_offset_ij: (Npairs, 3) torch.Tensor
+                idx_u: (Npairs,) torch.Tensor
+                idx_v: (Npairs,) torch.Tensor
+                pbc_offset_uv: (Npairs, 3) torch.Tensor
                 sys_i: (Natoms,) torch.Tensor
-                sys_ij: (Npairs,) torch.Tensor
 
         """
         

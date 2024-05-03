@@ -579,17 +579,11 @@ class Model_PaiNN(torch.nn.Module):
         charge = batch['charge']
         idx_i = batch['idx_i']
         idx_j = batch['idx_j']
+        idx_u = batch.get('idx_u')
+        idx_v = batch.get('idx_v')
         sys_i = batch['sys_i']
         
-        # Long-range atom pair cutoff
-        if batch.get('idx_u') is None:
-            idx_u = idx_i
-            idx_v = idx_j
-        else:
-            idx_u = batch.get('idx_u')
-            idx_v = batch.get('idx_v')
-
-        # PBC: Offset method
+        # PBC: Cartesian offset method
         pbc_offset_ij = batch.get('pbc_offset_ij')
         pbc_offset_uv = batch.get('pbc_offset_uv')
         
@@ -610,6 +604,20 @@ class Model_PaiNN(torch.nn.Module):
                 idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
                 idx_u=idx_u, idx_v=idx_v, pbc_offset_uv=pbc_offset_uv)
             )
+
+        # PBC: Supercluster approach - Point from image atoms to primary atoms
+        if pbc_idx_pointer is not None:
+            idx_i = pbc_idx_pointer[idx_i]
+            idx_j = pbc_idx_pointer[pbc_idx_j]
+
+        # Check long-range atom pair indices 
+        if idx_u is None:
+            # Assign atom pair indices
+            idx_u = idx_i
+            idx_v = idx_j
+        elif pbc_idx_pointer is not None:
+            idx_u = pbc_idx_pointer[idx_u]
+            idx_v = pbc_idx_pointer[idx_v]
 
         # Run graph model
         sfeatures, efeatures = self.graph_module(

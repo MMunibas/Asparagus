@@ -112,7 +112,7 @@ class Poly6Cutoff_range(torch.nn.Module):
         Initialize cutoff function.
         """
 
-        super(Poly6Cutoff_Width, self).__init__()
+        super(Poly6Cutoff_range, self).__init__()
 
         # Set cutoff value in the register for model parameters
         self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype))
@@ -258,7 +258,7 @@ class CosineCutoff_range(torch.nn.Module):
         Initialize cutoff function.
         """
 
-        super(CosineCutoff, self).__init__()
+        super(CosineCutoff_range, self).__init__()
 
         # Set cutoff value in the register for model parameters
         self.register_buffer("cutoff", torch.tensor([cutoff], dtype=dtype))

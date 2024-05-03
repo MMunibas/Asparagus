@@ -59,6 +59,7 @@ class DataContainer():
         (<= 1.0)].
     data_num_test: (int, float), optional, default 0.1 (10% of data)
         Number of test data points [absolute (>1) or relative (< 1.0)].
+    data_batch_size
     data_train_batch_size: int, optional, default 128
         Training batch size
     data_valid_batch_size: int, optional, default 128

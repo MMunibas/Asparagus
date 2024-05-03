@@ -57,7 +57,9 @@ settings.set_warn_level(-1)
 # Step 1: Generate System
 #-----------------------------------------------------------
 
+# Should ammonia be solvated in water:
 solvation = True
+# Two ways to setup ammonia are available (= 1 or = 2)
 setup = 1
 
 if setup == 1:
@@ -213,8 +215,11 @@ energy.show()
 # Step 4: Minimization
 #-----------------------------------------------------------
 
-if True:
-    
+file_mini_pdb = "charmm_data/mini_ammonia.pdb"
+file_mini_crd = "charmm_data/mini_ammonia.crd"
+
+if False or not os.path.exists(file_mini_crd):
+
     # Fix ML atoms
     cons_fix.setup(pycharmm.SelectAtoms(seg_id='AMM1'))
 
@@ -236,12 +241,18 @@ if True:
         'tolgrd': 1e-5})
 
     # Write pdb file
-    write.coor_pdb("charmm_data/mini_ammonia.pdb", title="Mini SD")
+    write.coor_pdb(file_mini_pdb, title="Mini SD")
+    write.coor_card(file_mini_crd, title="Mini SD")
 
 else:
     
-    # Read optimized coordinates
-    read.pdb("charmm_data/mini_ammonia.pdb")
+    # Read optimized coordinates - Do not read from pdb files
+    # as it yield a weird non-bonding atom pair bug where ML atoms
+    # are not excluded from non-bonding interaction.
+    read.coor_card(file_mini_crd)
+
+# Minimized custom energy
+energy.show()
 
 # Step 5: Heating - CHARMM, PhysNet
 #-----------------------------------------------------------
