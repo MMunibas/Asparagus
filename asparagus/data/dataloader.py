@@ -87,7 +87,6 @@ class DataLoader(torch.utils.data.DataLoader):
         self,
         cutoff: Optional[Union[float, List[float]]] = np.inf,
         store: Optional[bool] = False,
-        func_neighbor_list: Optional[str] = 'torchrs',
         device: Optional[str] = None,
         dtype: Optional[object] = None,
     ):

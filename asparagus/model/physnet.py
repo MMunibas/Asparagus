@@ -602,7 +602,7 @@ class Model_PhysNet(torch.nn.Module):
             atomic_numbers, positions, 
             idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
             idx_u=idx_u, idx_v=idx_v, pbc_offset_uv=pbc_offset_uv)
-        
+
         # PBC: Supercluster approach - Point from image atoms to primary atoms
         if pbc_idx_pointer is not None:
             idx_i = pbc_idx_pointer[idx_i]

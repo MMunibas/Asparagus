@@ -80,6 +80,7 @@ def flatten_array_like(x):
 def segment_sum(
     data: torch.Tensor,
     segment_ids: torch.Tensor,
+    num_segments: Optional[int] = None,
     device: Optional[str] = 'cpu',
     debug: Optional[bool] = False,
 ) -> torch.Tensor:
@@ -95,6 +96,9 @@ def segment_sum(
         A pytorch tensor of the data for segmented summation.
     segment_ids: torch.Tensor, shape(N)
         A 1-D tensor containing the indices for the segmentation.
+    num_segments: int, optional, default None
+        The number of segments. If None and with the requirement of a sorted
+        'segment_ids', this number should be the last element plus 1.
 
     Returns
     -------
@@ -121,7 +125,8 @@ def segment_sum(
                 + f"dimension 0 but are ({data.shape[0]:d}) and "
                 + f"({segment_ids.shape[0]}).")
 
-    num_segments = len(torch.unique(segment_ids))
+    if num_segments is None:
+        num_segments = segment_ids[-1] + 1 # len(torch.unique(segment_ids))
     return unsorted_segment_sum(
         data, segment_ids, num_segments, device=data.device)
 

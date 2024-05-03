@@ -362,6 +362,7 @@ if True:
     timestep = 0.00025   # 0.25 fs
     nsteps = 50.*1./timestep # 50 ps
     nsavc = 0.01*1./timestep # every 10 fs
+    temp = 300.0
 
     pmass = int(np.sum(select.get_property('mass'))/50.0)
     tmass = int(pmass*10)
@@ -401,7 +402,7 @@ if True:
         'pint pconst pref': 1,
         'pgamma': 5,
         'pmass': pmass,
-        'hoover reft': 300,
+        'hoover reft': temp,
         'tmass': tmass,
         'echeck':-1}
 
@@ -420,6 +421,7 @@ if True:
     timestep = 0.00025   # 0.25 fs
     nsteps = 100.*1./timestep # 50 ps
     nsavc = 0.01*1./timestep # every 10 fs
+    temp = 300.0
 
     pmass = int(np.sum(select.get_property('mass'))/50.0)
     tmass = int(pmass*10)
@@ -475,7 +477,7 @@ if True:
             'pint pconst pref': 1,
             'pgamma': 5,
             'pmass': pmass,
-            'hoover reft': 300,
+            'hoover reft': temp,
             'tmass': tmass,
             'echeck':-1}
 
