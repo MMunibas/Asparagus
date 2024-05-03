@@ -595,13 +595,20 @@ def in_cuda(x, verbose=False):
     bool
         True, if option of torch input matches, else False.
     """
+    val_cuda = x.is_cuda
+
+    if val_cuda:
+        message = "Tensor is in CUDA"
+    else:
+        message = "Tensor is in CPU"
+
     if verbose:
         return (
-            x.is_cuda, 
+            val_cuda,
             type(x), 
-            "Tensor is in CUDA")
+            message)
     else:
-        return x.is_cuda
+        return val_cuda
 
 def is_attached(x, verbose=False):
     """
@@ -620,10 +627,18 @@ def is_attached(x, verbose=False):
     bool
         True, if option of torch input matches, else False.
     """
+    x_attached = x.is_leaf
+
+    if x_attached:
+        message = "Tensor is attached"
+    else:
+        message = "Tensor is detached"
+
+
     if verbose:
         return (
-            x.is_leaf, 
+            x_attached,
             type(x), 
-            "Tensor is attached")
+            message)
     else:
-        return x.is_leaf
+        return x_attached

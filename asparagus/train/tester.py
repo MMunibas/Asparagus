@@ -117,6 +117,10 @@ class Tester:
         # Update global configuration dictionary
         config.update(config_update)
 
+        # Assign module variable parameters from configuration
+        self.device = config.get('device')
+        self.dtype = config.get('dtype')
+
         ################################
         # # # Check Data Container # # #
         ################################
@@ -330,6 +334,9 @@ class Tester:
             datasubset.init_neighbor_list(
                 cutoff=model_calculator.model_cutoff)
 
+            # Set device
+            datasubset.device = self.device
+
             # Prepare dictionary for property values and number of atoms per
             # system
             test_prediction = {prop: [] for prop in test_properties}
@@ -341,7 +348,6 @@ class Tester:
 
             # Loop over data batches
             for batch in datasubset:
-
                 # Predict model properties from data batch
                 prediction = model_calculator(batch)
 
@@ -356,8 +362,8 @@ class Tester:
                 # Store prediction and reference data
                 Nsys = len(batch['atoms_number'])
                 for prop in eval_properties:
-                    data_prediction = prediction[prop].detach().numpy()
-                    data_reference = batch[prop].detach().numpy()
+                    data_prediction = prediction[prop].detach().cpu().numpy()
+                    data_reference = batch[prop].detach().cpu().numpy()
                     if data_prediction.shape[0] == len(batch['sys_i']):
                         data_prediction = [
                             list(data_prediction[isys])
@@ -374,7 +380,7 @@ class Tester:
                     test_reference[prop] += list(data_reference)
 
                 # Store atom numbers
-                test_prediction['atoms_number'] += list(batch['atoms_number'])
+                test_prediction['atoms_number'] += list(batch['atoms_number'].cpu().numpy())
 
             # Print metrics
             if verbose:

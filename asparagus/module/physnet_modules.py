@@ -163,7 +163,7 @@ class Input_PhysNet(torch.nn.Module):
         
         # Initialize radial cutoff function
         self.cutoff = layer.get_cutoff_fn(self.input_cutoff_fn)(
-            self.input_radial_cutoff)
+            self.input_radial_cutoff, device=self.device, dtype=self.dtype)
         
         # Get upper RBF center range
         if self.input_rbf_center_end is None:

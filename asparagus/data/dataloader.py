@@ -62,13 +62,18 @@ class DataLoader(torch.utils.data.DataLoader):
         # neighbor list functions
         self.dataset = dataset
         self.data_batch_size = data_batch_size
-        
+
+        if device != 'cpu':
+            self.data_num_workers = data_num_workers
+        else:
+            self.data_num_workers = 0
+
         # Initiate DataLoader
         super(DataLoader, self).__init__(
             dataset=dataset,
             batch_size=data_batch_size,
             shuffle=data_shuffle,
-            num_workers=data_num_workers,
+            num_workers=self.data_num_workers,
             collate_fn=self.data_collate_fn,
             pin_memory=data_pin_memory,
             **kwargs
@@ -105,18 +110,22 @@ class DataLoader(torch.utils.data.DataLoader):
         # Check input parameter
         if device is None:
             device = self.device
+        else:
+            self.device = device
         if dtype is None:
             dtype = self.dtype
+        else:
+            self.dtype = dtype
 
         # Initialize neighbor list creator
         self.neighbor_list = utils.TorchNeighborListRangeSeparated(
             cutoff, device, dtype)
-        
+
         return
 
     def data_collate_fn(
         self,
-        batch: Dict[str, torch.Tensor],
+        batch: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         """
         Prepare batch properties from a dataset such as pair indices and
@@ -161,7 +170,7 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # System segment index of atom i
         coll_batch['sys_i'] = torch.repeat_interleave(
-            torch.arange(Nsys, dtype=torch.int64), 
+            torch.arange(Nsys, dtype=torch.int64,device=self.device),
             repeats=coll_batch['atoms_number'], dim=0).to(
                 device=self.device, dtype=torch.int64)
 
@@ -190,7 +199,7 @@ class DataLoader(torch.utils.data.DataLoader):
         # Compute the cumulative segment size number
         atomic_numbers_cumsum = torch.cat(
             [
-                torch.zeros((1,), dtype=coll_batch['sys_i'].dtype),
+                torch.zeros((1,), dtype=coll_batch['sys_i'].dtype, device=self.device),
                 torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
             ],
             dim=0).to(
@@ -218,7 +227,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 # Concatenate numeric data
                 else:
                     coll_batch[prop_i] = torch.tensor(
-                        [b[prop_i] for b in batch]).to(
+                        [b[prop_i] for b in batch],
                             device=self.device, dtype=self.dtype)
 
         # Compute pair indices and position offsets
