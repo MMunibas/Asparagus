@@ -263,9 +263,9 @@ class D3_dispersion(torch.nn.Module):
 
                 r = (cn1 - nci) ** 2 + (cn2 - ncj) ** 2
                 r_save = torch.where(r < r_save, r, r_save)
-                #print(torch.max(r_save))
+
                 c6mem = torch.where(r < r_save, cn0, c6mem)
-                #print(torch.max(c6mem))
+
                 tmp1 = torch.exp(self.d3_k3 * r)
                 rsum = rsum + torch.where(
                     cn0 > 0.0, 

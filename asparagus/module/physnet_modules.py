@@ -156,7 +156,8 @@ class Input_PhysNet(torch.nn.Module):
         # Initialize atomic feature vectors
         self.atom_features = torch.nn.Embedding(
             self.input_n_maxatom + 1,
-            self.input_n_atombasis, 
+            self.input_n_atombasis,
+            max_norm=1.0,
             padding_idx=0,
             device=self.device, 
             dtype=self.dtype)
