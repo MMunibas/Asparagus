@@ -398,11 +398,11 @@ class Configuration():
 
         # Convert config dictionary to json compatible dictionary
         config_dump = self.make_dumpable(self.config_dict)
-        
+
         # Dumb converted config dictionary
         if config_file is None:
             config_file = self.config_file
-        with open(self.config_file, 'w') as f:
+        with open(config_file, 'w') as f:
             json.dump(
                 config_dump, f, 
                 indent=self.config_indent,

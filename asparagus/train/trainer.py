@@ -654,6 +654,7 @@ class Trainer:
             checkpoint_label='last')
 
         trainer_epoch_start = 1
+        best_loss = None
         if latest_checkpoint is not None:
             
             # Assign model parameters
@@ -672,9 +673,9 @@ class Trainer:
             
             # Initialize best total loss value of validation reference data
             if reset_best_loss or latest_checkpoint.get('best_loss') is None:
-                self.best_loss = None
+                best_loss = None
             else:
-                self.best_loss.load_state_dict(latest_checkpoint['best_loss'])
+                best_loss = load_state_dict(latest_checkpoint['best_loss'])
             
         # Initialize training mode for calculator
         self.model_calculator.train()
@@ -820,7 +821,8 @@ class Trainer:
                     model=self.model_calculator,
                     optimizer=self.trainer_optimizer,
                     scheduler=self.trainer_scheduler,
-                    epoch=epoch)
+                    epoch=epoch,
+                    best_loss=best_loss)
 
             # Perform model validation each interval
             if not (epoch % self.trainer_validation_interval):
@@ -850,24 +852,24 @@ class Trainer:
 
                 # Check for model improvement and save as best model eventually
                 if (
-                    self.best_loss is None
-                    or metrics_valid['loss'] < self.best_loss
+                    best_loss is None
+                    or metrics_valid['loss'] < best_loss
                 ):
 
                     # Store best metrics
                     metrics_best = metrics_valid
 
                     # Update best total loss value
-                    self.best_loss = metrics_valid['loss']
+                    best_loss = metrics_valid['loss']
 
                     # Save model calculator state
                     self.filemanager.save_checkpoint(
                         model=self.model_calculator,
                         optimizer=self.trainer_optimizer,
                         scheduler=self.trainer_scheduler,
-                        best_loss=self.best_loss,
                         epoch=epoch,
-                        best=True)
+                        best=True,
+                        best_loss=best_loss)
 
                     # Evaluation of the test set if requested
                     if self.trainer_evaluate_testset:

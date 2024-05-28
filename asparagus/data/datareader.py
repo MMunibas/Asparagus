@@ -1313,7 +1313,7 @@ class DataReader():
                 unit_conversion['positions']*atoms.get_positions())
             atoms_properties['cell'] = (
                 unit_conversion['positions']
-                * np.array(list(atoms.get_cell())))[0]
+                * np.array(list(atoms.get_cell()[:])))[0]
             atoms_properties['pbc'] = atoms.get_pbc()
             if properties.get('charge') is None:
                 atoms_properties['charge'] = 0.0
@@ -1344,7 +1344,7 @@ class DataReader():
                     unit_conversion['positions']*atoms.get_positions())
                 atoms_properties['cell'] = (
                     unit_conversion['positions']
-                    * np.array(list(atoms.get_cell())))[0]
+                    * np.array(list(atoms.get_cell()[:])))[0]
                 atoms_properties['pbc'] = atoms.get_pbc()
                 if properties.get('charge') is None:
                     atoms_properties['charge'] = 0.0

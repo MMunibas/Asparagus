@@ -17,14 +17,14 @@ flag_sampler_all = False
 flag_sampler_shell = False
 flag_sampler_slurm = False
 
-flag_model_physnet = False
-flag_train_physnet = False
+flag_model_physnet = True
+flag_train_physnet = True
 flag_ase_physnet = False
 
 flag_model_painn = False
 flag_train_painn = False
 
-flag_train_cuda = True
+flag_train_cuda = False
 
 
 #==============================================================================

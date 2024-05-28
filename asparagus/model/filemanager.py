@@ -144,6 +144,7 @@ class FileManager():
         scheduler: object,
         epoch: int,
         best: Optional[bool] = False,
+        best_loss: Optional[float] = None,
         num_checkpoint: Optional[int] = None,
         max_checkpoints: Optional[int] = None,
     ):
@@ -160,6 +161,8 @@ class FileManager():
             Torch scheduler
         best: bool, optional, default False
             If True, save as best model checkpoint file.
+        best_loss: float, optional, default None
+            Best loss value of the training run.
         num_checkpoint: int, optional, default None
             Alternative checkpoint index other than epoch.
         max_checkpoints: int, optional, default 1
@@ -177,6 +180,7 @@ class FileManager():
         if best:
             state = {
                 'model_state_dict': model.state_dict(),
+                'best_loss': best_loss,
                 'epoch': epoch,
                 }
         # Else the complete current model training state
@@ -186,6 +190,7 @@ class FileManager():
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'epoch': epoch,
+                'best_loss': best_loss,
                 }
 
         # Checkpoint file name
@@ -345,7 +350,7 @@ class FileManager():
     def save_config(
         self,
         config: object,
-        max_backup: Optional[int] = 5,
+        max_backup: Optional[int] = 1,
     ):
         """
         Save config object in current model directory with the default file
