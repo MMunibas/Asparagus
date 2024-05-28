@@ -75,6 +75,7 @@ class Trainer:
         Exponential moving average decay rate
     trainer_max_gradient_norm: float, optional, default 1000.0
         Maximum model parameter gradient norm to clip its step size.
+        If None, parameter gradient clipping is deactivated.
     trainer_save_interval: int, optional, default 5
         Interval between epoch to save current and best set of model
         parameters.
@@ -131,7 +132,7 @@ class Trainer:
         'trainer_scheduler_args':       [utils.is_dictionary],
         'trainer_ema':                  [utils.is_bool],
         'trainer_ema_decay':            [utils.is_numeric],
-        'trainer_max_gradient_norm':    [utils.is_numeric],
+        'trainer_max_gradient_norm':    [utils.is_numeric, utils.is_None],
         'trainer_save_interval':        [utils.is_integer],
         'trainer_validation_interval':  [utils.is_integer],
         'trainer_evaluate_testset':     [utils.is_bool],
@@ -624,6 +625,7 @@ class Trainer:
 
     def run(
         self,
+        reset_best_loss=False,
         verbose=True,
         debug=False,
     ):
@@ -632,6 +634,9 @@ class Trainer:
 
         Parameters
         ----------
+        reset_best_loss: bool, optional, default False
+            If False, continue model potential validation from stored best
+            loss value. Else, reset best loss value to None.
         verbose: bool, optional, default True
             Show progress bar for the current epoch.
         debug: bool, optional, dafault False
@@ -650,9 +655,11 @@ class Trainer:
 
         trainer_epoch_start = 1
         if latest_checkpoint is not None:
+            
             # Assign model parameters
             self.model_calculator.load_state_dict(
                 latest_checkpoint['model_state_dict'])
+            
             # Assign optimizer, scheduler and epoch parameter if available
             if latest_checkpoint.get('optimizer_state_dict') is not None:
                 self.trainer_optimizer.load_state_dict(
@@ -662,15 +669,18 @@ class Trainer:
                     latest_checkpoint['scheduler_state_dict'])
             if latest_checkpoint.get('epoch') is not None:
                 trainer_epoch_start = latest_checkpoint['epoch'] + 1
-
+            
+            # Initialize best total loss value of validation reference data
+            if reset_best_loss or latest_checkpoint.get('best_loss') is None:
+                self.best_loss = None
+            else:
+                self.best_loss.load_state_dict(latest_checkpoint['best_loss'])
+            
         # Initialize training mode for calculator
         self.model_calculator.train()
         torch.set_grad_enabled(True)
         if debug:
             torch.autograd.set_detect_anomaly(True)
-
-        # Initialize best total loss value of validation reference data
-        self.best_loss = None
 
         # Reset property metrics
         metrics_best = self.reset_metrics()
@@ -847,11 +857,15 @@ class Trainer:
                     # Store best metrics
                     metrics_best = metrics_valid
 
+                    # Update best total loss value
+                    self.best_loss = metrics_valid['loss']
+
                     # Save model calculator state
                     self.filemanager.save_checkpoint(
                         model=self.model_calculator,
                         optimizer=self.trainer_optimizer,
                         scheduler=self.trainer_scheduler,
+                        best_loss=self.best_loss,
                         epoch=epoch,
                         best=True)
 
@@ -877,9 +891,6 @@ class Trainer:
                                 self.summary_writer.add_scalar(
                                     prop, metrics_best[prop],
                                     global_step=epoch)
-
-                    # Update best total loss     value
-                    self.best_loss = metrics_valid['loss']
 
                 # Print validation metrics summary
                 msg = (

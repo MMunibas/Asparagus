@@ -719,7 +719,7 @@ class Model_PaiNN(torch.nn.Module):
                         results['atomic_dipoles'], sys_i,
                         device=self.device).reshape(-1, 3)
                     )
-
+        print(results['energy'])
         return results
 
     def calculate(

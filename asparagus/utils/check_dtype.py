@@ -51,6 +51,9 @@ def is_None(x, verbose=False):
     else:
         return (x is None)
 
+def is_none(x, verbose=False):
+    return is_None(x, verbose=verbose)
+
 def is_string(x, verbose=False):
     """
     Check if the input is a string

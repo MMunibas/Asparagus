@@ -169,7 +169,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
             # Check if shifts are needed for periodic boundary conditions
             if cell[iseg].dim() == 1:
-                if cell[iseg].dim()[0] == 3:
+                if cell[iseg].shape[0] == 3:
                     cell_seg = cell[iseg].diag()
                 else:
                     cell_seg = cell[iseg].reshape(3,3)
