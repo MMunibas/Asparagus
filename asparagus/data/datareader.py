@@ -574,8 +574,7 @@ class DataReader():
                     atoms_properties['positions'] = (
                         unit_conversion['positions']*atoms.get_positions())
                     atoms_properties['cell'] = (
-                        unit_conversion['positions']
-                        * np.array(list(atoms.get_cell())))[0]
+                        unit_conversion['positions']*atoms.get_cell()[:])
                     atoms_properties['pbc'] = atoms.get_pbc()
                     if 'charge' in source:
                         atoms_properties['charge'] = source['charge']
@@ -629,8 +628,7 @@ class DataReader():
                         atoms_properties['positions'] = (
                             unit_conversion['positions']*atoms.get_positions())
                         atoms_properties['cell'] = (
-                            unit_conversion['positions']
-                            * np.array(atoms.get_cell()))[0]
+                            unit_conversion['positions']*atoms.get_cell()[:])
                         atoms_properties['pbc'] = atoms.get_pbc()
                         if 'charge' in source:
                             atoms_properties['charge'] = source['charge']
@@ -1164,8 +1162,7 @@ class DataReader():
                 atoms_properties['positions'] = (
                     unit_conversion['positions']*atoms.get_positions())
                 atoms_properties['cell'] = (
-                    unit_conversion['positions']
-                    * np.array(list(atoms.get_cell())))[0]
+                    unit_conversion['positions']*atoms.get_cell()[:])
                 atoms_properties['pbc'] = atoms.get_pbc()
                 if 'charge' in properties.parameters:
                     atoms_properties['charge'] = (
@@ -1217,8 +1214,7 @@ class DataReader():
                     atoms_properties['positions'] = (
                         unit_conversion['positions']*atoms.get_positions())
                     atoms_properties['cell'] = (
-                        unit_conversion['positions']
-                        * np.array(list(atoms.get_cell())))[0]
+                        unit_conversion['positions']*atoms.get_cell()[:])
                     atoms_properties['pbc'] = atoms.get_pbc()
                     if 'charge' in properties.parameters:
                         atoms_properties['charge'] = (
@@ -1312,8 +1308,7 @@ class DataReader():
             atoms_properties['positions'] = (
                 unit_conversion['positions']*atoms.get_positions())
             atoms_properties['cell'] = (
-                unit_conversion['positions']
-                * np.array(list(atoms.get_cell()[:])))[0]
+                unit_conversion['positions']*atoms.get_cell()[:])
             atoms_properties['pbc'] = atoms.get_pbc()
             if properties.get('charge') is None:
                 atoms_properties['charge'] = 0.0

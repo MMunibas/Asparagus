@@ -149,7 +149,7 @@ def get_ase_properties(
     properties['positions'] = system.get_positions()
 
     # Periodic boundary conditions
-    properties['cell'] = list(system.get_cell())[0]
+    properties['cell'] = system.get_cell()[:]
     properties['pbc'] = system.get_pbc()
 
     # Total charge
