@@ -20,28 +20,20 @@ from asparagus.interface.orca_ase import ORCA_Dipole
 # Asparagus Models
 configs = [
     'nh3_physnet/nh3_physnet.json', 
-    'nh3_painn/nh3_painn.json',
-    ]
+    'nh3_painn/nh3_painn.json']
 model_dir = [
-    'nh3_physnet/model_nh3_physnet', 
-    'nh3_painn/model_nh3_painn', 
-    ]
+    'nh3_physnet/model_nh3_physnet',
+    'nh3_painn/model_nh3_painn']
 ref_db = [
     'nh3_physnet/nh3_meta.db', 
-    'nh3_painn/nh3_meta.db', 
-    ]
-ref_xyz = [
-    'nh3_physnet/nh3_c3v.xyz',
-    'nh3_painn/nh3_c3v.xyz', 
-    ]
+    'nh3_painn/nh3_meta.db']
 labels = [
     'PhysNet',
-    'PaiNN',
-    ]
+    'PaiNN']
 colors = [
     'red',
     'blue',
-    ]
+    'green']
 
 #======================================
 # N-H Bond Distance Scan
@@ -66,7 +58,7 @@ figsize = (12, 4)
 sfig = float(figsize[0])/float(figsize[1])
 left = 0.08
 bottom = 0.15
-column = [0.35, 0.05]
+column = [0.35, 0.10]
 row = [column[0]*sfig]
 
 # Initialize plot figure
@@ -84,19 +76,18 @@ refmax = -np.inf
 panels = ['A', 'B', 'C']
 
 # Iterate over models
-for imodel, (config, mdir, db, fxyz, label) in enumerate(
-    zip(configs, model_dir, ref_db, ref_xyz, labels)):
+for imodel, (config, mdir, db, label) in enumerate(
+    zip(configs, model_dir, ref_db, labels)):
     
     print(f"Test model {mdir:s} trained by NH3 data from {label:s}.")
     
     # Read system
-    system_model = io.read(fxyz)
-    system_ref = io.read(fxyz)
+    system_model = io.read('../../data/nh3_c3v.xyz')
+    system_ref = io.read('../../data/nh3_c3v.xyz')
     
     # Get calculators
     model = Asparagus(
         config=config,
-        config_file='config_eval.json',
         model_directory=mdir)
     calc_model = model.get_ase_calculator()
     calc_ref = ORCA_Dipole(
@@ -224,19 +215,18 @@ if os.path.exists('config_eval.json'):
 msg = "NH3 Harmonic Analysis\n"
 
 # Iterate over models
-for imodel, (config, mdir, db, fxyz, label) in enumerate(
-    zip(configs, model_dir, ref_db, ref_xyz, labels)):
+for imodel, (config, mdir, db, label) in enumerate(
+    zip(configs, model_dir, ref_db, labels)):
     
     print(f"Test model {mdir:s} trained by NH3 data from {label:s}.")
     
     # Read system
-    system_model = io.read(fxyz)
-    system_ref = io.read(fxyz)
+    system_model = io.read('../../data/nh3_c3v.xyz')
+    system_ref = io.read('../../data/nh3_c3v.xyz')
     
     # Get calculators
     model = Asparagus(
         config=config,
-        config_file='config_eval.json',
         model_directory=mdir)
     calc_model = model.get_ase_calculator()
     calc_ref = ORCA_Dipole(
@@ -335,18 +325,17 @@ refmin = np.inf
 refmax = -np.inf
 
 # Iterate over models
-for imodel, (config, mdir, db, fxyz, label) in enumerate(
-    zip(configs, model_dir, ref_db, ref_xyz, labels)):
+for imodel, (config, mdir, db, label) in enumerate(
+    zip(configs, model_dir, ref_db, labels)):
     
     print(f"Test model {mdir:s} trained by NH3 data from {label:s}.")
     
     # Read system
-    system_model = io.read(fxyz)
+    system_model = io.read('../../data/nh3_c3v.xyz')
     
     # Get calculators
     model = Asparagus(
         config=config,
-        config_file='config_eval.json',
         model_directory=mdir)
     calc_model = model.get_ase_calculator()
     
@@ -383,7 +372,7 @@ for imodel, (config, mdir, db, fxyz, label) in enumerate(
         label=label)
 
 # Read system
-system_ref = io.read(ref_xyz[0])
+system_ref = io.read('../../data/nh3_c3v.xyz')
 
 # Get calculator
 calc_ref = ORCA_Dipole(

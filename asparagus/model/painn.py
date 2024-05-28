@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Tuple, Union, Any
 
 import numpy as np 
 
+import ase
 import torch
 
 from .. import model
@@ -723,7 +724,7 @@ class Model_PaiNN(torch.nn.Module):
 
     def calculate(
         self,
-        atoms: ase.Atoms
+        atoms: ase.Atoms,
         charge: Optional[float] = 0.0,
     ) -> Dict[str, torch.Tensor]:
 

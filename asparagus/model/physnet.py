@@ -711,7 +711,7 @@ class Model_PhysNet(torch.nn.Module):
 
     def calculate(
         self,
-        atoms: ase.Atoms
+        atoms: ase.Atoms,
         charge: Optional[float] = 0.0,
     ) -> Dict[str, torch.Tensor]:
 
