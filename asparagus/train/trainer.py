@@ -303,6 +303,13 @@ class Trainer:
             self.model_calculator.get_trainable_parameters(),
             self.trainer_optimizer_args)
 
+
+        # Check maximum gradient norm
+        if self.trainer_max_gradient_norm is None:
+            self.gradient_clipping = False
+        else:
+            self.gradient_clipping = True
+
         #############################
         # # # Prepare Scheduler # # #
         #############################
@@ -734,7 +741,8 @@ class Trainer:
                         length=42)
 
                 # Reset optimizer gradients
-                self.trainer_optimizer.zero_grad(set_to_none=True)
+                self.trainer_optimizer.zero_grad(
+                    set_to_none=(not self.gradient_clipping))
 
                 # Predict model properties from data batch
                 prediction = self.model_calculator(batch)
@@ -748,9 +756,10 @@ class Trainer:
                 loss.backward()
 
                 # Clip parameter gradients
-                torch.nn.utils.clip_grad_norm_(
-                    self.model_calculator.parameters(),
-                    self.trainer_max_gradient_norm)
+                if self.gradient_clipping:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model_calculator.parameters(),
+                        self.trainer_max_gradient_norm)
 
                 # Update model parameters
                 self.trainer_optimizer.step()

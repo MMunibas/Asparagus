@@ -720,3 +720,66 @@ class Model_PaiNN(torch.nn.Module):
                     )
 
         return results
+
+    def calculate(
+        self,
+        atoms: ase.Atoms
+        charge: Optional[float] = 0.0,
+    ) -> Dict[str, torch.Tensor]:
+
+        """
+        Forward pass of PaiNN Calculator model from ASE Atoms object.
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            ASE Atoms object to calculate properties
+        charge: float, optional, default 0.0
+            Total system charge
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+
+        # Initialize atoms batch
+        atoms_batch = {}
+        
+        # Number of atoms
+        Natoms = len(atoms)
+        atoms_batch['atoms_number'] = torch.tensor(
+            [Natoms], dtype=torch.int64)
+
+        # Atomic number
+        atoms_batch['atomic_numbers'] = torch.tensor(
+            atoms.get_atomic_numbers(), dtype=torch.int64)
+
+        # Atom positions
+        atoms_batch['positions'] = torch.zeros(
+            [Natoms, 3], dtype=torch.float64)
+        
+        # Atom periodic boundary conditions
+        atoms_batch['pbc'] = torch.tensor(
+            atoms.get_pbc(), dtype=torch.bool)
+        
+        # Atom cell information
+        atoms_batch['cell'] = torch.tensor(
+            atoms.get_cell()[:], dtype=torch.float64)
+        
+        # Atom segment indices, just one atom segment allowed
+        atoms_batch['sys_i'] = torch.zeros(
+            Natoms, dtype=torch.int64)
+
+        # Total atomic system charge
+        atoms_batch['charge'] = torch.tensor(
+            [charge], dtype=torch.float64)
+        
+        neighbor_list = utils.TorchNeighborListRangeSeparated(
+            self.model_cutoff,
+            self.device,
+            self.dtype)
+        atoms_batch = neighbor_list(atoms_batch)
+
+        return self.forward(atoms_batch)

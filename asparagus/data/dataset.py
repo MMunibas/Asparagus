@@ -61,6 +61,11 @@ class DataSet():
             data_file_format = data_file.split('.')[-1]
         self.data_file_format = data_file_format
 
+        # Check for data path existence
+        path, _ = os.path.split(self.data_file)
+        if not os.path.isdir(path):
+            os.makedirs(path)
+
         # If overwrite, remove old DataSet file
         if os.path.exists(data_file) and data_overwrite:
             os.remove(data_file)
