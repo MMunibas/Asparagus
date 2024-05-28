@@ -361,13 +361,13 @@ class Model_PaiNN(torch.nn.Module):
 
         # Assign dispersion interaction module
         if self.model_dispersion:
-            
+
             # Grep dispersion correction parameters
             d3_s6 = config.get("model_dispersion_d3_s6")
             d3_s8 = config.get("model_dispersion_d3_s8")
             d3_a1 = config.get("model_dispersion_d3_a1")
             d3_a2 = config.get("model_dispersion_d3_a2")
-            
+
             # Get Grimme's D3 dispersion model calculator
             self.dispersion_module = module.D3_dispersion(
                 self.model_cutoff,
@@ -719,7 +719,7 @@ class Model_PaiNN(torch.nn.Module):
                         results['atomic_dipoles'], sys_i,
                         device=self.device).reshape(-1, 3)
                     )
-        print(results['energy'])
+
         return results
 
     def calculate(
