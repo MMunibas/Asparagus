@@ -628,6 +628,7 @@ class Trainer:
         reset_best_loss=False,
         verbose=True,
         debug=False,
+        **kwargs,
     ):
         """
         Train model calculator.

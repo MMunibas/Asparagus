@@ -710,7 +710,7 @@ class Asparagus():
         # # # Run Model Calculator Trainer # # #
         ########################################
 
-        trainer.run()
+        trainer.run(**kwargs)
 
         return
     
