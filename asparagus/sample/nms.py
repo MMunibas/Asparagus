@@ -206,7 +206,7 @@ class NormalModeScanner(sample.Sampler):
         
         # Check sample system queue
         if sample_systems_queue is None:
-            sample_systems_queue = queue.Queue
+            sample_systems_queue = queue.Queue()
         
         # Optimize sample systems or take as normal mode analysis input
         if self.sample_systems_optimize:
@@ -255,7 +255,7 @@ class NormalModeScanner(sample.Sampler):
         else:
             
             # Set sample system queue as optimized sample system queue
-            sample_input_queue = self.sample_systems_queue
+            sample_input_queue = sample_systems_queue
 
         # Run normal mode scanning
         while not sample_input_queue.empty():
@@ -924,7 +924,11 @@ class NormalModeSampler(sample.Sampler):
             in {sample_directory}/vib_{isample} will be deleted.
             Else, results from available  checkpoint files will be used.
         """
-        
+
+        # Check sample system queue
+        if sample_systems_queue is None:
+            sample_systems_queue = queue.Queue()
+
         # Optimize sample systems or take as normal mode analysis input
         if self.sample_systems_optimize:
             
@@ -972,7 +976,7 @@ class NormalModeSampler(sample.Sampler):
         else:
             
             # Set sample system queue as optimized sample system queue
-            sample_input_queue = self.sample_systems_queue
+            sample_input_queue = sample_systems_queue
 
         # Run normal mode sampling
         while not sample_input_queue.empty():

@@ -624,7 +624,7 @@ class Sampler:
 
     def run_systems(
         self,
-        sample_systems_queue: queue.Queue,
+        sample_systems_queue: Optional[queue.Queue] = None,
         **kwargs,
     ):
         """
@@ -637,6 +637,10 @@ class Sampler:
             input will be added. If not defined, an empty queue will be 
             assigned.
         """
+
+        # Check sample system queue
+        if sample_systems_queue is None:
+            sample_systems_queue = queue.Queue()
 
         # Initialize thread continuation flag
         self.thread_keep_going = np.array(
@@ -672,6 +676,8 @@ class Sampler:
             # Wait for threads to finish
             for thread in threads:
                 thread.join()
+        
+        return
         
     def run_system(
         self, 

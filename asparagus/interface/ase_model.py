@@ -4,7 +4,6 @@ import logging
 from typing import Optional, List, Dict, Tuple, Union, Any
 
 import ase
-from xtb.ase.calculator import XTB
 from .orca_ase import ORCA_Dipole
 from .shell_ase import ShellCalculator
 from .slurm_ase import SlurmCalculator
@@ -18,9 +17,9 @@ __all__ = [
     'ase_calculator_units', 'get_ase_calculator', 'get_ase_properties']
 
 
-# ======================================
+#======================================
 # ASE Calculator Units
-# ======================================
+#======================================
 
 ase_calculator_units = {
     'positions':        'Ang',
@@ -32,16 +31,37 @@ ase_calculator_units = {
     'dipole':           'eAng',
     }
 
+#======================================
+# ASE Calculator Provision
+#======================================
 
-# ======================================
-# Calculator Assignment
-# ======================================
+def get_xtb():
+    from xtb.ase.calculator import XTB
+    return XTB
+
+def get_orca():
+    from .orca_ase import ORCA_Dipole
+    return ORCA_Dipole
+
+def get_shell():
+    from .shell_ase import ShellCalculator
+    return ShellCalculator
+
+def get_slurm():
+    from .slurm_ase import SlurmCalculator
+    return SlurmCalculator
+
+
+
+#======================================
+# ASE Calculator Assignment
+#======================================
 
 ase_calculator_avaiable = {
     'XTB'.lower(): XTB,
-    'ORCA'.lower(): ORCA_Dipole,
-    'Shell'.lower(): ShellCalculator,
-    'Slurm'.lower(): SlurmCalculator,
+    'ORCA'.lower(): get_orca,
+    'Shell'.lower(): get_shell,
+    'Slurm'.lower(): get_slurm,
     }
 
 def get_ase_calculator(

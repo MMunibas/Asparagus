@@ -297,6 +297,10 @@ class MetaSampler(sample.Sampler):
             input will be added. If not defined, an empty queue will be 
             assigned.
         """
+
+        # Check sample system queue
+        if sample_systems_queue is None:
+            sample_systems_queue = queue.Queue
         
         # Initialize thread continuation flag
         self.thread_keep_going = np.array(

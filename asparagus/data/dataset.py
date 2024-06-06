@@ -63,7 +63,7 @@ class DataSet():
 
         # Check for data path existence
         path, _ = os.path.split(self.data_file)
-        if not os.path.isdir(path):
+        if path and not os.path.isdir(path):
             os.makedirs(path)
 
         # If overwrite, remove old DataSet file
