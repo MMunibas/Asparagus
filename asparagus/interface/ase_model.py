@@ -58,7 +58,7 @@ def get_slurm():
 #======================================
 
 ase_calculator_avaiable = {
-    'XTB'.lower(): XTB,
+    'XTB'.lower(): get_xtb,
     'ORCA'.lower(): get_orca,
     'Shell'.lower(): get_shell,
     'Slurm'.lower(): get_slurm,
@@ -105,7 +105,7 @@ def get_ase_calculator(
         # Initialize ASE calculator
         try:
             calculator_tag = calculator
-            calculator = ase_calculator_avaiable[calculator.lower()](
+            calculator = ase_calculator_avaiable[calculator.lower()]()(
                 **calculator_args)
         except TypeError as error:
             logger.error(error)
