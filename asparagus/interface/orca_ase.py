@@ -6,11 +6,10 @@ import re
 import numpy as np
 
 from ase.units import Hartree, Bohr
-from ase.io.orca import write_orca
 from ase.calculators.calculator import FileIOCalculator, Parameters, ReadError
 
 
-class ORCA_Dipole(FileIOCalculator):
+class ORCA(FileIOCalculator):
 
     implemented_properties = ['energy', 'forces', 'dipole']
 
@@ -75,7 +74,7 @@ class ORCA_Dipole(FileIOCalculator):
         if self.pcpot:  # also write point charge file and add things to input
             p['pcpot'] = self.pcpot
 
-        write_orca(atoms, **p)
+        self.write_orca(atoms, **p)
 
     def read(self, label):
         FileIOCalculator.read(self, label)
@@ -155,6 +154,38 @@ class ORCA_Dipole(FileIOCalculator):
         self.pcpot = PointChargePotential(mmcharges, label=self.label)
         return self.pcpot
 
+    def write_orca(self, atoms, **params):
+        ''' Function to write ORCA input file '''
+        charge = params['charge']
+        mult = params['mult']
+        label = params['label']
+
+        if 'pcpot' in params.keys():
+            pcpot = params['pcpot']
+            pcstring = '% pointcharges \"' +\
+                    label + '.pc\"\n\n'
+            params['orcablocks'] += pcstring
+            pcpot.write_mmcharges(label)
+
+        with open(label + '.inp', 'w') as fd:
+            fd.write("! engrad %s \n" % params['orcasimpleinput'])
+            fd.write("%s \n" % params['orcablocks'])
+
+            fd.write('*xyz')
+            fd.write(" %d" % charge)
+            fd.write(" %d \n" % mult)
+            for atom in atoms:
+                if atom.tag == 71:  # 71 is ascii G (Ghost)
+                    symbol = atom.symbol + ' : '
+                else:
+                    symbol = atom.symbol + '   '
+                fd.write(symbol +
+                        str(atom.position[0]) + ' ' +
+                        str(atom.position[1]) + ' ' +
+                        str(atom.position[2]) + '\n')
+            fd.write('*\n')
+
+        return
 
 class PointChargePotential:
     def __init__(self, mmcharges, label=None, positions=None, directory=None):

@@ -23,7 +23,7 @@ optimizer_avaiable = {
     'Adamax'.lower(): torch.optim.Adam,
     'AMSgrad'.lower(): torch.optim.Adam,
     }
-optimizer_argumens = {
+optimizer_arguments = {
     'SGD'.lower(): {},
     'Adagrad'.lower(): {},
     'Adam'.lower(): {},
@@ -74,9 +74,9 @@ def get_optimizer(
         if trainer_optimizer.lower() in optimizer_avaiable.keys():
 
             # Set mandatory optimizer options if required
-            if trainer_optimizer.lower() in optimizer_argumens.keys():
+            if trainer_optimizer.lower() in optimizer_arguments.keys():
                 trainer_optimizer_args.update(
-                    optimizer_argumens[trainer_optimizer.lower()])
+                    optimizer_arguments[trainer_optimizer.lower()])
 
             # Prepare optimiizer input
             if utils.is_dictionary(model_parameter):

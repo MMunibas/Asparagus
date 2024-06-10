@@ -315,7 +315,8 @@ class MCSampler(sample.Sampler):
         # Compute current energy
         system.calc.calculate(
             system,
-            properties=self.sample_properties)
+            properties=self.sample_properties,
+            system_changes=system.calc.implemented_properties)
         system_properties = system.calc.results
         current_energy = system_properties['energy']
 
@@ -352,7 +353,8 @@ class MCSampler(sample.Sampler):
             # Get the potential energy of the new system
             system.calc.calculate(
                 system,
-                properties=self.sample_properties)
+                properties=self.sample_properties,
+                system_changes=system.calc.implemented_properties)
             system_properties = system.calc.results
             new_energy = system_properties['energy']
 

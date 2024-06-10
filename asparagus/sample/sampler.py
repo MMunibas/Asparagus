@@ -730,7 +730,8 @@ class Sampler:
             # Compute system properties
             system.calc.calculate(
                 system,
-                properties=self.sample_properties)
+                properties=self.sample_properties,
+                system_changes=system.calc.implemented_properties)
             
             # Store results
             Nsample = self.save_properties(system, Nsample)

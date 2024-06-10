@@ -455,29 +455,37 @@ class NormalModeScanner(sample.Sampler):
             # Iterate over all exclusion conditions
             for (condition, frequency) in nms_frequency_range:
                 
+                # Compare absolute if requested
+                if '||' in condition:
+                    comp_frequencies = np.abs(system_frequencies)
+                else:
+                    comp_frequencies = system_frequencies
+                
                 # Modes are still include if conditions are matched
-                if condition == '<':
+                if '<=' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies < frequency)
-                elif condition == '<=':
+                        comp_frequencies <= frequency)
+                elif '>=' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies <= frequency)
-                elif condition == '>=':
+                        comp_frequencies >= frequency)
+                elif '<' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies >= frequency)
-                elif condition == '>':
+                        comp_frequencies < frequency)
+                elif '>' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies >= frequency)
+                        comp_frequencies >= frequency)
                 else:
                     raise SyntaxError(
                         f"Normal mode selection condition '{condition}' in "
                         + "'nms_frequency_range' selection input is not "
-                        + "recognized! Choose between ('<', '<=', '>=', '>').")
-            
+                        + "recognized! Choose between ('<', '<=', '>=', '>') "
+                        + "or for comparing absolute frequencies "
+                        + "('<||', '<=||', '>=||', '>||')")
+
             # Combine normal mode exclusion list
             system_vib_modes = np.logical_and(system_vib_modes, include_modes)
 
@@ -690,7 +698,8 @@ class NormalModeScanner(sample.Sampler):
 
                     ase_calculator.calculate(
                         system,
-                        properties=self.sample_properties)
+                        properties=self.sample_properties,
+                        system_changes=system.calc.implemented_properties)
                     current_properties = system.calc.results
                     current_potential = current_properties['energy']
 
@@ -1155,7 +1164,7 @@ class NormalModeSampler(sample.Sampler):
         # Vibrational modes are assumed with center of mass shifts smaller
         # than 1.e-1 Angstrom displacement
         system_vib_modes = system_com_shift < self.nms_limit_com_shift
-        
+
         # Apply exclusion list if defined
         if nms_exclude_modes is not None:
 
@@ -1176,29 +1185,37 @@ class NormalModeSampler(sample.Sampler):
             # Iterate over all exclusion conditions
             for (condition, frequency) in nms_frequency_range:
                 
+                # Compare absolute if requested
+                if '||' in condition:
+                    comp_frequencies = np.abs(system_frequencies)
+                else:
+                    comp_frequencies = system_frequencies
+                
                 # Modes are still include if conditions are matched
-                if condition == '<':
+                if '<=' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies < frequency)
-                elif condition == '<=':
+                        comp_frequencies <= frequency)
+                elif '>=' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies <= frequency)
-                elif condition == '>=':
+                        comp_frequencies >= frequency)
+                elif '<' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies >= frequency)
-                elif condition == '>':
+                        comp_frequencies < frequency)
+                elif '>' in condition:
                     include_modes = np.logical_and(
                         include_modes, 
-                        system_frequencies >= frequency)
+                        comp_frequencies >= frequency)
                 else:
                     raise SyntaxError(
                         f"Normal mode selection condition '{condition}' in "
                         + "'nms_frequency_range' selection input is not "
-                        + "recognized! Choose between ('<', '<=', '>=', '>').")
-            
+                        + "recognized! Choose between ('<', '<=', '>=', '>') "
+                        + "or for comparing absolute frequencies "
+                        + "('<||', '<=||', '>=||', '>||')")
+
             # Combine normal mode exclusion list
             system_vib_modes = np.logical_and(system_vib_modes, include_modes)
 
@@ -1364,7 +1381,8 @@ class NormalModeSampler(sample.Sampler):
 
                 ase_calculator.calculate(
                     system,
-                    properties=self.sample_properties)
+                    properties=self.sample_properties,
+                    system_changes=system.calc.implemented_properties)
                 converged = True
             
             except ase.calculators.calculator.CalculationFailed:
