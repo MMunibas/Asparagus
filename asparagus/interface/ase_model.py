@@ -40,39 +40,39 @@ def get_orca(**kwargs):
     # Check ASE version
     version = ase.__version__
     # For ASE<3.23.0, use modified ORCA calculator
-    #if (
-        #int(version.split('.')[-3]) < 3
-        #or (
-            #int(version.split('.')[-3]) == 3
-            #and int(version.split('.')[-2]) <= 22
-        #)
-    #):
-    from .orca_ase import ORCA
-    return ORCA, {}
-    #else:
-        #from ase.calculators.orca import ORCA
-        #mkwargs = {}
-        ## Check for engrad
-        #if (
-            #kwargs.get('orcasimpleinput') is not None
-            #and not 'engrad'.lower() in kwargs.get('orcasimpleinput').lower()
-        #):
-            #mkwargs['orcasimpleinput'] = (
-                #kwargs.get('orcasimpleinput') + ' engrad')
-        ## Check for ORCA profile
-        #if kwargs.get('profile') is None:
-            #orca_command = os.environ.get('ORCA_COMMAND')
-            #if orca_command is None:
-                #return ORCA, {}
-            #else:
-                #from ase.calculators.orca import OrcaProfile
-                #mkwargs['profile'] = OrcaProfile(command=orca_command)
-        #elif utils.is_string(kwargs.get('profile')):
-            #from ase.calculators.orca import OrcaProfile
-            #mkwargs['profile'] = OrcaProfile(command=kwargs.get('profile'))
-        #else:
-            #mkwargs['profile'] = kwargs.get('profile')
-        #return ORCA, mkwargs
+    if (
+        int(version.split('.')[-3]) < 3
+        or (
+            int(version.split('.')[-3]) == 3
+            and int(version.split('.')[-2]) <= 22
+        )
+    ):
+        from .orca_ase import ORCA
+        return ORCA, {}
+    else:
+        from ase.calculators.orca import ORCA
+        mkwargs = {}
+        # Check for engrad
+        if (
+            kwargs.get('orcasimpleinput') is not None
+            and not 'engrad'.lower() in kwargs.get('orcasimpleinput').lower()
+        ):
+            mkwargs['orcasimpleinput'] = (
+                kwargs.get('orcasimpleinput') + ' engrad')
+        # Check for ORCA profile
+        if kwargs.get('profile') is None:
+            orca_command = os.environ.get('ORCA_COMMAND')
+            if orca_command is None:
+                return ORCA, {}
+            else:
+                from ase.calculators.orca import OrcaProfile
+                mkwargs['profile'] = OrcaProfile(command=orca_command)
+        elif utils.is_string(kwargs.get('profile')):
+            from ase.calculators.orca import OrcaProfile
+            mkwargs['profile'] = OrcaProfile(command=kwargs.get('profile'))
+        else:
+            mkwargs['profile'] = kwargs.get('profile')
+        return ORCA, mkwargs
 
 def get_shell(**kwargs):
     from .shell_ase import ShellCalculator

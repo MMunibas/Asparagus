@@ -382,7 +382,6 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    
     # Sample a system loaded from a xyz files in parallel using the Meta
     # Dynamics sampling method and the ORCA calculator (thread safe)
     # Here each of the multiple runs store the Gaussian add-potentials into 

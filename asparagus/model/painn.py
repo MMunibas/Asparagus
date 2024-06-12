@@ -700,16 +700,30 @@ class Model_PaiNN(torch.nn.Module):
 
         # Compute molecular dipole
         if self.model_dipole:
-
+            
+            # For non-zero system charges, shift origin to center of mass
+            if torch.any(charge):
+                atomic_masses = self.atomic_masses[atomic_numbers]
+                system_masses = utils.segment_sum(
+                    atomic_masses, sys_i, device=self.device)
+                system_com = (
+                    utils.segment_sum(
+                        atomic_masses[..., None]*positions,
+                        sys_i, device=self.device).reshape(-1, 3)
+                    )/system_masses[..., None]
+                positions_com = positions - system_com[sys_i]
+            else:
+                positions_com = positions
+            
             # Compute molecular dipole moment from atomic charges
             if pbc_atoms is None:
                 results['dipole'] = utils.segment_sum(
-                    results['atomic_charges'][..., None]*positions,
+                    results['atomic_charges'][..., None]*positions_com,
                     sys_i, device=self.device).reshape(-1, 3)
             else:
                 results['dipole'] = utils.segment_sum(
                     results['atomic_charges'][..., None]
-                    *positions[pbc_atoms],
+                    *positions_com[pbc_atoms],
                     sys_i, device=self.device).reshape(-1, 3)
 
             # Refine molecular dipole moment with atomic dipole moments

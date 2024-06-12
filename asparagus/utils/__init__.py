@@ -36,3 +36,7 @@ from .functions import(
 from .neighborlist import(
     TorchNeighborListRangeSeparated
 )
+
+from .data import(
+    chemical_symbols, atomic_names, atomic_masses, atomic_numbers
+)
