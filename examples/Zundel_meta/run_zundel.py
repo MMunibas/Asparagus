@@ -4,7 +4,7 @@ sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
 from asparagus import Asparagus
 
 # Sampling
-if False:
+if True:
 
     from asparagus.sample import NormalModeSampler
 
@@ -30,7 +30,7 @@ if False:
     )
     sampler.run(nms_frequency_range=[('>||', 100.0)])
 
-if False:
+if True:
     
     from asparagus.sample import MetaSampler
     
@@ -46,7 +46,7 @@ if False:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 4 end',
-            'directory': 'model_zundel/sampling'},
+            'directory': 'model_zundel/sampling/orca'},
         sample_properties=['energy', 'forces', 'dipole'],
         sample_systems_optimize=False,
         sample_save_trajectory=True,
@@ -71,7 +71,7 @@ if True:
         data_file='model_zundel/zundel.db',
         model_directory='model_zundel',
         model_properties=['energy', 'forces', 'dipole'],
-        model_electrostatic=True,
+        model_type='painn',
         model_interaction_cutoff=12.0,
         input_cutoff_descriptor=6.0,
         trainer_properties_weights={
@@ -79,6 +79,7 @@ if True:
             'forces': 50.,
             'dipole': 20.
             },
+        dtype='torch.float32',
         )
     model.train()
     model.test(

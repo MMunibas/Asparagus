@@ -18,8 +18,8 @@ from .check_dtype import(
 )
 
 from .check_config import(
-    check_input_args, check_input_dtype, check_property_label, 
-    merge_dictionaries, merge_dictionary_lists, 
+    check_input_args, check_input_dtype, check_dtype_option, 
+    check_property_label, merge_dictionaries, merge_dictionary_lists, 
     get_input_args, get_function_location, 
     get_default_args, get_dtype_args
 )

@@ -119,6 +119,28 @@ def check_input_dtype(
         else:
             return False
 
+def check_dtype_option(
+    dtype: Any,
+    config: object,
+):
+    """
+    Check and select dtype input and convert eventually to correct dtype class.
+    
+    Parameters
+    ----------
+    dtype: any
+        Data type label or class to check
+    config: settings.Configuration
+        Asparagus configuration object for default options and conversion
+    """
+    
+    # If no dtype option given, take already converted dtype from config.
+    if dtype is None:
+        return config.get('dtype')
+    elif utils.is_string(dtype):
+        return config.convert_dtype(dtype, 'read')
+    else:
+        return dtype
 
 # --------------- ** Checking property labels ** ---------------
 

@@ -175,7 +175,7 @@ def unsorted_segment_sum(
 
     shape = [num_segments] + list(data.shape[1:])
     tensor = torch.zeros(
-        *shape, dtype=torch.float64, device=device).scatter_add(
+        *shape, dtype=data.dtype, device=device).scatter_add(
             0, segment_ids, data)
 
     return tensor

@@ -362,8 +362,8 @@ class Graph_PhysNet(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.dtype = config.get('dtype')
         self.device = config.get('device')
+        self.dtype = config.get('dtype')
 
         # Get input to graph module interface parameters 
         self.n_atombasis = config.get('input_n_atombasis')
@@ -556,8 +556,8 @@ class Output_PhysNet(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.dtype = config.get('dtype')
         self.device = config.get('device')
+        self.dtype = config.get('dtype')
 
         # Get input and graph to output module interface parameters 
         self.n_maxatom = config.get('input_n_maxatom')

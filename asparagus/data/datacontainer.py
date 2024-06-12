@@ -147,6 +147,10 @@ class DataContainer():
         config.update(
             config_update, config_from=self)
 
+        # Assign module variable parameters from configuration
+        self.device = config.get('device')
+        self.dtype = config.get('dtype')
+
         ########################################
         # # # Check DataSet Property Input # # #
         ########################################
@@ -426,17 +430,23 @@ class DataContainer():
             self.train_set,
             self.data_train_batch_size,
             True,
-            self.data_num_workers)
+            self.data_num_workers,
+            device=self.device,
+            dtype=self.dtype)
         self.valid_loader = data.DataLoader(
             self.valid_set,
             self.data_valid_batch_size,
             False,
-            self.data_num_workers)
+            self.data_num_workers,
+            device=self.device,
+            dtype=self.dtype)
         self.test_loader = data.DataLoader(
             self.test_set,
             self.data_test_batch_size,
             False,
-            self.data_num_workers)
+            self.data_num_workers,
+            device=self.device,
+            dtype=self.dtype)
 
         # Prepare dictionaries as pointers between dataset label and the
         # respective DataSubSet and DataLoader objects

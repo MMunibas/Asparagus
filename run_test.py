@@ -13,16 +13,16 @@ import time
 flag_dictionary_initialization = True
 flag_database_sql = True
 flag_database_hdf5 = False
-flag_sampler_all = True
-flag_sampler_shell = True
+flag_sampler_all = False
+flag_sampler_shell = False
 flag_sampler_slurm = False
 
-flag_model_physnet = True
-flag_train_physnet = True
-flag_ase_physnet = True
+flag_model_physnet = False
+flag_train_physnet = False
+flag_ase_physnet = False
 
-flag_model_painn = True
-flag_train_painn = True
+flag_model_painn = False
+flag_train_painn = False
 
 flag_train_cuda = False
 
@@ -151,19 +151,19 @@ if flag_database_sql:
         data_overwrite=True,
     )
     
-    ## TODO Check automatic unit conversion
-    ## Load ASE trajectory file with different property units
-    #model.set_data_container(
-        #config=config_file,
-        #data_file='test/meta_nh3_test_unit.db',
-        #data_source='data/meta_nh3.traj',
-        #data_load_properties=['energy', 'forces'],
-        #data_unit_properties={
-            #'positions': 'Bohr',
-            #'energy': 'kcal/mol',
-            #'forces': 'kcal/mol/Bohr'},
-        #data_overwrite=True,
-    #)
+    # TODO Check automatic unit conversion
+    # Load ASE trajectory file with different property units
+    model.set_data_container(
+        config=config_file,
+        data_file='test/meta_nh3_test_unit.db',
+        data_source='data/meta_nh3.traj',
+        data_load_properties=['energy', 'forces'],
+        data_unit_properties={
+            'positions': 'Bohr',
+            'energy': 'kcal/mol',
+            'forces': 'kcal/mol/Bohr'},
+        data_overwrite=True,
+    )
 
 # HDF5
 if flag_database_hdf5:

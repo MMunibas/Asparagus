@@ -147,7 +147,7 @@ class Model_PaiNN(torch.nn.Module):
         
         # Assign module variable parameters from configuration
         self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Set model calculator number of threads
         if config.get('model_num_threads') is not None:
@@ -381,6 +381,15 @@ class Model_PaiNN(torch.nn.Module):
                 device=self.device,
                 dtype=self.dtype)
 
+        # Assign atomic masses list for center of mass calculation
+        if self.model_dipole:
+
+            # Convert atomic masses list to requested data type
+            self.atomic_masses = torch.tensor(
+                utils.atomic_masses,
+                device=self.device,
+                dtype=self.dtype)
+
         return
 
     def __str__(self):
@@ -528,6 +537,8 @@ class Model_PaiNN(torch.nn.Module):
 
         return trainable_parameters
 
+    #@torch.jit.export  # No effect, as 'forward' already is
+    #@torch.compile # Not supporting backwards propagation with torch.float64
     def forward(
         self,
         batch: Dict[str, torch.Tensor]

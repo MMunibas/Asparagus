@@ -71,7 +71,7 @@ class Sampler:
         In case of string type input for 'sample_calculator', this
         dictionary is passed as keyword arguments at the initialization
         of the ASE calculator.
-    sample_save_trajectory: bool, optional, default False
+    sample_save_trajectory: bool, optional, default True
         If True, add sampled systems added to the database file also to an
         ASE trajectory file.
     sample_num_threads: int, optional, default 1
@@ -114,7 +114,7 @@ class Sampler:
         'sample_systems_format':        None,
         'sample_calculator':            'XTB',
         'sample_calculator_args':       {},
-        'sample_save_trajectory':       False,
+        'sample_save_trajectory':       True,
         'sample_num_threads':           1,
         'sample_properties':            ['energy', 'forces', 'dipole'],
         'sample_systems_optimize':      False,

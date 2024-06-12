@@ -141,7 +141,7 @@ class PaiNNMixing(torch.nn.Module):
 
         # Assign class parameter
         self.stability_constant = stability_constant
-        
+
         # Initialize context and mixing layer
         self.context = DenseLayer(
             n_atombasis, 

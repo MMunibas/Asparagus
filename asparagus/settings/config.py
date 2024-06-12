@@ -352,7 +352,11 @@ class Configuration():
             # Add or update parameter
             if conflict and overwrite and not equal:
 
-                self.config_dict[key] = config_new.get(key)
+                if self.is_convertible(key):
+                    self.config_dict[key] = self.convert(
+                        key, config_new.get(key), 'read')
+                else:
+                    self.config_dict[key] = config_new.get(key)
                 n_overwrite += 1
                 if verbose:
                     msg += f"Overwrite parameter '{key}'.\n"
@@ -364,7 +368,11 @@ class Configuration():
 
             elif not conflict:
 
-                self.config_dict[key] = config_new.get(key)
+                if self.is_convertible(key):
+                    self.config_dict[key] = self.convert(
+                        key, config_new.get(key), 'read')
+                else:
+                    self.config_dict[key] = config_new.get(key)
                 n_add += 1
                 if verbose:
                     msg += f"Adding parameter '{key}'.\n"

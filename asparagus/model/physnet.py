@@ -147,7 +147,7 @@ class Model_PhysNet(torch.nn.Module):
         
         # Assign module variable parameters from configuration
         self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Set model calculator number of threads
         if config.get('model_num_threads') is not None:

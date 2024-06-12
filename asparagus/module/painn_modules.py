@@ -155,7 +155,9 @@ class Input_PaiNN(torch.nn.Module):
 
         # Initialize radial cutoff function
         self.cutoff = layer.get_cutoff_fn(self.input_cutoff_fn)(
-            self.input_radial_cutoff)
+            self.input_radial_cutoff,
+            device=self.device,
+            dtype=self.dtype)
         
         # Get upper RBF center range
         if self.input_rbf_center_end is None:
@@ -167,7 +169,8 @@ class Input_PaiNN(torch.nn.Module):
             self.input_n_radialbasis,
             self.input_rbf_center_start, self.input_rbf_center_end,
             self.input_rbf_trainable, 
-            device=self.device, dtype=self.dtype)
+            device=self.device,
+            dtype=self.dtype)
 
         return
 
@@ -242,7 +245,7 @@ class Input_PaiNN(torch.nn.Module):
         
         # Collect atom feature vectors
         features = self.atom_features(atomic_numbers)
-        
+
         # Compute pair connection vector
         if pbc_offset_ij is None:
             vectors = positions[idx_j] - positions[idx_i]
@@ -347,9 +350,9 @@ class Graph_PaiNN(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.dtype = config.get('dtype')
         self.device = config.get('device')
-        
+        self.dtype = config.get('dtype')
+
         # Get input to graph module interface parameters 
         self.n_atombasis = config.get('input_n_atombasis')
         self.n_radialbasis = config.get('input_n_radialbasis')
@@ -483,7 +486,7 @@ class Graph_PaiNN(torch.nn.Module):
                 sfeatures, 
                 vfeatures, 
                 fsize[1])
-        
+
         # Flatten scalar atomic feature vector
         sfeatures = sfeatures.squeeze(1)
         
@@ -685,8 +688,8 @@ class Output_PaiNN(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.dtype = config.get('dtype')
         self.device = config.get('device')
+        self.dtype = config.get('dtype')
 
         # Get input and graph to output module interface parameters 
         self.n_maxatom = config.get('input_n_maxatom')

@@ -83,7 +83,7 @@ class DenseLayer(torch.nn.Linear):
 
         output = torch.nn.functional.linear(input, self.weight, self.bias)
         output = self.activation(output)
-        
+
         return output
 
 

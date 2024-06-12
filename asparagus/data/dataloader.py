@@ -110,12 +110,8 @@ class DataLoader(torch.utils.data.DataLoader):
         # Check input parameter
         if device is None:
             device = self.device
-        #else: # Why? - KT
-            #self.device = device
         if dtype is None:
             dtype = self.dtype
-        #else:
-            #self.dtype = dtype
 
         # Initialize neighbor list creator
         self.neighbor_list = utils.TorchNeighborListRangeSeparated(
@@ -218,7 +214,7 @@ class DataLoader(torch.utils.data.DataLoader):
 
             # Properties (float data)
             else:
-
+                
                 # Concatenate tensor data
                 if batch[0][prop_i].size():
                     coll_batch[prop_i] = torch.cat(

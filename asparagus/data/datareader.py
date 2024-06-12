@@ -324,33 +324,17 @@ class DataReader():
                 # Iterate over source data
                 for idx in range(Ndata):
 
-                    # Atoms system data
-                    atoms_properties = {}
-
-                    # Get atoms object and property data
+                    # Get property source data
                     source = db_source.get(idx + 1)[0]
 
-                    # Fundamental properties
-                    atoms_properties['atoms_number'] = source['atoms_number']
-                    atoms_properties['atomic_numbers'] = (
-                        source['atomic_numbers'])
-                    atoms_properties['positions'] = (
-                        unit_conversion['positions']*source['positions'])
-                    atoms_properties['cell'] = (
-                        unit_conversion['positions']*source['cell'])
-                    atoms_properties['pbc'] = source['pbc']
-                    if 'charge' not in source.keys():
-                        atoms_properties['charge'] = 0.0
-                    else:
-                        atoms_properties['charge'] = source['charge']
+                    # Collect system data
+                    atoms_properties = self.collect_from_source(
+                        source,
+                        unit_conversion,
+                        data_load_properties,
+                        assigned_properties)
 
-                    # Collect properties
-                    for prop, item in assigned_properties.items():
-                        if prop in data_load_properties:
-                            atoms_properties[prop] = (
-                                unit_conversion[prop]*source[item])
-
-                    # Add atoms system data
+                    # Add system data to database
                     all_atoms_properties.append(atoms_properties)
 
         # If dataset file is given, write to dataset
@@ -358,7 +342,6 @@ class DataReader():
 
             # Add atom systems to database
             all_atoms_properties = self.data_file
-            atoms_properties = {}
             with data.connect(
                 self.data_file, self.data_file_format, mode='a'
             ) as db:
@@ -379,26 +362,12 @@ class DataReader():
                         # Get atoms object and property data
                         source = db_source.get(idx + 1)[0]
 
-                        # Fundamental properties
-                        atoms_properties['atoms_number'] = (
-                            source['atoms_number'])
-                        atoms_properties['atomic_numbers'] = (
-                            source['atomic_numbers'])
-                        atoms_properties['positions'] = (
-                            unit_conversion['positions']*source['positions'])
-                        atoms_properties['cell'] = (
-                            unit_conversion['positions']*source['cell'])
-                        atoms_properties['pbc'] = source['pbc']
-                        if 'charge' not in source.keys():
-                            atoms_properties['charge'] = 0.0
-                        else:
-                            atoms_properties['charge'] = source['charge']
-
-                        # Collect properties
-                        for prop, item in assigned_properties.items():
-                            if prop in data_load_properties:
-                                atoms_properties[prop] = (
-                                    unit_conversion[prop]*source[item])
+                        # Collect system data
+                        atoms_properties = self.collect_from_source(
+                            source,
+                            unit_conversion,
+                            data_load_properties,
+                            assigned_properties)
 
                         # Write to reference database file
                         db.write(properties=atoms_properties)
@@ -559,38 +528,17 @@ class DataReader():
                 # Iterate over source data
                 for idx in range(Ndata):
 
-                    # Atoms system data
-                    atoms_properties = {}
-
                     # Get atoms object and property data
                     atoms = db_source.get_atoms(idx + 1)
                     source = db_source.get(idx + 1)
 
-                    # Fundamental properties
-                    atoms_properties['atoms_number'] = (
-                        atoms.get_global_number_of_atoms())
-                    atoms_properties['atomic_numbers'] = (
-                        atoms.get_atomic_numbers())
-                    atoms_properties['positions'] = (
-                        unit_conversion['positions']*atoms.get_positions())
-                    atoms_properties['cell'] = (
-                        unit_conversion['positions']*atoms.get_cell()[:])
-                    atoms_properties['pbc'] = atoms.get_pbc()
-                    if 'charge' in source:
-                        atoms_properties['charge'] = source['charge']
-                    elif 'charges' in source:
-                        atoms_properties['charge'] = sum(source['charges'])
-                    elif 'initial_charges' in source:
-                        atoms_properties['charge'] = sum(
-                            source['initial_charges'])
-                    else:
-                        atoms_properties['charge'] = 0.0
-
-                    # Collect properties
-                    for prop, item in assigned_properties.items():
-                        if prop in data_load_properties:
-                            atoms_properties[prop] = (
-                                unit_conversion[prop]*source[item])
+                    # Collect system data
+                    atoms_properties = self.collect_from_atoms_source(
+                        atoms,
+                        source,
+                        unit_conversion,
+                        data_load_properties,
+                        assigned_properties)
 
                     # Add atoms system data
                     all_atoms_properties.append(atoms_properties)
@@ -600,7 +548,6 @@ class DataReader():
 
             # Add atom systems to database
             all_atoms_properties = self.data_file
-            atoms_properties = {}
             with data.connect(
                 self.data_file, self.data_file_format, mode='a'
             ) as db:
@@ -620,31 +567,13 @@ class DataReader():
                         atoms = db_source.get_atoms(idx + 1)
                         source = db_source.get(idx + 1)
 
-                        # Fundamental properties
-                        atoms_properties['atoms_number'] = (
-                            atoms.get_global_number_of_atoms())
-                        atoms_properties['atomic_numbers'] = (
-                            atoms.get_atomic_numbers())
-                        atoms_properties['positions'] = (
-                            unit_conversion['positions']*atoms.get_positions())
-                        atoms_properties['cell'] = (
-                            unit_conversion['positions']*atoms.get_cell()[:])
-                        atoms_properties['pbc'] = atoms.get_pbc()
-                        if 'charge' in source:
-                            atoms_properties['charge'] = source['charge']
-                        elif 'charges' in source:
-                            atoms_properties['charge'] = sum(source['charges'])
-                        elif 'initial_charges' in source:
-                            atoms_properties['charge'] = sum(
-                                source['initial_charges'])
-                        else:
-                            atoms_properties['charge'] = 0.0
-
-                        # Collect properties
-                        for prop, item in assigned_properties.items():
-                            if prop in data_load_properties:
-                                atoms_properties[prop] = (
-                                    unit_conversion[prop]*source[item])
+                        # Collect system data
+                        atoms_properties = self.collect_from_atoms_source(
+                            atoms,
+                            source,
+                            unit_conversion,
+                            data_load_properties,
+                            assigned_properties)
 
                         # Write to reference database file
                         db.write(properties=atoms_properties)
@@ -1152,32 +1081,13 @@ class DataReader():
 
                 # Get atoms object and property data
                 atoms = db_source[idx]
-                properties = atoms.calc
                 
-                # Fundamental properties
-                atoms_properties['atoms_number'] = (
-                    atoms.get_global_number_of_atoms())
-                atoms_properties['atomic_numbers'] = (
-                    atoms.get_atomic_numbers())
-                atoms_properties['positions'] = (
-                    unit_conversion['positions']*atoms.get_positions())
-                atoms_properties['cell'] = (
-                    unit_conversion['positions']*atoms.get_cell()[:])
-                atoms_properties['pbc'] = atoms.get_pbc()
-                if 'charge' in properties.parameters:
-                    atoms_properties['charge'] = (
-                        properties.parameters['charge'])
-                elif 'charges' in properties.results:
-                    atoms_properties['charge'] = sum(
-                        properties.results['charges'])
-                else:
-                    atoms_properties['charge'] = 0.0
-
-                # Collect properties
-                for prop, item in assigned_properties.items():
-                    if prop in properties.results:
-                        atoms_properties[prop] = (
-                            unit_conversion[prop]*properties.results[prop])
+                # Collect system data
+                atoms_properties = self.collect_from_atoms(
+                    atoms,
+                    unit_conversion,
+                    data_load_properties,
+                    assigned_properties)
 
                 # Add atoms system data
                 all_atoms_properties.append(atoms_properties)
@@ -1204,32 +1114,13 @@ class DataReader():
 
                     # Get atoms object and property data
                     atoms = db_source[idx]
-                    properties = atoms.calc
 
-                    # Fundamental properties
-                    atoms_properties['atoms_number'] = (
-                        atoms.get_global_number_of_atoms())
-                    atoms_properties['atomic_numbers'] = (
-                        atoms.get_atomic_numbers())
-                    atoms_properties['positions'] = (
-                        unit_conversion['positions']*atoms.get_positions())
-                    atoms_properties['cell'] = (
-                        unit_conversion['positions']*atoms.get_cell()[:])
-                    atoms_properties['pbc'] = atoms.get_pbc()
-                    if 'charge' in properties.parameters:
-                        atoms_properties['charge'] = (
-                            properties.parameters['charge'])
-                    elif 'charges' in properties.results:
-                        atoms_properties['charge'] = sum(
-                            properties.results['charges'])
-                    else:
-                        atoms_properties['charge'] = 0.0
-
-                    # Collect properties
-                    for prop, item in assigned_properties.items():
-                        if prop in properties.results:
-                            atoms_properties[prop] = (
-                                unit_conversion[prop]*properties.results[prop])
+                    # Collect system data
+                    atoms_properties = self.collect_from_atoms(
+                        atoms, 
+                        unit_conversion,
+                        data_load_properties,
+                        assigned_properties)
 
                     # Write to reference database file
                     db.write(properties=atoms_properties)
@@ -1273,6 +1164,21 @@ class DataReader():
         if data_load_properties is None:
             data_load_properties = self.data_load_properties
 
+        # Check if all properties in 'data_load_properties' are found
+        found_load_properties = [
+            prop in properties
+            for prop in data_load_properties]
+        for ip, prop in enumerate(data_load_properties):
+            if not found_load_properties[ip]:
+                logger.error(
+                    f"ERROR:\nRequested property '{prop}' in "
+                    + "'data_load_properties' is not found in "
+                    + "property input!\n")
+        if not all(found_load_properties):
+            raise ValueError(
+                "Not all properties in 'data_load_properties' are found "
+                + "property input!\n")
+
         # Check property unit conversion
         if data_unit_properties is None:
 
@@ -1282,6 +1188,21 @@ class DataReader():
                 unit_conversion[prop] = 1.0
 
         else:
+            
+            # Check if all property units in 'data_unit_properties' are found
+            found_unit_properties = [
+                prop in data_unit_properties
+                for prop in data_load_properties]
+            for ip, prop in enumerate(data_load_properties):
+                if not found_unit_properties[ip]:
+                    logger.error(
+                        f"ERROR:\nRequested property '{prop}' from "
+                        + "'data_load_properties' is not found in "
+                        + "property unit dictionary 'data_unit_properties'!\n")
+            if not all(found_unit_properties):
+                raise ValueError(
+                    "Not all property units in 'data_load_properties' are "
+                    + "found in 'data_unit_properties'!\n")
 
             # Check units of positions and properties
             unit_conversion = {}
@@ -1356,5 +1277,184 @@ class DataReader():
 
         return atoms_properties
 
+    def collect_from_source(
+        self,
+        source: Dict[str, Any],
+        conversion: Dict[str, float],
+        load_properties: List[str],
+        property_labels: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Collect properties from database entry to property dictionary and
+        apply unit conversion.
+        
+        Parameters
+        ----------
+        source: dict
+            Database source dictionary
+        conversion: dict
+            Unit conversion factors dictionary.
+        load_properties: list(str)
+            Properties to load from source
+        property_labels: dict(str, str), optional, default None
+            List of additional source properties (key) to add from property
+            source label (item). If None, all properties in source are added.
 
+        Returns
+        -------
+        dict(str, any)
+            System property dictionary
 
+        """
+        
+        # Atoms system data
+        atoms_properties = {}
+        
+        # Fundamental properties
+        atoms_properties['atoms_number'] = source['atoms_number']
+        atoms_properties['atomic_numbers'] = (
+            source['atomic_numbers'])
+        atoms_properties['positions'] = (
+            conversion['positions']*source['positions'])
+        atoms_properties['cell'] = (
+            conversion['positions']*source['cell'])
+        atoms_properties['pbc'] = source['pbc']
+        if 'charge' not in source.keys():
+            atoms_properties['charge'] = 0.0
+        else:
+            atoms_properties['charge'] = source['charge']
+
+        # Collect properties
+        for prop, item in property_labels.items():
+            if prop in load_properties:
+                atoms_properties[prop] = (
+                    conversion[prop]*source[item])
+
+        return atoms_properties
+
+    def collect_from_atoms_source(
+        self,
+        atoms: ase.Atoms,
+        source: Dict[str, Any],
+        conversion: Dict[str, float],
+        load_properties: List[str],
+        property_labels: Dict[str, str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Collect properties from database entry to property dictionary and
+        apply unit conversion.
+        
+        Parameters
+        ----------
+        source: ase.Atoms
+            Database atoms object
+        source: dict
+            Database source dictionary
+        conversion: dict
+            Unit conversion factors dictionary.
+        load_properties: list(str)
+            Properties to load from source
+        property_labels: dict(str, str), optional, default None
+            List of additional source properties (key) to add from property
+            source label (item). If None, all properties in source are added.
+
+        Returns
+        -------
+        dict(str, any)
+            System property dictionary
+
+        """
+        
+        # Atoms system data
+        atoms_properties = {}
+        
+        # Fundamental properties
+        atoms_properties['atoms_number'] = (
+            atoms.get_global_number_of_atoms())
+        atoms_properties['atomic_numbers'] = (
+            atoms.get_atomic_numbers())
+        atoms_properties['positions'] = (
+            conversion['positions']*atoms.get_positions())
+        atoms_properties['cell'] = (
+            conversion['positions']*atoms.get_cell()[:])
+        atoms_properties['pbc'] = atoms.get_pbc()
+        if 'charge' in source:
+            atoms_properties['charge'] = source['charge']
+        elif 'charges' in source:
+            atoms_properties['charge'] = sum(source['charges'])
+        elif 'initial_charges' in source:
+            atoms_properties['charge'] = sum(
+                source['initial_charges'])
+        else:
+            atoms_properties['charge'] = 0.0
+
+        # Collect properties
+        for prop, item in property_labels.items():
+            if prop in load_properties:
+                atoms_properties[prop] = (
+                    conversion[prop]*source[item])
+        
+        return atoms_properties
+
+    def collect_from_atoms(
+        self,
+        atoms: ase.Atoms,
+        conversion: Dict[str, float],
+        load_properties: List[str],
+        property_labels: Dict[str, str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Collect properties from database entry to property dictionary and
+        apply unit conversion.
+        
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            Database atoms object including calculator object
+        conversion: dict
+            Unit conversion factors dictionary.
+        load_properties: list(str)
+            Properties to load from source
+        property_labels: dict(str, str), optional, default None
+            List of additional source properties (key) to add from property
+            source label (item). If None, all properties in source are added.
+
+        Returns
+        -------
+        dict(str, any)
+            System property dictionary
+
+        """
+        
+        # Atoms system data
+        atoms_properties = {}
+        
+        # Get atoms property data
+        properties = atoms.calc
+        
+        # Fundamental properties
+        atoms_properties['atoms_number'] = (
+            atoms.get_global_number_of_atoms())
+        atoms_properties['atomic_numbers'] = (
+            atoms.get_atomic_numbers())
+        atoms_properties['positions'] = (
+            conversion['positions']*atoms.get_positions())
+        atoms_properties['cell'] = (
+            conversion['positions']*atoms.get_cell()[:])
+        atoms_properties['pbc'] = atoms.get_pbc()
+        if 'charge' in properties.parameters:
+            atoms_properties['charge'] = (
+                properties.parameters['charge'])
+        elif 'charges' in properties.results:
+            atoms_properties['charge'] = sum(
+                properties.results['charges'])
+        else:
+            atoms_properties['charge'] = 0.0
+
+        # Collect properties
+        for prop, item in property_labels.items():
+            if prop in properties.results:
+                atoms_properties[prop] = (
+                    conversion[prop]*properties.results[prop])
+        
+        return atoms_properties
