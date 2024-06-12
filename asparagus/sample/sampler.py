@@ -728,14 +728,22 @@ class Sampler:
                     sample_index=isample)
 
             # Compute system properties
-            system.calc.calculate(
-                system,
-                properties=self.sample_properties,
-                system_changes=system.calc.implemented_properties)
-            
+            try:
+
+                system.calc.calculate(
+                    system,
+                    properties=self.sample_properties,
+                    system_changes=system.calc.implemented_properties)
+
+            except ase.calculators.calculator.CalculationFailed:
+
+                converged = False
+
             # Store results
-            Nsample = self.save_properties(system, Nsample)
-            if self.sample_save_trajectory:
+            if converged:
+                Nsample = self.save_properties(system, Nsample)
+
+            if converged and self.sample_save_trajectory:
                 self.write_trajectory(
                     system, self.sample_trajectory_file.format(isample))
 

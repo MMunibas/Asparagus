@@ -728,7 +728,7 @@ class NormalModeScanner(sample.Sampler):
                     Nsample = self.save_properties(system, Nsample)
 
                 # Attach to trajectory
-                if self.sample_save_trajectory:
+                if converged and self.sample_save_trajectory:
                     self.write_trajectory(
                         system, self.sample_trajectory_file.format(isample))
 
@@ -1394,7 +1394,7 @@ class NormalModeSampler(sample.Sampler):
                 Nsample = self.save_properties(system, Nsample)
 
             # Attach to trajectory
-            if self.sample_save_trajectory:
+            if converged and self.sample_save_trajectory:
                 self.write_trajectory(
                     system, self.sample_trajectory_file.format(isample))
 
