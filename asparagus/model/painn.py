@@ -537,8 +537,8 @@ class Model_PaiNN(torch.nn.Module):
 
         return trainable_parameters
 
+    #@torch.compile # Not supporting double backwards autograd (forces, loss)
     #@torch.jit.export  # No effect, as 'forward' already is
-    #@torch.compile # Not supporting backwards propagation with torch.float64
     def forward(
         self,
         batch: Dict[str, torch.Tensor]

@@ -4,7 +4,7 @@ sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
 from asparagus import Asparagus
 
 # Sampling
-if True:
+if False:
 
     from asparagus.sample import NormalModeSampler
 
@@ -30,7 +30,7 @@ if True:
     )
     sampler.run(nms_frequency_range=[('>||', 100.0)])
 
-if True:
+if False:
     
     from asparagus.sample import MetaSampler
     
@@ -81,7 +81,8 @@ if True:
             },
         dtype='torch.float32',
         )
-    model.train()
+    model.train(
+        trainer_max_epochs=1000)
     model.test(
         test_datasets='all',
         test_directory=model.get('model_directory'))

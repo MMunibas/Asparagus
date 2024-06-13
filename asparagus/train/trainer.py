@@ -676,7 +676,7 @@ class Trainer:
             if reset_best_loss or latest_checkpoint.get('best_loss') is None:
                 best_loss = None
             else:
-                best_loss = load_state_dict(latest_checkpoint['best_loss'])
+                best_loss = latest_checkpoint['best_loss']
             
         # Initialize training mode for calculator
         self.model_calculator.train()
