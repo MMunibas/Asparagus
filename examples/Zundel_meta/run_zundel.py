@@ -91,16 +91,10 @@ if True:
 
     import ase
     from ase.optimize import BFGS
-    from ase.visualize import view
     from ase.vibrations import Vibrations
-    from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
-    from ase.md.verlet import VelocityVerlet
-    from ase.io.trajectory import Trajectory
-    import ase.units as units
     
     model = Asparagus(
-        config="model_zundel/config.json",
-        model_directory="model_zundel"
+        config="model_zundel/zundel_config.json",
         )
     calc = model.get_ase_calculator()
     
@@ -108,9 +102,7 @@ if True:
     zundel.calc = calc
     
     dyn = BFGS(zundel)
-    dyn.run(fmax=0.01)
-    
-    view(zundel)
+    dyn.run(fmax=0.001)
     
     vib = Vibrations(zundel)
     vib.clean()

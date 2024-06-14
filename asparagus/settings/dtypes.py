@@ -38,8 +38,10 @@ _dtype_library = {
     'np.float16': np.float16, 
     'np.float32': np.float32, 
     'np.float64': np.float64,
-    'torch.float': torch.float,
     'torch.float16': torch.float16,
+    'torch.half': torch.float16,
     'torch.float32': torch.float32,
+    'torch.float': torch.float32,
     'torch.float64': torch.float64,
+    'torch.double': torch.float64,
     }

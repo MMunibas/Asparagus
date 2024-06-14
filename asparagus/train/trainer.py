@@ -486,7 +486,8 @@ class Trainer:
         data_units: Dict[str, str],
         related_properties: Dict[str, str] = {
             'energy': 'atomic_energies',
-            'charge': 'atomic_charges'}
+            'charge': 'atomic_charges',
+            'dipole': 'atomic_dipoles'}
     ) -> [Dict[str,str], Dict[str,str], Dict[str,float]]:
         """
         Check the definition of the model units or assign units from the

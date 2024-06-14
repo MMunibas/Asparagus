@@ -64,7 +64,7 @@ _dtypes_args = {
     'data_alt_property_labels':     [utils.is_dictionary],
     'data_num_train':               [utils.is_numeric],
     'data_num_valid':               [utils.is_numeric],
-    'data_num_test':                [utils.is_numeric],
+    'data_num_test':                [utils.is_numeric, utils.is_None],
     'data_train_batch_size':        [utils.is_integer],
     'data_val_batch_size':          [utils.is_integer],
     'data_test_batch_size':         [utils.is_integer],

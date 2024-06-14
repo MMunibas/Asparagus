@@ -78,7 +78,7 @@ def get_metadata(
     """
     if os.path.isfile(data_file):
         if data_file_format is None:
-            data_file_format = data_file.s^plit('.')[-1]
+            data_file_format = data_file.split('.')[-1]
         with connect(data_file, data_file_format, mode='r') as db:
             metadata = db.get_metadata()
     else:
