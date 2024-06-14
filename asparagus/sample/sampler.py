@@ -734,6 +734,8 @@ class Sampler:
                     system,
                     properties=self.sample_properties,
                     system_changes=system.calc.implemented_properties)
+                
+                converged = True
 
             except ase.calculators.calculator.CalculationFailed:
 
