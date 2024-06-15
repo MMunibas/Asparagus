@@ -177,9 +177,6 @@ class PyCharmm_Calculator:
                 #self.model_calculator.model_interaction_cutoff)
             self.model_calculator.eval()
 
-        # Check cutoff of CHARMM and the ML model
-        #self.max_rcut = np.max([self.interaction_cutoff, self.mlmm_rcut])
-
         # Get property unit conversions from model units to CHARMM units
         self.model_unit_properties = (
             self.model_calculator.model_unit_properties)
@@ -418,12 +415,32 @@ class PyCharmm_Calculator:
 
 
 class Electrostatic_shift:
+    """
+    Coulomb potential calculator between fluctuating ML atomic charges and
+    static MM atomic charges.
+
+    Parameters
+    ----------
+    mlmm_cutoff: torch.Tensor
+        Interaction cutoff distance for ML/MM electrostatic interactions
+    mlmm_cuton: torch.Tensor
+        Lower atom pair distance to start interaction switch-off for ML/MM
+        electrostatic interactions
+    ml_idxp: torch.Tensor
+        ML atoms ti atom indices pointing from MLMM position to ML position.
+    mlmm_atomic_charges: torch.Tensor
+        List of all atomic charges of the system loaded to CHARMM.
+    kehalf: torch.Tensor
+        Coulomb factor with respective unit
+    switch_fn: str, optional, default 'Poly6_range'
+        Type of switch off function
+    
+    """
 
     def __init__(
         self,
         mlmm_cutoff: torch.Tensor,
         mlmm_cuton: torch.Tensor,
-        #max_rcut: torch.Tensor,
         ml_idxp: torch.Tensor,
         mlmm_atomic_charges: torch.Tensor,
         kehalf: torch.Tensor,
@@ -449,6 +466,32 @@ class Electrostatic_shift:
         idxup: torch.Tensor,
         idxvp: torch.Tensor,
     ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+        """
+        Calculate ML-MM atom distances.
+
+        Parameters
+        ----------
+        R: torch.tensor
+            ML and MM atom positions
+        idxu: torch.tensor
+            List of ML atom indices for ML-MM embedding potential
+        idxv: torch.tensor
+            List of MM atom indices for ML-MM embedding potential
+        idxup: torch.tensor
+            List of image to primary ML atom index pointer
+        idxvp: torch.tensor
+            List of image to primary MM atom index pointer
+
+        Return
+        ------
+        torch.tensor
+            ML-MM atom pair distances
+        torch.tensor
+            ML atom pair indices
+        torch.tensor
+            MM atom pair indices
+
+        """
 
         # Gather positions
         Ru = R[idxu]
@@ -475,6 +518,21 @@ class Electrostatic_shift:
         """
         Calculate electrostatic interaction between ML atom charge and MM point
         charge based on shifted Coulomb potential scheme
+        
+        Parameters
+        ----------
+        Duv: torch.tensor
+            ML-MM atom pair distances
+        Qau: torch.tensor
+            List of ML atomic charges
+        Qav: torch.tensor
+            List of MM atomic charges
+
+        Return
+        ------
+        torch.tensor
+            ML-MM atom pair electrostatic Coulomb interaction
+        
         """
 
         # Cutoff weighted reciprocal distance
@@ -494,11 +552,34 @@ class Electrostatic_shift:
         mlmm_idxv: torch.Tensor,
         mlmm_idxup: torch.Tensor,
         mlmm_idxvp: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> (torch.Tensor, torch.Tensor):
         """
         Calculates the electrostatic interaction between ML atoms in the 
         primary cell with all MM atoms in the primary or imaginary non-bonded
         lists.
+        
+        Parameters
+        ----------
+        mlmm_R: torch.tensor
+            ML and MM atom positions
+        ml_Qa: torch.tensor
+            ML atomic charges
+        mlmm_idxu: torch.tensor
+            List of ML atom indices for ML-MM embedding potential
+        mlmm_idxv: torch.tensor
+            List of MM atom indices for ML-MM embedding potential
+        mlmm_idxvp: torch.tensor
+            List of image to primary ML atom index pointer
+        mlmm_idxvp: torch.tensor
+            List of image to primary MM atom index pointer
+
+        Return
+        ------
+        torch.tensor
+            Total ML-MM electrostatic Coulomb interaction
+        torch.tensor
+            ML and MM atom electrostatic Coulomb forces
+        
         """
         
         # Calculate ML-MM atom distances

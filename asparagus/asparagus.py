@@ -17,7 +17,7 @@ from . import settings
 from . import utils
 from . import data
 from . import model
-from . import train
+from . import train as training
 from . import interface
 
 logging.basicConfig(level=logging.INFO)
@@ -570,7 +570,7 @@ class Asparagus():
         config: Optional[Union[str, dict, object]] = None,
         config_file: Optional[str] = None,
         **kwargs,
-    ) -> train.Trainer:
+    ) -> training.Trainer:
         """
         Initialize and return model calculator trainer.
 
@@ -628,7 +628,7 @@ class Asparagus():
         self,
         config: object,
         **kwargs,
-    ) -> train.Trainer:
+    ) -> training.Trainer:
         """
         Initialize and return model calculator trainer.
 
@@ -670,7 +670,7 @@ class Asparagus():
         # # # Assign Model Calculator Trainer # # #
         ###########################################
             
-        trainer = train.Trainer(
+        trainer = training.Trainer(
             config=config,
             data_container=data_container,
             model_calculator=model_calculator,
@@ -713,14 +713,112 @@ class Asparagus():
         trainer.run(**kwargs)
 
         return
-    
+
+    def get_tester(
+        self,
+        config: Optional[Union[str, dict, object]] = None,
+        config_file: Optional[str] = None,
+        **kwargs,
+    ) -> training.Tester:
+        """
+        Initialize and return model calculator tester.
+
+        Parameters
+        ----------
+        config: (str, dict, object)
+            Either the path to json file (str), dictionary (dict) or
+            settings.config class object of model parameters
+        config_file: str, optional, default see settings.default['config_file']
+            Path to config json file (str)
+
+        Returns:
+        --------
+        train.Tester
+            Model calculator tester object
+
+        """
+
+        ##############################
+        # # # Check Tester Input # # #
+        ##############################
+
+        # Assign model parameter configuration library
+        if config is None:
+            config = settings.get_config(
+                self.config, config_file, config_from=self)
+        else:
+            config = settings.get_config(
+                config, config_file, config_from=self)
+
+        # Check model parameter configuration and set default
+        config_update = config.set(
+            argitems=utils.get_input_args(),
+            check_default=utils.get_default_args(self, None),
+            check_dtype=utils.get_dtype_args(self, None))
+        
+        # Update configuration dictionary
+        config.update(config_update)
+
+        ##########################################
+        # # # Assign Model Calculator Tester # # #
+        ##########################################
+
+        # Assign model calculator trainer
+        if self.tester is None:
+            tester = self._get_tester(
+                config,
+                **kwargs)
+        else:
+            tester = self.tester
+
+        return tester
+
+    def _get_tester(
+        self,
+        config: object,
+        **kwargs,
+    ) -> training.Tester:
+        """
+        Initialize and return model calculator tester.
+
+        Parameters
+        ----------
+        config: object
+            Asparagus parameter settings.config class object
+
+        Returns:
+        --------
+        train.Tester
+            Model calculator tester object
+
+        """
+
+        #################################
+        # # # Assign Reference Data # # #
+        #################################
+
+        if self.data_container is None:
+            data_container = self.get_data_container(
+                config=config,
+                **kwargs)
+        else:
+            data_container = self.data_container
+
+        ###########################################
+        # # # Assign Model Calculator Trainer # # #
+        ###########################################
+
+        tester = training.Tester(
+            config=config,
+            data_container=data_container,
+            **kwargs)
+
+        return tester
+
     def test(
         self,
         config: Optional[Union[str, dict, object]] = None,
         config_file: Optional[str] = None,
-        test_datasets: Optional[Union[str, List[str]]] = None,
-        test_properties: Optional[Union[str, List[str]]] = None,
-        test_directory: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -733,31 +831,8 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
-        test_datasets: (str, list(str)), optional, default ['test']
-            A string or list of strings to define the data sets ('train', 
-            'valid', 'test') of which the evaluation will be performed.
-            By default it is just the test set of the data container object.
-            Inputs 'full' or 'all' requests the evaluation of all sets.
-        test_properties: (str, list(str)), optional, default None
-            Model properties to evaluate which must be available in the
-            model prediction and the reference test data set. If None, all
-            model properties will be evaluated if available in the test set.
-        test_directory: str, optional, default '.'
-            Directory to store evaluation graphics and data.
 
         """
-        
-        #################################
-        # # # Assign Reference Data # # #
-        #################################
-        
-        if self.data_container is None:
-            data_container = self.get_data_container(
-                config=config,
-                config_file=config_file,
-                **kwargs)
-        else:
-            data_container = self.data_container
 
         ###################################
         # # # Assign Model Calculator # # #
@@ -770,20 +845,20 @@ class Asparagus():
                 **kwargs)
         else:
             model_calculator = self.model_calculator
-
-
-        #################################
-        # # # Assign and Run Tester # # #
-        #################################
-
-        tester = train.Tester(
+        
+        ##########################################
+        # # # Assign Model Calculator Tester # # #
+        ##########################################
+        
+        tester = self.get_tester(
             config=config,
             config_file=config_file,
-            data_container=data_container,
-            test_datasets=test_datasets,
-            test_properties=test_properties,
-            test_directory=test_directory,
             **kwargs)
+
+        #######################################
+        # # # Run Model Calculator Tester # # #
+        #######################################
+
         tester.test(
             model_calculator,
             **kwargs)

@@ -154,10 +154,12 @@ class Tester:
         self.test_properties = self.check_test_properties(
             self.test_properties,
             self.data_properties)
-        
+
         # Check test directory
         if not os.path.exists(self.test_directory):
             os.makedirs(self.test_directory)
+
+        return
 
     def check_test_properties(
         self,
@@ -209,7 +211,7 @@ class Tester:
         self,
         model_calculator: torch.nn.Module,
         test_properties: Optional[Union[str, List[str]]] = None,
-        test_directory: Optional[str] = '.',
+        test_directory: Optional[str] = None,
         test_plot_correlation: Optional[bool] = True,
         test_plot_histogram: Optional[bool] = False,
         test_plot_residual: Optional[bool] = False,

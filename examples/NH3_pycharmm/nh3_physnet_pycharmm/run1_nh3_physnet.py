@@ -18,7 +18,7 @@ from asparagus.sample import MetaSampler
 # The temperature of the meta dyanmics is set to 500 K and run for
 # 10000 steps a 1 fs time steps (total of 10 ps). Every 10th step is written
 # to the database yielding 1000 reference samples.
-if True:
+if False:
 
     sampler = MetaSampler(
         config='model_nh3/nh3_meta.json',
@@ -66,5 +66,5 @@ if True:
         )
     model.train()
     model.test(
-        test_datasets='all',
+        test_datasets='test',
         test_directory=model.get('model_directory'))
