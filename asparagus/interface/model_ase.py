@@ -29,19 +29,14 @@ class ASE_Calculator(ase_calc.Calculator):
         is returned as model prediction.
     atoms: ASE Atoms object, optional, default None
         ASE Atoms object to which the calculator will be attached.
-    atoms_charge: float, optional, default 0.0
+    charge: float, optional, default 0.0
         Total charge of the respective ASE Atoms object.
     implemented_properties: (str, list(str)), optional, default None
         Properties predicted by the model calculator. If None, then
         all model properties (of the first model if ensemble) are
         available.
-    use_ase_neighbor_list: bool, optional, default True
-        If True, use the ASE neighbor list function to compute atom pair
-        indices within the model interaction cutoff regarding periodic
-        boundary conditions.
-        If False, all possible atom pair indices are considered.
-        If ASE Atoms object is periodic, neighbor list function will be
-        used anyway.
+    label: str, optional, default 'asparagus'
+        Label for the ASE calculator
 
     """
 
@@ -53,8 +48,9 @@ class ASE_Calculator(ase_calc.Calculator):
         self,
         model_calculator: Union[object, List[object]],
         atoms: Optional[object] = None,
-        atoms_charge: Optional[float] = None,
+        charge: Optional[float] = None,
         implemented_properties: Optional[List[str]] = None,
+        label: Optional[str] = 'asparagus',
         **kwargs
     ):
         """
@@ -75,11 +71,15 @@ class ASE_Calculator(ase_calc.Calculator):
             self.model_calculator_list = model_calculator
             self.model_calculator_num = len(model_calculator)
             self.model_ensemble = True
+            self.model_device = self.model_calculator_list[0].device
+            self.model_dtype = self.model_calculator_list[0].dtype
         else:
             self.model_calculator = model_calculator
             self.model_calculator_list = None
             self.model_calculator_num = 1
             self.model_ensemble = False
+            self.model_device = self.model_calculator.device
+            self.model_dtype = self.model_calculator.dtype
 
         # Set implemented properties
         if implemented_properties is None:
@@ -142,8 +142,8 @@ class ASE_Calculator(ase_calc.Calculator):
             cutoff = [input_cutoff, model_cutoff]
         self.neighbor_list = utils.TorchNeighborListRangeSeparated(
             cutoff,
-            self.model_calculator.device,
-            self.model_calculator.dtype)
+            self.model_device,
+            self.model_dtype)
 
         # Get property unit conversions from model units to ASE units
         self.model_unit_properties = (
@@ -160,7 +160,7 @@ class ASE_Calculator(ase_calc.Calculator):
             self.model_conversion[prop] = conversion
 
         # Set atoms charge
-        self.set_atoms_charge(atoms_charge, initialize=False)
+        self.set_atoms_charge(charge, initialize=False)
 
         # Set ASE atoms object
         self.set_atoms(atoms, initialize=True)
@@ -196,7 +196,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
     def set_atoms_charge(
         self,
-        atoms_charge: int,
+        charge: int,
         initialize: Optional[bool] = False,
     ):
         """
@@ -204,7 +204,7 @@ class ASE_Calculator(ase_calc.Calculator):
         
         Parameter
         ---------
-        atoms_charge: int
+        charge: int
             Model calculator assigned ASE atoms charge
         initialize: bool, optional, default False
             Force initialization of atoms batch data
@@ -212,10 +212,10 @@ class ASE_Calculator(ase_calc.Calculator):
         """
 
         # Check charge input
-        if atoms_charge is None:
-            self.atoms_charge = 0.0
-        elif utils.is_numeric(atoms_charge):
-            self.atoms_charge = float(atoms_charge)
+        if charge is None:
+            self.charge = 0.0
+        elif utils.is_numeric(charge):
+            self.charge = float(charge)
         else:
             raise SyntaxError(
                 "Provide a float for the charge of the atoms system!")
@@ -257,7 +257,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Atom positions
         atoms_batch['positions'] = torch.zeros(
-            [Natoms, 3], dtype=torch.float64)
+            [Natoms, 3], dtype=self.model_dtype)
         
         # Atom periodic boundary conditions
         atoms_batch['pbc'] = torch.tensor(
@@ -265,7 +265,7 @@ class ASE_Calculator(ase_calc.Calculator):
         
         # Atom cell information
         atoms_batch['cell'] = torch.tensor(
-            [self.atoms.get_cell()[:]], dtype=torch.float64)
+            [self.atoms.get_cell()[:]], dtype=self.model_dtype)
         
         # Atom segment indices, just one atom segment allowed
         atoms_batch['sys_i'] = torch.zeros(
@@ -273,7 +273,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Total atomic system charge
         atoms_batch['charge'] = torch.tensor(
-            [self.atoms_charge], dtype=torch.float64)
+            [self.charge], dtype=self.model_dtype)
 
         # Changing model calculator input for atoms object
         atoms_batch = self.update_model_input(atoms_batch)
@@ -306,11 +306,11 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Atom positions
         atoms_batch['positions'] = torch.tensor(
-            self.atoms.get_positions(), dtype=torch.float64)
+            self.atoms.get_positions(), dtype=self.model_dtype)
 
         # Atom cell information
         atoms_batch['cell'] = torch.tensor(
-            [self.atoms.get_cell()[:]], dtype=torch.float64)
+            [self.atoms.get_cell()[:]], dtype=self.model_dtype)
 
         # Create and assign atom pair indices and periodic offsets
         atoms_batch = self.neighbor_list(atoms_batch)
@@ -320,7 +320,7 @@ class ASE_Calculator(ase_calc.Calculator):
     def initialize_model_input_list(
         self, 
         atoms_list: List[ase.Atoms],
-        atoms_charge: List[float],
+        charge: List[float],
     ) -> Dict[str, torch.Tensor]:
         """
         Initial preparation for a set of ASE Atoms objects.
@@ -329,7 +329,7 @@ class ASE_Calculator(ase_calc.Calculator):
         ---------
         atoms_list: list(ase.Atoms)
             List of ASE atoms object
-        atoms_charge: list(float)
+        charge: list(float)
             List of ASE atoms system charges
 
         Returns
@@ -363,7 +363,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Atom positions
         atoms_batch['positions'] = torch.zeros(
-            [Natoms_sum, 3], dtype=torch.float64)
+            [Natoms_sum, 3], dtype=self.model_dtype)
 
         # Atomic number
         atomic_numbers = torch.empty(Natoms_sum, dtype=torch.int64)
@@ -382,7 +382,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Total atomic system charge
         atoms_batch['charge'] = torch.tensor(
-            atoms_charge, dtype=torch.float64)
+            charge, dtype=self.model_dtype)
 
         # Changing model calculator input for atoms object
         atoms_batch = self.update_model_input_list(atoms_batch, atoms_list)
@@ -415,7 +415,7 @@ class ASE_Calculator(ase_calc.Calculator):
         i_atom = 0
         for atoms in atoms_list:
             for p_atom in torch.tensor(
-                    atoms.get_positions(), dtype=torch.float64):
+                    atoms.get_positions(), dtype=self.model_dtype):
                 atoms_batch['positions'][i_atom, :] = p_atom
                 i_atom += 1
 
@@ -427,7 +427,7 @@ class ASE_Calculator(ase_calc.Calculator):
     def calculate(
         self,
         atoms: Optional[Union[ase.Atoms, List[ase.Atoms]]] = None,
-        atoms_charge: Optional[Union[float, List[float]]] = None,
+        charge: Optional[Union[float, List[float]]] = None,
         properties: List[str] = None,
         system_changes: List[str] = ase_calc.all_changes,
         **kwargs
@@ -441,7 +441,7 @@ class ASE_Calculator(ase_calc.Calculator):
             Optional ASE Atoms object or list of ASE Atoms objects to which the
             properties will be calculated. If given, atoms setup to prepare
             model calculator input will be run again.
-        atoms_charge: (float, list(float)), optional, default None
+        charge: (float, list(float)), optional, default None
             Optional total charge of the respective ASE Atoms object or
             objects. If the atoms charge is given as a float, the charge is
             assumed for all ASE atoms objects given.
@@ -476,15 +476,15 @@ class ASE_Calculator(ase_calc.Calculator):
                 atoms_list = True
 
                 # Check atoms charges
-                if atoms_charge is None:
-                    atoms_charge = [0.0]*len(atoms)
-                elif utils.is_numeric(atoms_charge):
-                    atoms_charge = [atoms_charge]*len(atoms)
-                elif utils.is_numeric_array(atoms_charge):
-                    if len(atoms_charge) != len(atoms):
+                if charge is None:
+                    charge = [0.0]*len(atoms)
+                elif utils.is_numeric(charge):
+                    charge = [charge]*len(atoms)
+                elif utils.is_numeric_array(charge):
+                    if len(charge) != len(atoms):
                         raise SyntaxError(
                             "Number of provided atoms charges "
-                            + f"{len(atoms_charge):d} does not match the "
+                            + f"{len(charge):d} does not match the "
                             + "number of given atoms systems "
                             + f"{len(self.atoms):d}!")
                 else:
@@ -493,7 +493,7 @@ class ASE_Calculator(ase_calc.Calculator):
                         + "of the atoms system!\n")
                 # Get model input for the atoms list
                 atoms_batch = self.initialize_model_input_list(
-                    atoms, atoms_charge)
+                    atoms, charge)
 
             # For a single atoms object, reinitialze
             else:
@@ -502,10 +502,10 @@ class ASE_Calculator(ase_calc.Calculator):
                     properties = self.implemented_properties
                 ase_calc.Calculator.calculate(
                     self, atoms, properties, system_changes)
-                if utils.is_numeric(atoms_charge):
-                    self.atoms_charge = float(atoms_charge)
-                elif self.atoms_charge is None:
-                    self.atoms_charge = 0.0
+                if utils.is_numeric(charge):
+                    self.charge = float(charge)
+                elif self.charge is None:
+                    self.charge = 0.0
                 self.atoms_batch = self.initialize_model_input()
                 atoms_batch = self.atoms_batch
 

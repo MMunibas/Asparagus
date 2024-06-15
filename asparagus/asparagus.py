@@ -870,11 +870,6 @@ class Asparagus():
         config: Optional[Union[str, dict, object]] = None,
         config_file: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = 'best',
-        atoms: Optional[Union[ase.Atoms, List[ase.Atoms]]] = None,
-        atoms_charge: Optional[Union[float, List[float]]] = None,
-        implemented_properties: Optional[List[str]] = None,
-        use_neighbor_list: Optional[bool] = None,
-        label: Optional[str] = 'asparagus',
         **kwargs,
     ) -> ase.calculators.calculator.Calculator:
         """
@@ -891,18 +886,6 @@ class Asparagus():
             If None or 'best', load best model checkpoint. 
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
-        atoms: ase.Atoms, optional, default None
-            ASE Atoms object with assigned ASE calculator
-        atoms_charge: (float, list(float)), optional, default None
-            Total charge(s) of the system(s)
-        implemented_properties: list(str), optional, default None
-            List of model properties to compute. If None, all model properties
-            will be provided, else the properties will be checked for 
-            availability.
-        use_neighbor_list: bool, optional, default None
-            Use neighbor list for the calculator.
-        label: str, optional, default 'asparagus'
-            Label for the ASE calculator
 
         Returns
         -------
@@ -930,11 +913,7 @@ class Asparagus():
 
         ase_calculator = interface.ASE_Calculator(
             model_calculator,
-            atoms=atoms,
-            atoms_charge=atoms_charge,
-            implemented_properties=implemented_properties,
-            use_neighbor_list=use_neighbor_list,
-            label=label)
+            **kwargs)
 
         return ase_calculator
 

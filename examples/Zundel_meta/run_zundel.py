@@ -96,12 +96,12 @@ if True:
     model = Asparagus(
         config="model_zundel/zundel_config.json",
         )
-    calc = model.get_ase_calculator()
-    
+    calc = model.get_ase_calculator(charge=1)
+
     zundel = ase.io.read("zundel_h5o2.xyz")
     zundel.calc = calc
     
-    dyn = BFGS(zundel)
+    dyn = BFGS(zundel, trajectory='bfgs.traj')
     dyn.run(fmax=0.001)
     
     vib = Vibrations(zundel)

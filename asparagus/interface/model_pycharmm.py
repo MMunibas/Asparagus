@@ -56,8 +56,6 @@ class PyCharmm_Calculator:
     mlmm_cuton: float
         Lower atom pair distance to start interaction switch-off for ML/MM
         electrostatic interactions
-    dtype: dtype object, optional, default torch.float64
-        Data type of the calculator
     **kwargs
         Additional keyword arguments.
 
@@ -73,11 +71,11 @@ class PyCharmm_Calculator:
         mlmm_atomic_charges: Optional[List[float]] = None,
         mlmm_cutoff: Optional[float] = None,
         mlmm_cuton: Optional[float] = None,
-        dtype=torch.float64,
+        **kwargs
     ):
 
         # Assign dtype
-        self.dtype = model_calculator.dtype #dtype
+        self.dtype = model_calculator.dtype
 
         ################################
         # # # Set PyCHARMM Options # # #

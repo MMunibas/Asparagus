@@ -405,6 +405,11 @@ class Sampler:
                         if isys not in indices:
                             continue
 
+                    # Check cell parameter
+                    cell = data_i['cell']
+                    if cell.dim() == 1 and cell.shape[0] == 9:
+                       cell = cell.reshape(3, 3) 
+
                     # Create and append atoms object to sample queue
                     system = ase.Atoms(
                         data_i['atomic_numbers'],
