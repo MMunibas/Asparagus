@@ -28,11 +28,11 @@ class InteractionBlock(torch.nn.Module):
         interaction.
     n_residual_features: int
         Number of residual layers for atomic feature interactions.
-    activation_fn: callable, optional, default None
+    activation_fn: callable
         Residual layer activation function.
-    device: str, optional, default 'cpu'
+    device: str
         Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
+    dtype: dtype object
         Model variables data type
 
     """
@@ -43,9 +43,9 @@ class InteractionBlock(torch.nn.Module):
         n_radialbasis: int,
         n_residual_interaction: int,
         n_residual_features: int,
-        activation_fn: Optional[Callable] = None,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        activation_fn: Callable,
+        device: str,
+        dtype: object,
     ):
         """
         Initialize PhysNet interaction block.
@@ -59,16 +59,17 @@ class InteractionBlock(torch.nn.Module):
             n_radialbasis,
             n_residual_interaction,
             activation_fn,
-            device=device,
-            dtype=dtype)
+            device,
+            dtype)
 
         # Atomic feature interaction layers
         self.residuals = torch.nn.ModuleList([
             ResidualLayer(
                 n_atombasis,
-                activation_fn=activation_fn,
-                device=device,
-                dtype=dtype)
+                activation_fn,
+                True,
+                device,
+                dtype)
             for _ in range(n_residual_features)])
 
         return
@@ -123,11 +124,11 @@ class InteractionLayer(torch.nn.Module):
     n_residual_interaction: int
         Number of residual layers for atomic feature and radial basis vector
         interaction.
-    activation_fn: callable, optional, default None
+    activation_fn: callable
         Residual layer activation function.
-    device: str, optional, default 'cpu'
+    device: str
         Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
+    dtype: dtype object
         Model variables data type
 
     """
@@ -137,9 +138,9 @@ class InteractionLayer(torch.nn.Module):
         n_atombasis: int,
         n_radialbasis: int,
         n_residual_interaction: int,
-        activation_fn: Optional[Callable] = None,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        activation_fn: Callable,
+        device: str,
+        dtype: object,
     ):
 
         super(InteractionLayer, self).__init__()
@@ -155,43 +156,50 @@ class InteractionLayer(torch.nn.Module):
         self.radial2atom = DenseLayer(
             n_radialbasis,
             n_atombasis,
-            bias=False,
-            weight_init=torch.nn.init.zeros_,
-            device=device,
-            dtype=dtype)
+            None,
+            False,
+            device,
+            dtype,
+            weight_init=torch.nn.init.zeros_)
+            
 
         # Dense layer for atomic feature vector for atom i
         self.dense_i = DenseLayer(
             n_atombasis,
             n_atombasis,
-            activation_fn=activation_fn,
-            device=device,
-            dtype=dtype)
+            activation_fn,
+            True,
+            device,
+            dtype)
         
         # Dense layer for atomic feature vector for atom j
         self.dense_j = DenseLayer(
             n_atombasis,
             n_atombasis,
-            activation_fn=activation_fn,
-            device=device,
-            dtype=dtype)
+            activation_fn,
+            True,
+            device,
+            dtype)
 
         # Residual layers for atomic feature vector pair interaction modifying 
         # the message vector
         self.residuals_ij = torch.nn.ModuleList([
             ResidualLayer(
                 n_atombasis,
-                activation_fn=activation_fn,
-                device=device,
-                dtype=dtype)
+                activation_fn,
+                True,
+                device,
+                dtype)
             for _ in range(n_residual_interaction)])
 
         # Dense layer for message vector interaction
         self.dense_out = DenseLayer(
             n_atombasis,
             n_atombasis,
-            device=device,
-            dtype=dtype)
+            None,
+            True,
+            device,
+            dtype)
         
         # Scaling vector for mixing of initial atomic feature vector with
         # message vector
@@ -280,11 +288,11 @@ class OutputBlock(torch.nn.Module):
     n_residual: int
         Number of residual layers for transformation from atomic feature vector
         to output results.
-    activation_fn: callable, optional, default None
+    activation_fn: callable
         Residual layer activation function.
-    device: str, optional, default 'cpu'
+    device: str
         Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
+    dtype: dtype object
         Model variables data type
 
     """
@@ -294,9 +302,9 @@ class OutputBlock(torch.nn.Module):
         n_atombasis: int,
         n_results: int,
         n_residual: int,
-        activation_fn: Optional[Callable] = None,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        activation_fn: Callable,
+        device: str,
+        dtype: object,
     ):
 
         super(OutputBlock, self).__init__()
@@ -311,20 +319,21 @@ class OutputBlock(torch.nn.Module):
         self.residuals = torch.nn.ModuleList([
             ResidualLayer(
                 n_atombasis,
-                activation_fn=activation_fn,
-                device=device,
-                dtype=dtype)
+                activation_fn,
+                True,
+                device,
+                dtype)
             for _ in range(n_residual)])
 
         # Dense layer for transforming atomic feature vector to result vector
         self.output = DenseLayer(
             n_atombasis,
             n_results,
-            activation_fn=activation_fn,
-            bias=False,
-            weight_init=torch.nn.init.zeros_,
-            device=device,
-            dtype=dtype)
+            activation_fn,
+            False,
+            device,
+            dtype,
+            weight_init=torch.nn.init.zeros_)
         
         return
 

@@ -1,12 +1,18 @@
 import numpy as np
 import torch
 
-# ======================================
-# General Model Type Settings
-# ======================================
+#======================================
+# General Settings
+#======================================
 
 # Default calculator model
 _default_calculator_model = 'PhysNet'
+
+# Default device
+_default_device = 'cpu'
+
+# Default floating point dtype
+_default_dtype = torch.float64
 
 # ======================================
 # Default Input
@@ -16,14 +22,10 @@ _default_calculator_model = 'PhysNet'
 _default_args = {
     'config':                       {},
     'config_file':                  'config.json',
-    'device':                       'cpu',
-    'dtype':                        torch.float64,
     # Model
     'model_calculator':             None,
     'model_type':                   None,
     'model_restart':                False,
-    'model_device':                 'cpu',
-    'model_dtype':                  torch.float64,
     'model_seed':                   np.random.randint(1E6),
     # Input module
     'input_calculator':             None,

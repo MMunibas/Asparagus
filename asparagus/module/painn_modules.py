@@ -94,6 +94,8 @@ class Input_PaiNN(torch.nn.Module):
         input_rbf_trainable: Optional[bool] = None,
         input_n_maxatom: Optional[int] = None,
         input_atom_features_range: Optional[float] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -125,8 +127,8 @@ class Input_PaiNN(torch.nn.Module):
         config.update(config_update)
         
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
         
         # Check general model cutoff with radial basis cutoff
         if config.get('model_cutoff') is None:
@@ -169,8 +171,8 @@ class Input_PaiNN(torch.nn.Module):
             self.input_n_radialbasis,
             self.input_rbf_center_start, self.input_rbf_center_end,
             self.input_rbf_trainable, 
-            device=self.device,
-            dtype=self.dtype)
+            self.device,
+            self.dtype)
 
         return
 
@@ -319,6 +321,8 @@ class Graph_PaiNN(torch.nn.Module):
         graph_n_blocks: Optional[int] = None,
         graph_activation_fn: Optional[Union[str, object]] = None,
         graph_stability_constant: Optional[float] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -350,8 +354,8 @@ class Graph_PaiNN(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Get input to graph module interface parameters 
         self.n_atombasis = config.get('input_n_atombasis')
@@ -369,27 +373,27 @@ class Graph_PaiNN(torch.nn.Module):
         self.descriptors_filter = layer.DenseLayer(
             self.n_radialbasis,
             self.graph_n_blocks*self.n_atombasis*3,
-            activation_fn=None,
-            bias=True,
-            device=self.device,
-            dtype=self.dtype)
+            None,
+            True,
+            self.device,
+            self.dtype)
         
         # Initialize message passing blocks
         self.interaction_block = torch.nn.ModuleList([
             painn_layers.PaiNNInteraction(
                 self.n_atombasis, 
-                activation_fn=self.activation_fn,
-                device=self.device,
-                dtype=self.dtype)
+                self.activation_fn,
+                self.device,
+                self.dtype)
             for _ in range(self.graph_n_blocks)
             ])
         self.mixing_block = torch.nn.ModuleList([
             painn_layers.PaiNNMixing(
                 self.n_atombasis, 
-                activation_fn=self.activation_fn,
-                stability_constant=self.graph_stability_constant,
-                device=self.device,
-                dtype=self.dtype)
+                self.activation_fn,
+                self.device,
+                self.dtype,
+                stability_constant=self.graph_stability_constant)
             for _ in range(self.graph_n_blocks)
             ])
 
@@ -657,6 +661,8 @@ class Output_PaiNN(torch.nn.Module):
         output_properties: Optional[List[str]] = None,
         output_properties_options: Optional[Dict[str, Any]] = None,
         output_scaling_parameter: Optional[Dict[str, List[float]]] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -688,8 +694,8 @@ class Output_PaiNN(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Get input and graph to output module interface parameters 
         self.n_maxatom = config.get('input_n_maxatom')
@@ -834,6 +840,8 @@ class Output_PaiNN(torch.nn.Module):
                 painn_layers.PaiNNOutput_scalar(
                     self.n_atombasis,
                     options.get('n_property'),
+                    self.device,
+                    self.dtype,
                     n_layer=options.get('n_layer'),
                     n_neurons=options.get('n_neurons'),
                     activation_fn=activation_fn,
@@ -843,8 +851,7 @@ class Output_PaiNN(torch.nn.Module):
                     weight_init_last=options.get('weight_init_last'),
                     bias_init_layer=options.get('bias_init_layer'),
                     bias_init_last=options.get('bias_init_last'),
-                    device=self.device,
-                    dtype=self.dtype)
+                    )
                 )
         
         # Add output blocks for (scalar +) tensor properties
@@ -875,6 +882,8 @@ class Output_PaiNN(torch.nn.Module):
                 painn_layers.PaiNNOutput_tensor(
                     self.n_atombasis,
                     options.get('n_property'),
+                    self.device,
+                    self.dtype,
                     n_layer=options.get('n_layer'),
                     n_neurons=options.get('n_neurons'),
                     scalar_activation_fn=scalar_activation_fn,
@@ -885,8 +894,7 @@ class Output_PaiNN(torch.nn.Module):
                     weight_init_last=options.get('weight_init_last'),
                     bias_init_layer=options.get('bias_init_layer'),
                     bias_init_last=options.get('bias_init_last'),
-                    device=self.device,
-                    dtype=self.dtype)
+                    )
                 )
         
         # Initialize property scaling dictionary and atomic energy shift

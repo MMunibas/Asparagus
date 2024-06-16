@@ -20,9 +20,9 @@ class PaiNNInteraction(torch.nn.Module):
         Number of atomic features (length of the atomic feature vector)
     activation_fn: callable, optional, default None
         Residual layer activation function.
-    device: str, optional, default 'cpu'
+    device: str
         Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
+    dtype: dtype object
         Model variables data type
 
     """
@@ -30,9 +30,9 @@ class PaiNNInteraction(torch.nn.Module):
     def __init__(
         self,
         n_atombasis: int,
-        activation_fn: Optional[Callable] = None,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        activation_fn: Callable,
+        device: str,
+        dtype: object,
     ):
         """
         Initialize PaiNN interaction block.
@@ -46,18 +46,18 @@ class PaiNNInteraction(torch.nn.Module):
             DenseLayer(
                 n_atombasis, 
                 n_atombasis,
-                bias=True,
-                activation_fn=activation_fn,
-                device=device,
-                dtype=dtype
+                activation_fn,
+                True,
+                device,
+                dtype,
                 ),
             DenseLayer(
                 n_atombasis, 
                 3*n_atombasis,
-                bias=True,
-                activation_fn=None,
-                device=device,
-                dtype=dtype
+                None,
+                True,
+                device,
+                dtype,
                 ),
             )
 
@@ -113,24 +113,24 @@ class PaiNNMixing(torch.nn.Module):
     ----------
     n_atombasis: int
         Number of atomic features (length of the atomic feature vector)
-    activation_fn: callable, optional, default None
+    activation_fn: callable
         Residual layer activation function.
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
     stability_constant: float, optional, default 1e-8
         Numerical stability added constant
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
     
     """
     
     def __init__(
         self,
         n_atombasis: int,
-        activation_fn: Optional[Callable] = None,
+        activation_fn: Callable,
+        device: str,
+        dtype: object,
         stability_constant: Optional[float] = 1.e-8,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
     ):
         """
         Initialize PaiNN mixing block.
@@ -146,27 +146,27 @@ class PaiNNMixing(torch.nn.Module):
         self.context = DenseLayer(
             n_atombasis, 
             2*n_atombasis,
-            activation_fn=activation_fn,
-            bias=False,
-            device=device,
-            dtype=dtype,
+            activation_fn,
+            False,
+            device,
+            dtype,
             )
         self.mixing = torch.nn.Sequential(
             DenseLayer(
                 2*n_atombasis, 
                 n_atombasis,
-                bias=True,
-                activation_fn=activation_fn,
-                device=device,
-                dtype=dtype
+                activation_fn,
+                True,
+                device,
+                dtype,
                 ),
             DenseLayer(
                 n_atombasis, 
                 3*n_atombasis,
-                activation_fn=None,
-                bias=False,
-                device=device,
-                dtype=dtype
+                None,
+                False,
+                device,
+                dtype,
                 ),
             )
 
@@ -221,21 +221,21 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         Number of output vector representation features.
     hidden_n_neurons: int
         Number of hidden neurons
-    scalar_activation_fn: callable, optional, default None
+    scalar_activation_fn: callable
         Activation function on scalar features. If None, identity is used.
-    hidden_activation_fn: callable, optional, default None
+    hidden_activation_fn: callable
         Activation function on hidden layer . If None, identity is used.
-    bias: bool, optional, default True
+    bias: bool
         If True, apply bias shift on neuron output.
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
     weight_init: callable, optional, default 'torch.nn.init.xavier_normal_'
         By Default, use Xavier initialization for neuron weight else zero
         weights are used.
     bias_init: callable, optional, default 'torch.nn.init.zeros_'
         By Default, zero bias values are initialized.
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
 
     """
     def __init__(
@@ -245,15 +245,13 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         scalar_n_output: int,
         vector_n_output: int,
         hidden_n_neurons: int,
-        scalar_activation_fn: 
-            Optional[Union[Callable, torch.nn.Module]] = None,
-        hidden_activation_fn: 
-            Optional[Union[Callable, torch.nn.Module]] = None,
-        bias: Optional[bool] = True,
+        scalar_activation_fn: Union[Callable, torch.nn.Module],
+        hidden_activation_fn: Union[Callable, torch.nn.Module],
+        bias: bool,
+        device: str,
+        dtype: object,
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
     ):
         """
         Initialize gated equivariant block.
@@ -276,32 +274,34 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         self.branch_vector = DenseLayer(
             vector_n_input,
             2*vector_n_output,
-            activation_fn=None,
-            bias=False,
-            weight_init=weight_init,
-            device=device,
-            dtype=dtype)
+            None,
+            False,
+            device,
+            dtype,
+            weight_init=weight_init)
 
         # Mixed scalar/norm(vector) representation network
         self.mixed_scalars = torch.nn.Sequential(
             DenseLayer(
                 scalar_n_input + vector_n_output,
                 hidden_n_neurons,
-                activation_fn=hidden_activation_fn,
-                bias=bias,
+                hidden_activation_fn,
+                bias,
+                device,
+                dtype,
                 weight_init=weight_init,
                 bias_init=bias_init,
-                device=device,
-                dtype=dtype),
+                ),
             DenseLayer(
                 hidden_n_neurons,
                 scalar_n_output + vector_n_output,
-                activation_fn=None,
-                bias=bias,
+                None,
+                bias,
+                device,
+                dtype,
                 weight_init=weight_init,
                 bias_init=bias_init,
-                device=device,
-                dtype=dtype),
+                ),                
         )
 
         # Scalar feature activation function
@@ -373,17 +373,17 @@ class PaiNNOutput_scalar(torch.nn.Module):
         Number of atomic features (length of the atomic feature vector)
     n_property: int
         Dimension of the predicted property.
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
     n_layer: int, optional, default 2
         Number of hidden layer in the output block.
     n_neurons: (int list(int)), optional, default None
         Number of neurons of the hidden layers (int) or per hidden layer (list)
     activation_fn: callable, optional, default None
         Residual layer activation function.
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
-
+    
     """
     
     _default_output_scalar = {
@@ -402,6 +402,8 @@ class PaiNNOutput_scalar(torch.nn.Module):
         self,
         n_atombasis: int,
         n_property: int,
+        device: str,
+        dtype: object,
         n_layer: Optional[int] = None,
         n_neurons: Optional[Union[int, List[int]]] = None,
         activation_fn: Optional[Callable] = None,
@@ -411,8 +413,6 @@ class PaiNNOutput_scalar(torch.nn.Module):
         weight_init_last: Optional[Callable] = None,
         bias_init_layer: Optional[Callable] = None,
         bias_init_last: Optional[Callable] = None,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
     ):
         """
         Initialize PaiNN scalar output block.
@@ -455,12 +455,12 @@ class PaiNNOutput_scalar(torch.nn.Module):
                 DenseLayer(
                     n_neurons_list[ii], 
                     n_neurons_list[ii + 1],
-                    activation_fn=self.activation_fn,
-                    bias=self.bias_layer,
+                    self.activation_fn,
+                    self.bias_layer,
+                    device,
+                    dtype,
                     weight_init=self.weight_init_layer,
                     bias_init=self.bias_init_layer,
-                    device=device,
-                    dtype=dtype
                     ),
                 )
         
@@ -469,12 +469,12 @@ class PaiNNOutput_scalar(torch.nn.Module):
             DenseLayer(
                 n_neurons_list[-2], 
                 n_neurons_list[-1],
-                activation_fn=None,
-                bias=self.bias_last,
+                None,
+                self.bias_last,
+                device,
+                dtype,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
-                device=device,
-                dtype=dtype
                 ),
             )
         
@@ -516,6 +516,10 @@ class PaiNNOutput_tensor(torch.nn.Module):
         Number of atomic features (length of the atomic feature vector)
     n_property: int
         Dimension of the predicted property.
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
     n_layer: int, optional, default 2
         Number of hidden layer in the output block.
     n_neurons: (int list(int)), optional, default None
@@ -540,11 +544,7 @@ class PaiNNOutput_tensor(torch.nn.Module):
         Bias parameter initialization function of the hidden layer
     bias_init_last: callable, optional, default 'torch.nn.init.zeros_'
         Bias parameter initialization function of the last layer
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
-
+    
     """
     
     _default_output_tensor = {
@@ -565,6 +565,8 @@ class PaiNNOutput_tensor(torch.nn.Module):
         self,
         n_atombasis: int,
         n_property: int,
+        device: str,
+        dtype: object,
         n_layer: Optional[int] = None,
         n_neurons: Optional[Union[int, List[int]]] = None,
         hidden_n_neurons: Optional[Union[int, List[int]]] = None,
@@ -576,8 +578,6 @@ class PaiNNOutput_tensor(torch.nn.Module):
         weight_init_last: Optional[Callable] = torch.nn.init.zeros_,
         bias_init_layer: Optional[Callable] = torch.nn.init.zeros_,
         bias_init_last: Optional[Callable] = torch.nn.init.zeros_,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
     ):
         """
         Initialize PaiNN tensor output block.
@@ -633,13 +633,13 @@ class PaiNNOutput_tensor(torch.nn.Module):
                     n_neurons_list[ii + 1],
                     n_neurons_list[ii + 1],
                     hidden_n_neurons_list[ii],
-                    scalar_activation_fn=self.scalar_activation_fn,
-                    hidden_activation_fn=self.hidden_activation_fn,
-                    bias=self.bias_layer,
+                    self.scalar_activation_fn,
+                    self.hidden_activation_fn,
+                    self.bias_layer,
+                    device,
+                    dtype,
                     weight_init=self.weight_init_layer,
                     bias_init=self.bias_init_layer,
-                    device=device,
-                    dtype=dtype
                     ),
                 )
         
@@ -651,13 +651,13 @@ class PaiNNOutput_tensor(torch.nn.Module):
                 n_neurons_list[-1],
                 n_neurons_list[-1],
                 hidden_n_neurons_list[-1],
-                scalar_activation_fn=self.scalar_activation_fn,
-                hidden_activation_fn=None,
-                bias=self.bias_last,
+                self.scalar_activation_fn,
+                None,
+                self.bias_last,
+                device,
+                dtype,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
-                device=device,
-                dtype=dtype
                 ),
             )
 

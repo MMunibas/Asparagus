@@ -119,6 +119,34 @@ def check_input_dtype(
         else:
             return False
 
+def check_device_option(
+    device: str,
+    config: object,
+):
+    """
+    Check and select device input.
+    
+    Parameters
+    ----------
+    device: str
+        Device label
+    config: settings.Configuration
+        Asparagus configuration object for default options and conversion
+    """
+    
+    # If no device options are given, take default device.
+    if device is None and config.get('device') is None:
+        return settings._default_device
+    # If no device is defined, take device from config.
+    elif device is None:
+        return config.get('device')
+    # If device is given, check if conversion is needed
+    elif utils.is_string(device):
+        return device
+    else:
+        raise SyntaxError(
+            f"Torch device input '{device}' is of invalid data type!")
+
 def check_dtype_option(
     dtype: Any,
     config: object,
@@ -134,9 +162,13 @@ def check_dtype_option(
         Asparagus configuration object for default options and conversion
     """
     
-    # If no dtype option given, take already converted dtype from config.
-    if dtype is None:
+    # If no dtype options are given, take default dtype.
+    if dtype is None and config.get('dtype') is None:
+        return settings._default_dtype
+    # If no dtype is defined, take converted dtype from config.
+    elif dtype is None:
         return config.get('dtype')
+    # If dtype is given, check if conversion is needed
     elif utils.is_string(dtype):
         return config.convert_dtype(dtype, 'read')
     else:

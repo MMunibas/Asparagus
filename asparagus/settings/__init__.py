@@ -7,7 +7,7 @@ handles the configuration file.
 """
 
 from .default import (
-    _default_args, _default_calculator_model
+    _default_args, _default_calculator_model, _default_device, _default_dtype
 )
 
 from .dtypes import (

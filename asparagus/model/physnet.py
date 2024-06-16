@@ -146,7 +146,7 @@ class Model_PhysNet(torch.nn.Module):
         config.update(config_update)
         
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
+        self.device = utils.check_device_option(device, config)
         self.dtype = utils.check_dtype_option(dtype, config)
 
         # Set model calculator number of threads
@@ -338,10 +338,10 @@ class Model_PhysNet(torch.nn.Module):
             
             # Get Ziegler-Biersack-Littmark style nuclear repulsion potential
             self.repulsion_module = module.ZBL_repulsion(
+                self.model_repulsion_trainable,
+                self.device,
+                self.dtype,
                 unit_properties=self.model_unit_properties,
-                trainable=self.model_repulsion_trainable,
-                device=self.device,
-                dtype=self.dtype,
                 **kwargs)
 
         # Assign electrostatic interaction module
@@ -349,11 +349,11 @@ class Model_PhysNet(torch.nn.Module):
 
             # Get electrostatic point charge model calculator
             self.electrostatic_module = module.PC_shielded_electrostatics(
-                cutoff = self.model_cutoff,
-                cutoff_short_range=config.get('input_radial_cutoff'),
+                self.model_cutoff,
+                config.get('input_radial_cutoff'),
+                self.device,
+                self.dtype,
                 unit_properties=self.model_unit_properties,
-                device=self.device,
-                dtype=self.dtype,
                 **kwargs)
 
         # Assign dispersion interaction module
@@ -368,15 +368,16 @@ class Model_PhysNet(torch.nn.Module):
             # Get Grimme's D3 dispersion model calculator
             self.dispersion_module = module.D3_dispersion(
                 self.model_cutoff,
-                cuton=self.model_cuton,
+                self.model_cuton,
+                self.model_dispersion_trainable,
+                self.device,
+                self.dtype,
                 unit_properties=self.model_unit_properties,
                 d3_s6=d3_s6,
                 d3_s8=d3_s8,
                 d3_a1=d3_a1,
                 d3_a2=d3_a2,
-                trainable=self.model_dispersion_trainable,
-                device=self.device,
-                dtype=self.dtype)
+                )
 
         # Assign atomic masses list for center of mass calculation
         if self.model_dipole:

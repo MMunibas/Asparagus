@@ -90,6 +90,8 @@ class Tester:
         test_datasets: Optional[Union[str, List[str]]] = None,
         test_properties: Optional[Union[str, List[str]]] = None,
         test_directory: Optional[str] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -118,8 +120,8 @@ class Tester:
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         ################################
         # # # Check Data Container # # #

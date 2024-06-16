@@ -165,6 +165,8 @@ class Trainer:
         trainer_max_checkpoints: Optional[int] = None,
         trainer_summary_writer: Optional[bool] = None,
         trainer_print_progress_bar: Optional[bool] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -193,8 +195,8 @@ class Trainer:
         config.update(config_update)
         
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         ################################
         # # # Check Data Container # # #

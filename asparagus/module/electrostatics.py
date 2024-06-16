@@ -23,14 +23,14 @@ class PC_shielded_electrostatics(torch.nn.Module):
         interaction cutoff distance.
     cutoff_short_range: float
         Short range cutoff distance.
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
     unit_properties: dict, optional, default None
         Dictionary of unit properties.
     switch_fn: (str, callable), optional, default None
         Switch function for the short range cutoff.
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
     **kwargs
         Additional keyword arguments.
 
@@ -39,11 +39,11 @@ class PC_shielded_electrostatics(torch.nn.Module):
     def __init__(
         self,
         cutoff: float,
-        cutoff_short_range: Optional[float] = None,
+        cutoff_short_range: float,
+        device: str,
+        dtype: object,
         unit_properties: Optional[Dict[str, str]] = None,
         switch_fn: Optional[Union[str, object]] = 'Poly6',
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
         **kwargs
     ):
 

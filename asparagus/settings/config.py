@@ -42,6 +42,7 @@ def get_config(
     -------
     Callable
         Configuration parameter object
+
     """
 
     # If 'config' being a config class object
@@ -60,7 +61,7 @@ def get_config(
     # Otherwise initialize Configuration class object
     else:
 
-        return settings.Configuration(
+        return Configuration(
             config=config,
             config_file=config_file,
             config_from=config_from,

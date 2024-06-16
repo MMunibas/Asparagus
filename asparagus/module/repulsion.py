@@ -20,16 +20,16 @@ class ZBL_repulsion(torch.nn.Module):
 
     Parameters
     ----------
+    trainable: bool
+        If True, repulsion parameter are trainable. Else, default parameter
+        values are fixed.
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
     unit_properties: dict, optional, default {}
         Dictionary with the units of the model properties to initialize correct
         conversion factors.
-    trainable: bool, optional, default True
-        If True, repulsion parameter are trainable. Else, default parameter
-        values are fixed.
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
     **kwargs
         Additional keyword arguments.
 
@@ -37,10 +37,10 @@ class ZBL_repulsion(torch.nn.Module):
 
     def __init__(
         self,
+        trainable: bool,
+        device: str,
+        dtype: object,
         unit_properties: Optional[Dict[str, str]] = None,
-        trainable: Optional[bool] = True,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
         **kwargs
     ):
         """

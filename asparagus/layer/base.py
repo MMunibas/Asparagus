@@ -39,12 +39,13 @@ class DenseLayer(torch.nn.Linear):
         self,
         n_input: int,
         n_output: int,
-        activation_fn: Optional[Union[Callable, torch.nn.Module]] = None,
-        bias: Optional[bool] = True,
+        activation_fn: Union[Callable, torch.nn.Module],
+        bias: bool,
+        device: str,
+        dtype: object,
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        
     ):
         """
         Initialize dense layer.
@@ -95,31 +96,31 @@ class ResidualLayer(torch.nn.Module):
     ----------
     n_input: int
         Number of input features.
-    activation_fn: callable, optional, default None
+    activation_fn: callable
         Activation function passed to dense layer
-    bias: bool, optional, default True
+    bias: bool
         If True, apply bias shift for dense layers.
+    device: str, optional, default 'cpu'
+        Device type for model variable allocation
+    dtype: dtype object, optional, default 'torch.float64'
+        Model variables data type
     weight_1_init: callable, optional, default 'torch.nn.init.orthogonal_'
         By Default, use orthogonal initialization for first dense layer 
         weights. If None, use zero initialization.
     weight_2_init: callable, optional, default 'torch.nn.init.zeros_'
         By Default, use zero initialization for second dense layer weights.
-    device: str, optional, default 'cpu'
-        Device type for model variable allocation
-    dtype: dtype object, optional, default 'torch.float64'
-        Model variables data type
 
     """
 
     def __init__(
         self,
         n_input: int,
-        activation_fn: Optional[Union[Callable, torch.nn.Module]] = None,
-        bias: Optional[bool] = True,
+        activation_fn: Union[Callable, torch.nn.Module],
+        bias: bool,
+        device: str,
+        dtype: object,
         weight_1_init: Optional[Callable] = torch.nn.init.orthogonal_,
         weight_2_init: Optional[Callable] = torch.nn.init.zeros_,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
     ):
 
         super(ResidualLayer, self).__init__()
@@ -134,21 +135,22 @@ class ResidualLayer(torch.nn.Module):
         self.dense1 = DenseLayer(
             n_input,
             n_input,
-            activation_fn=activation_fn,
-            bias=bias,
-            weight_init=weight_1_init,
-            device=device,
-            dtype=dtype)
+            activation_fn,
+            bias,
+            device,
+            dtype,
+            weight_init=weight_1_init)
         
         # Assign second dense layer
         self.dense2 = DenseLayer(
             n_input,
             n_input,
-            activation_fn=None,
-            bias=bias,
-            weight_init=weight_2_init,
-            device=device,
-            dtype=dtype)
+            None,
+            bias,
+            device,
+            dtype,
+            weight_init=weight_2_init)
+            
 
         return
 

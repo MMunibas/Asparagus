@@ -97,6 +97,8 @@ class DataContainer():
         data_num_workers: Optional[int] = None,
         data_overwrite: Optional[bool] = None,
         data_seed: Optional[int] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs,
     ):
         
@@ -148,8 +150,8 @@ class DataContainer():
             config_update, config_from=self)
 
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         ########################################
         # # # Check DataSet Property Input # # #
@@ -431,22 +433,22 @@ class DataContainer():
             self.data_train_batch_size,
             True,
             self.data_num_workers,
-            device=self.device,
-            dtype=self.dtype)
+            self.device,
+            self.dtype)
         self.valid_loader = data.DataLoader(
             self.valid_set,
             self.data_valid_batch_size,
             False,
             self.data_num_workers,
-            device=self.device,
-            dtype=self.dtype)
+            self.device,
+            self.dtype)
         self.test_loader = data.DataLoader(
             self.test_set,
             self.data_test_batch_size,
             False,
             self.data_num_workers,
-            device=self.device,
-            dtype=self.dtype)
+            self.device,
+            self.dtype)
 
         # Prepare dictionaries as pointers between dataset label and the
         # respective DataSubSet and DataLoader objects

@@ -102,7 +102,8 @@ class Input_PhysNet(torch.nn.Module):
         input_rbf_center_end: Optional[float] = None,
         input_rbf_trainable: Optional[bool] = None,
         input_n_maxatom: Optional[int] = None,
-        #input_atom_features_range: Optional[float] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -134,9 +135,9 @@ class Input_PhysNet(torch.nn.Module):
         config.update(config_update)
         
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
-        
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
+
         # Check general model cutoff with radial basis cutoff
         if config.get('model_cutoff') is None:
             raise ValueError(
@@ -176,7 +177,8 @@ class Input_PhysNet(torch.nn.Module):
             self.input_n_radialbasis,
             self.input_rbf_center_start, self.input_rbf_center_end,
             self.input_rbf_trainable, 
-            device=self.device, dtype=self.dtype)
+            self.device,
+            self.dtype)
 
         return
 
@@ -331,6 +333,8 @@ class Graph_PhysNet(torch.nn.Module):
         graph_n_residual_interaction: Optional[int] = None,
         graph_n_residual_features: Optional[int] = None,
         graph_activation_fn: Optional[Union[str, object]] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -362,8 +366,8 @@ class Graph_PhysNet(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Get input to graph module interface parameters 
         self.n_atombasis = config.get('input_n_atombasis')
@@ -525,6 +529,8 @@ class Output_PhysNet(torch.nn.Module):
         output_n_residual: Optional[int] = None,
         output_activation_fn: Optional[Union[str, object]] = None,
         output_scaling_parameter: Optional[Dict[str, List[float]]] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
         **kwargs
     ):
         """
@@ -556,8 +562,8 @@ class Output_PhysNet(torch.nn.Module):
         config.update(config_update)
 
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Get input and graph to output module interface parameters 
         self.n_maxatom = config.get('input_n_maxatom')

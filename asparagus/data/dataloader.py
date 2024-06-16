@@ -44,10 +44,10 @@ class DataLoader(torch.utils.data.DataLoader):
         data_batch_size: int,
         data_shuffle: bool,
         data_num_workers: int,
+        device: str,
+        dtype: object,
         data_collate_fn: Optional[object] = None,
         data_pin_memory: Optional[bool] = False,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[str] = torch.float64,
         **kwargs
     ):
         """

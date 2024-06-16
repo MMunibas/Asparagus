@@ -39,8 +39,8 @@ class GaussianRBF(torch.nn.Module):
         rbf_center_start: float,
         rbf_center_end: float,
         rbf_trainable: bool,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        device: str,
+        dtype: object,
     ):
         """
         Initialize Gaussian Radial Basis Function.
@@ -111,8 +111,8 @@ class GaussianRBF_PhysNet(torch.nn.Module):
         rbf_center_start: float,
         rbf_center_end: float,
         rbf_trainable: bool,
-        device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        device: str,
+        dtype: object,
     ):
         """
         Initialize original PhysNet type Gaussian Radial Basis Function.

@@ -261,11 +261,11 @@ class ASE_Calculator(ase_calc.Calculator):
         
         # Atom periodic boundary conditions
         atoms_batch['pbc'] = torch.tensor(
-            [self.atoms.get_pbc()], dtype=torch.bool)
+            self.atoms.get_pbc(), dtype=torch.bool)
         
         # Atom cell information
         atoms_batch['cell'] = torch.tensor(
-            [self.atoms.get_cell()[:]], dtype=self.model_dtype)
+            self.atoms.get_cell()[:], dtype=self.model_dtype)
         
         # Atom segment indices, just one atom segment allowed
         atoms_batch['sys_i'] = torch.zeros(
