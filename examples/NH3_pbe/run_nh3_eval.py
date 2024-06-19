@@ -32,7 +32,7 @@ ref_db = [
     'nh3_nmscan_orca/nh3_nms.db']
 labels = [
     'MD Sampling',
-    'Meta-Dynamics Sampling',
+    'Metadynamics Sampling',
     'Normal Mode Scanning']
 colors = [
     'red',
@@ -326,8 +326,9 @@ if True:
     column = [0.75, 0.00]
     row = [column[0]*sfig]
 
-    # Model line style
-    style = ['-', 'dashdot', 'dotted']
+    # Model style
+    linestyle = ['--', 'dashdot', 'dotted']
+    makerstyle = ['o', 's', '^']
 
     # Initialize plot figure
     fig = plt.figure(figsize=figsize)
@@ -358,6 +359,37 @@ if True:
     dyn = BFGS(system_ref)
     dyn.run(fmax=0.0001)
     energy_min_ref = system_ref.get_potential_energy()
+
+    # Copy working system
+    system_work = system_ref.copy()
+    system_work.calc = calc_ref
+
+    # Get Bisector vector
+    vector = np.zeros(3, dtype=float)
+    for ibond in range(1, 4):
+        vector += system_work.positions[0] - system_work.positions[ibond]
+    vector /= np.linalg.norm(vector)
+
+    # Add dummy atom
+    system_scan = system_work.copy()
+    system_scan.append(
+        ase.Atom('X', position=(system_scan.positions[0] + vector)))
+
+    # Scan over umbrella angle
+    potential = np.zeros_like(angles)
+    for iangle, angle in enumerate(angles):
+        for ibond in range(1, 4):
+            system_scan.set_angle(4, 0, ibond, angle)
+        system_work.set_positions(system_scan.positions[:4])
+        potential[iangle] = system_work.get_potential_energy()
+
+    axs.plot(
+        angles, potential - energy_min_ref, 
+        color='black', ls='-',
+        label='PBE')
+
+    refmin = np.min(potential - energy_min_ref)
+    refmax = np.max(potential - energy_min_ref)
 
     # Iterate over models
     for imodel, (config, mdir, db, label) in enumerate(
@@ -404,36 +436,10 @@ if True:
 
         axs.plot(
             angles, potential - energy_min_model, 
-            color=colors[imodel], ls=style[imodel], 
+            color=colors[imodel], 
+            #marker=makerstyle[imodel], markerfacecolor='None',
+            ls=linestyle[imodel], #ls='None', 
             label=label)
-
-    
-    # Get Bisector vector
-    vector = np.zeros(3, dtype=float)
-    for ibond in range(1, 4):
-        vector += system_ref.positions[0] - system_ref.positions[ibond]
-    vector /= np.linalg.norm(vector)
-
-    # Add dummy atom
-    system_scan = system_ref.copy()
-    system_scan.append(
-        ase.Atom('X', position=(system_scan.positions[0] + vector)))
-
-    # Scan over umbrella angle
-    potential = np.zeros_like(angles)
-    for iangle, angle in enumerate(angles):
-        for ibond in range(1, 4):
-            system_scan.set_angle(4, 0, ibond, angle)
-        system_ref.set_positions(system_scan.positions[:4])
-        potential[iangle] = system_ref.get_potential_energy()
-
-    axs.plot(
-        angles, potential - energy_min_ref, 
-        color='black', ls='--', 
-        label='PBE')
-
-    refmin = np.min(potential - energy_min_ref)
-    refmax = np.max(potential - energy_min_ref)
 
     # Plot options
     axs.set_xlim(angles[0], angles[-1])
