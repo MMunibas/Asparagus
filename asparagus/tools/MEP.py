@@ -39,20 +39,8 @@ class MEP:
 
     atoms: ase.Atoms object
         It is the transition state geometry.
-    atoms_charge: list (optional)
-        List of charges of the atoms.
-    config: dict (optional)
-        Dictionary with the configuration of the model.
-    config_file: str (optional)
-        Name of the configuration file.
-    model_checkpoint: int (optional)
-        Number of the checkpoint file to load.
-    implemented_properties: list (optional)
-        List of the implemented properties.
-    use_neighbor_list: bool (optional)
-        Use neighbor list to calculate the forces.
-    label: str (optional)
-        Label of the calculator.
+    model_calculator: asparagus.Asparagus object
+       An asparagus model.
     eps: float (optional)
         Step size to follow the gradient.
     number_of_steps: int (optional)
@@ -64,23 +52,22 @@ class MEP:
     '''
 
     def __init__(self,atoms=None,
-                 atoms_charge=None,
-                 config=None,
-                 config_file=None,
-                 model_checkpoint=None,
-                 implemented_properties=None,
-                 use_neighbor_list=False,
-                 label='mep',
+                 model_calculator=None,
                  eps=0.001,
                  number_of_steps=4000,
                  output='mep.traj',
                  output_file=None,
                  **kwargs):
 
+            #ASE object atoms
             self.atoms = atoms
+            #Set up the dynamics
             self.eps = eps
             self.number_of_steps = number_of_steps
+            #Output files
             self.output = output
+            self.output_file = output_file
+
             if self.output_file is None:
                 self.output_file = self.output + '.txt'
             elif self.output_file is False:
@@ -94,80 +81,20 @@ class MEP:
             if self.atoms is None:
                 raise ValueError('The transition state geometry is required')
 
-            ######################################
-            # # # Check ASE Calculator Input # # #
-            ######################################
+            if model_calculator is None:
+                raise ValueError('The model calculator is required')
 
-            # Assign model parameter configuration library
-            if config is None:
-                config_data = settings.get_config(
-                    self.config, config_file, **kwargs)
-            else:
-                config_data = settings.get_config(
-                    config, config_file, **kwargs)
+            # Get the ASE calculator
+            self.ase_calculator = model_calculator.get_ase_calculator()
 
-            # Check model parameter configuration and set default
-            config_data.check()
-
-            # Check for empty config dictionary
-            if "model_directory" not in config_data:
-                raise SyntaxError(
-                    "Configuration does not provide information for a model "
-                    + "calculator. Please check the input in 'config'.")
-
-            ##################################
-            # # # Prepare NNP Calculator # # #
-            ##################################
-
-            # Assign NNP calculator
-            if self.model_calculator is None:
-                # Assign NNP calculator model
-                self.model_calculator = self._get_Calculator(
-                    config_data,
-                    **kwargs)
-
-            # Add calculator info to configuration dictionary
-            if hasattr(self.model_calculator, "get_info"):
-                config_data.update(
-                    self.model_calculator.get_info(),
-                    verbose=False)
-
-            # Initialize checkpoint file manager and load best model
-            filemanager = model.FileManager(config_data, **kwargs)
-            if model_checkpoint is None:
-                latest_checkpoint = filemanager.load_checkpoint()
-            elif utils.is_integer(model_checkpoint):
-                latest_checkpoint = filemanager.load_checkpoint(model_checkpoint)
-            else:
-                raise ValueError(
-                    "Input 'model_checkpoint' must be either None to load best "
-                    + "model checkpoint or an integer of a respective checkpoint "
-                    + "file.")
-            self.model_calculator.load_state_dict(
-                latest_checkpoint['model_state_dict'])
-
-            ##################################
-            # # # Prepare ASE Calculator # # #
-            ##################################
-            if implemented_properties is not None:
-                self.implemented_properties = implemented_properties
-            else:
-                self.implemented_properties = ['energy', 'hessian','forces']
-
-            if 'hessian' not in self.implemented_properties:
-                self.implemented_properties.append('hessian')
+            # Check the implemented properties
+            self.implemented_properties =self.ase_calculator.implemented_properties
 
             if 'forces' not in self.implemented_properties:
                 self.implemented_properties.append('forces')
 
-            self.ase_calculator = interface.ASE_Calculator(
-                self.model_calculator,
-                atoms=self.atoms,
-                atoms_charge=atoms_charge,
-                implemented_properties=self.implemented_properties,
-                use_neighbor_list=use_neighbor_list,
-                label=label,
-            )
+            if 'hessian' not in self.implemented_properties:
+                self.implemented_properties.append('hessian')
 
             #Initialize the trajectory file
             self.mep_trajectory = Trajectory(self.output, 'w', self.atoms,properties=['energy','forces'])
@@ -209,7 +136,6 @@ class MEP:
 
             grad = -self.ase_calculator.get_forces()
             grad /= np.linalg.norm(grad)
-
             pos = pos - self.eps * grad
             initial_system.set_positions(pos)
             ener_i = initial_system.get_potential_energy()

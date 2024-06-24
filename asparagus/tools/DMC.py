@@ -80,9 +80,18 @@ class DMC:
 
 
     """
-    def __init__(self,natoms,nwalker,stepsize,nsteps,eqsteps,alpha, max_batch=6000, initial_coord=None,
-                 atoms=None, total_charge=0,config=None,config_file=None,
-                 model_checkpoint=None,implemented_properties=None,filename=None,**kwargs):
+    def __init__(self,natoms,
+                 atoms=None,
+                 model_calculator=None,
+                 total_charge=None,
+                 nwalker=100,
+                 stepsize=0.1,
+                 nsteps=1000,
+                 eqsteps=100,
+                 alpha=1,
+                 max_batch=6000,
+                 initial_coord=None,
+                 filename=None,**kwargs):
 
         # Number of atoms
         self.natoms = natoms
@@ -104,7 +113,7 @@ class DMC:
         else:
             self.total_charge = total_charge
 
-        #Unit conversion (Maybe move to the settings file)
+        #Unit conversion (Maybe move to the settings file?)
         self.emass = 1822.88848
 
         # Atoms object
@@ -115,67 +124,15 @@ class DMC:
         if self.atoms is None:
             raise ValueError('A geometry is required')
 
-        ######################################
-        # # # Check ASE Calculator Input # # #
-        ######################################
+        # Get the ASE calculator
+        self.ase_calculator = model_calculator.get_ase_calculator()
 
-        # Assign model parameter configuration library
-        if config is None:
-            config_data = settings.get_config(
-                self.config, config_file, **kwargs)
-        else:
-            config_data = settings.get_config(
-                config, config_file, **kwargs)
-
-        # Check model parameter configuration and set default
-        config_data.check()
-
-        # Check for empty config dictionary
-        if "model_directory" not in config_data:
-            raise SyntaxError(
-                "Configuration does not provide information for a model "
-                + "calculator. Please check the input in 'config'.")
-
-        ##################################
-        # # # Prepare NNP Calculator # # #
-        ##################################
-
-        # Assign NNP calculator
-        if self.model_calculator is None:
-            # Assign NNP calculator model
-            self.model_calculator = self._get_Calculator(
-                config_data,
-                **kwargs)
-
-        # Add calculator info to configuration dictionary
-        if hasattr(self.model_calculator, "get_info"):
-            config_data.update(
-                self.model_calculator.get_info(),
-                verbose=False)
-
-        # Initialize checkpoint file manager and load best model
-        filemanager = model.FileManager(config_data, **kwargs)
-        if model_checkpoint is None:
-            latest_checkpoint = filemanager.load_checkpoint()
-        elif utils.is_integer(model_checkpoint):
-            latest_checkpoint = filemanager.load_checkpoint(model_checkpoint)
-        else:
-            raise ValueError(
-                "Input 'model_checkpoint' must be either None to load best "
-                + "model checkpoint or an integer of a respective checkpoint "
-                + "file.")
-        self.model_calculator.load_state_dict(
-            latest_checkpoint['model_state_dict'])
-
-        #Put the calculator in evaluation mode
-        self.model_calculator.eval()
+        # Check the implemented properties
+        self.implemented_properties = self.ase_calculator.implemented_properties
 
         # Check implemented properties
-        if implemented_properties is not None:
-            self.implemented_properties = implemented_properties
-        else:
-            self.implemented_properties = ['energy']
-
+        if 'energy' not in self.implemented_properties:
+            raise ValueError('The energy is not implemented in the model calculator')
 
         # Seed is defined according to the time
         self.seed = np.random.seed(int(time.time()))
@@ -487,7 +444,7 @@ class DMC:
 
             #Create the batch
             batch = self.create_batch(coor,batch_size,max_size=True)
-            results = self.model_calculator(batch)
+            results = self.ase_calculator(batch)
             e = results['energy'].detach().numpy()
 
         else:
@@ -497,7 +454,7 @@ class DMC:
                 counter += 1
                 # print(i*max_batch, (i+1)*max_batch)
                 batch = self.create_batch(coor[i * self.max_batch:(i + 1) * self.max_batch, :],self.max_batch)
-                results = self.model_calculator(batch)
+                results = self.ase_calculator(batch)
                 etmp = results['energy'].detach().numpy()
                 e = np.append(e, etmp)
 
@@ -509,7 +466,7 @@ class DMC:
                 quit()
 
             batch = self.create_batch(coor[-remaining:, :],remaining,max_size=False)
-            results = self.model_calculator(batch)
+            results = self.ase_calculator(batch)
             etmp = results['energy'].detach().numpy()
             e = np.append(e, etmp)
 
@@ -557,8 +514,8 @@ class DMC:
         # Basic evaluation of the potential energy
         batch_v0 = self.create_batch(self.initial_coord,1)
         batch_vmin = self.create_batch(self.coord_min,1)
-        calc_v0 = self.model_calculator(batch_v0)
-        calc_vmin = self.model_calculator(batch_vmin)
+        calc_v0 = self.ase_calculator(batch_v0)
+        calc_vmin = self.ase_calculator(batch_vmin)
 
         v0 = calc_v0['energy'].detach().numpy()
         vmin = calc_vmin['energy'].detach().numpy()
