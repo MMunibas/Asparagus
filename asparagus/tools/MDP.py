@@ -156,13 +156,14 @@ class MDP:
         # Calculate the eigenvalues and eigenvectors of the hessian
 
         eigenvalues, eigenvectors = np.linalg.eigh(hessian)
+        print('Eigenvalues of the Hessian:', eigenvalues)
         eigenvectors = eigenvectors.T
         normdisp = eigenvectors[0].reshape(n_atom, 3)
 
         if self.forward:
-            normdisp = normdisp
-        else:
             normdisp = -normdisp
+        else:
+            normdisp = normdisp
 
         initial_system.set_momenta(self.eps * normdisp)
 
