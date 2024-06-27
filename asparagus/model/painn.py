@@ -3,6 +3,7 @@ from typing import Optional, List, Dict, Tuple, Union, Any
 
 import numpy as np 
 
+import ase
 import torch
 
 from .. import model
