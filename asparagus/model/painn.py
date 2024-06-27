@@ -103,29 +103,51 @@ class Model_PaiNN(torch.nn.Module):
         'graph_type':                   'PaiNN',
         'output_type':                  'PaiNN',
         }
-    
+
+    # Expected data types of input variables
+    _dtypes_args = {
+        'model_properties': [utils.is_string_array],
+        'model_unit_properties': [utils.is_dictionary],
+        'model_cutoff': [utils.is_numeric],
+        'model_cuton': [utils.is_numeric, utils.is_None],
+        'model_switch_range': [utils.is_numeric],
+        'model_repulsion': [utils.is_bool],
+        'model_repulsion_trainable': [utils.is_bool],
+        'model_electrostatic': [utils.is_bool],
+        'model_dispersion': [utils.is_bool],
+        'model_dispersion_trainable': [utils.is_bool],
+        'model_num_threads': [utils.is_integer],
+    }
+
+    # Default module types of the model calculator
+    _default_modules = {
+        'input_type': 'PaiNN',
+        'graph_type': 'PaiNN',
+        'output_type': 'PaiNN',
+    }
+
     def __init__(
-        self,
-        config: Optional[Union[str, dict, object]] = None,
-        config_file: Optional[str] = None,
-        model_properties: Optional[List[str]] = None,
-        model_unit_properties: Optional[Dict[str, str]] = None,
-        model_cutoff: Optional[float] = None,
-        model_cuton: Optional[float] = None,
-        model_switch_range: Optional[float] = None,
-        model_repulsion: Optional[bool] = None,
-        model_repulsion_trainable: Optional[bool] = None,
-        model_electrostatic: Optional[bool] = None,
-        model_dispersion: Optional[bool] = None,
-        model_dispersion_trainable: Optional[bool] = None,
-        model_num_threads: Optional[int] = None,
-        device: Optional[str] = None,
-        dtype: Optional[str] = None,
-        **kwargs
+            self,
+            config: Optional[Union[str, dict, object]] = None,
+            config_file: Optional[str] = None,
+            model_properties: Optional[List[str]] = None,
+            model_unit_properties: Optional[Dict[str, str]] = None,
+            model_cutoff: Optional[float] = None,
+            model_cuton: Optional[float] = None,
+            model_switch_range: Optional[float] = None,
+            model_repulsion: Optional[bool] = None,
+            model_repulsion_trainable: Optional[bool] = None,
+            model_electrostatic: Optional[bool] = None,
+            model_dispersion: Optional[bool] = None,
+            model_dispersion_trainable: Optional[bool] = None,
+            model_num_threads: Optional[int] = None,
+            device: Optional[str] = None,
+            dtype: Optional[str] = None,
+            **kwargs
     ):
         """
         Initialize PaiNN Calculator model.
-        
+
         """
 
         super(Model_PaiNN, self).__init__()
@@ -134,7 +156,7 @@ class Model_PaiNN(torch.nn.Module):
         #############################
         # # # Check Class Input # # #
         #############################
-        
+
         # Get configuration object
         config = settings.get_config(
             config, config_file, config_from=self)
@@ -149,10 +171,10 @@ class Model_PaiNN(torch.nn.Module):
 
         # Update global configuration dictionary
         config.update(config_update)
-        
+
         # Assign module variable parameters from configuration
-        self.device = config.get('device')
-        self.dtype = config.get('dtype')
+        self.device = utils.check_device_option(device, config)
+        self.dtype = utils.check_dtype_option(dtype, config)
 
         # Set model calculator number of threads
         if config.get('model_num_threads') is not None:
@@ -267,7 +289,7 @@ class Model_PaiNN(torch.nn.Module):
             'model_cuton': self.model_cuton,
             'model_switch_range': self.model_switch_range}
         config.update(config_update)
-        
+
         ###############################
         # # # PaiNN Modules Setup # # #
         ###############################
@@ -343,46 +365,52 @@ class Model_PaiNN(torch.nn.Module):
 
         # Assign atom repulsion module
         if self.model_repulsion:
-            
             # Get Ziegler-Biersack-Littmark style nuclear repulsion potential
             self.repulsion_module = module.ZBL_repulsion(
+                self.model_repulsion_trainable,
+                self.device,
+                self.dtype,
                 unit_properties=self.model_unit_properties,
-                trainable=self.model_repulsion_trainable,
-                device=self.device,
-                dtype=self.dtype,
                 **kwargs)
 
         # Assign electrostatic interaction module
         if self.model_electrostatic:
-
             # Get electrostatic point charge model calculator
             self.electrostatic_module = module.PC_shielded_electrostatics(
-                cutoff = self.model_cutoff,
-                cutoff_short_range=config.get('input_radial_cutoff'),
+                self.model_cutoff,
+                config.get('input_radial_cutoff'),
+                self.device,
+                self.dtype,
                 unit_properties=self.model_unit_properties,
-                device=self.device,
-                dtype=self.dtype,
                 **kwargs)
 
         # Assign dispersion interaction module
         if self.model_dispersion:
-            
             # Grep dispersion correction parameters
             d3_s6 = config.get("model_dispersion_d3_s6")
             d3_s8 = config.get("model_dispersion_d3_s8")
             d3_a1 = config.get("model_dispersion_d3_a1")
             d3_a2 = config.get("model_dispersion_d3_a2")
-            
+
             # Get Grimme's D3 dispersion model calculator
             self.dispersion_module = module.D3_dispersion(
                 self.model_cutoff,
-                cuton=self.model_cuton,
+                self.model_cuton,
+                self.model_dispersion_trainable,
+                self.device,
+                self.dtype,
                 unit_properties=self.model_unit_properties,
                 d3_s6=d3_s6,
                 d3_s8=d3_s8,
                 d3_a1=d3_a1,
                 d3_a2=d3_a2,
-                trainable=self.model_dispersion_trainable,
+            )
+
+        # Assign atomic masses list for center of mass calculation
+        if self.model_dipole:
+            # Convert atomic masses list to requested data type
+            self.atomic_masses = torch.tensor(
+                utils.atomic_masses,
                 device=self.device,
                 dtype=self.dtype)
 
@@ -395,10 +423,10 @@ class Model_PaiNN(torch.nn.Module):
         """
         Return model and module information
         """
-        
+
         # Initialize info dictionary
         info = {}
-        
+
         # Collect model info
         if hasattr(self.input_module, "get_info"):
             info = {**info, **self.input_module.get_info()}
@@ -407,23 +435,23 @@ class Model_PaiNN(torch.nn.Module):
         if hasattr(self.output_module, "get_info"):
             info = {**info, **self.output_module.get_info()}
         if (
-            self.model_repulsion
-            and hasattr(self.repulsion_module, "get_info")
+                self.model_repulsion
+                and hasattr(self.repulsion_module, "get_info")
         ):
             info = {**info, **self.repulsion_module.get_info()}
         if (
-            self.model_electrostatic 
-            and hasattr(self.electrostatic_module, "get_info")
+                self.model_electrostatic
+                and hasattr(self.electrostatic_module, "get_info")
         ):
             info = {**info, **self.electrostatic_module.get_info()}
         if (
-            self.model_dispersion
-            and hasattr(self.dispersion_module, "get_info")
+                self.model_dispersion
+                and hasattr(self.dispersion_module, "get_info")
         ):
             info = {**info, **self.dispersion_module.get_info()}
 
         return {
-            **info, 
+            **info,
             'model_properties': self.model_properties,
             'model_unit_properties': self.model_unit_properties,
             'model_cutoff': self.model_cutoff,
@@ -434,19 +462,19 @@ class Model_PaiNN(torch.nn.Module):
             'model_electrostatic': self.model_electrostatic,
             'model_dispersion': self.model_dispersion,
             'model_dispersion_trainable': self.model_dispersion_trainable,
-            }
+        }
 
     def set_property_scaling(
-        self, 
-        scaling_parameter: Optional[Dict[str, List[float]]] = None,
-        atomic_energies_shifts: Optional[Dict[Union[int, str], float]] = None
+            self,
+            scaling_parameter: Optional[Dict[str, List[float]]] = None,
+            atomic_energies_shifts: Optional[Dict[Union[int, str], float]] = None
     ):
         """
         Prepare property scaling factor and shift terms and set atomic type
         energies shift.
-        
+
         """
-        
+
         # Set property scaling factors and shift terms
         if scaling_parameter is not None:
             self.output_module.set_property_scaling(scaling_parameter)
@@ -459,12 +487,12 @@ class Model_PaiNN(torch.nn.Module):
         return
 
     def set_unit_properties(
-        self,
-        model_unit_properties: Dict[str, str],
+            self,
+            model_unit_properties: Dict[str, str],
     ):
         """
         Set or change unit property parameter in respective model layers
-        
+
         Parameter
         ---------
         model_unit_properties: dict
@@ -494,8 +522,8 @@ class Model_PaiNN(torch.nn.Module):
         return
 
     def get_trainable_parameters(
-        self,
-        no_weight_decay: Optional[bool] = True,
+            self,
+            no_weight_decay: Optional[bool] = True,
     ) -> Dict[str, List]:
         """
         Return a  dictionary of lists for different optimizer options.
@@ -533,9 +561,11 @@ class Model_PaiNN(torch.nn.Module):
 
         return trainable_parameters
 
+    # @torch.jit.export  # No effect, as 'forward' already is
+    # @torch.compile # Not supporting double backwards autograd (forces, loss)
     def forward(
-        self,
-        batch: Dict[str, torch.Tensor]
+            self,
+            batch: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of PaiNN Calculator model.
@@ -588,11 +618,11 @@ class Model_PaiNN(torch.nn.Module):
         idx_u = batch.get('idx_u')
         idx_v = batch.get('idx_v')
         sys_i = batch['sys_i']
-        
+
         # PBC: Cartesian offset method
         pbc_offset_ij = batch.get('pbc_offset_ij')
         pbc_offset_uv = batch.get('pbc_offset_uv')
-        
+
         # PBC: Supercluster method
         pbc_atoms = batch.get('pbc_atoms')
         pbc_idx_pointer = batch.get('pbc_idx')
@@ -606,17 +636,17 @@ class Model_PaiNN(torch.nn.Module):
         # Run input model
         features, distances, vectors, cutoffs, rbfs, distances_uv = (
             self.input_module(
-                atomic_numbers, positions, 
+                atomic_numbers, positions,
                 idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
                 idx_u=idx_u, idx_v=idx_v, pbc_offset_uv=pbc_offset_uv)
-            )
+        )
 
         # PBC: Supercluster approach - Point from image atoms to primary atoms
         if pbc_idx_pointer is not None:
             idx_i = pbc_idx_pointer[idx_i]
             idx_j = pbc_idx_pointer[pbc_idx_j]
 
-        # Check long-range atom pair indices 
+        # Check long-range atom pair indices
         if idx_u is None:
             # Assign atom pair indices
             idx_u = idx_i
@@ -638,41 +668,41 @@ class Model_PaiNN(torch.nn.Module):
         # Add repulsion model contribution
         if self.model_repulsion:
             results['atomic_energies'] = (
-                results['atomic_energies']
-                + self.repulsion_module(
-                    atomic_numbers, distances, cutoffs, idx_i, idx_j))
+                    results['atomic_energies']
+                    + self.repulsion_module(
+                atomic_numbers, distances, cutoffs, idx_i, idx_j))
 
         # Add dispersion model contributions
         if self.model_dispersion:
             results['atomic_energies'] = (
-                results['atomic_energies']
-                + self.dispersion_module(
-                    atomic_numbers, distances_uv, idx_u, idx_v))
+                    results['atomic_energies']
+                    + self.dispersion_module(
+                atomic_numbers, distances_uv, idx_u, idx_v))
 
         # Scale atomic charges to ensure correct total charge
         if self.model_atomic_charges:
             charge_deviation = (
-                charge - utils.segment_sum(
-                    results['atomic_charges'], sys_i, device=self.device)
-                / atoms_number
-                )
+                    charge - utils.segment_sum(
+                results['atomic_charges'], sys_i, device=self.device)
+                    / atoms_number
+            )
             results['atomic_charges'] = (
-                results['atomic_charges'] + charge_deviation[sys_i])
+                    results['atomic_charges'] + charge_deviation[sys_i])
 
         # Add electrostatic model contribution
         if self.model_electrostatic:
             # Apply electrostatic model
             results['atomic_energies'] = (
-                results['atomic_energies']
-                + self.electrostatic_module(
-                    results, distances_uv, idx_u, idx_v))
+                    results['atomic_energies']
+                    + self.electrostatic_module(
+                results, distances_uv, idx_u, idx_v))
 
         # Compute property - Energy
         if self.model_energy:
             results['energy'] = torch.squeeze(
                 utils.segment_sum(
                     results['atomic_energies'], sys_i, device=self.device)
-                )
+            )
 
         # Compute gradients and Hessian if demanded
         if self.model_forces:
@@ -706,23 +736,100 @@ class Model_PaiNN(torch.nn.Module):
         # Compute molecular dipole
         if self.model_dipole:
 
+            # For non-zero system charges, shift origin to center of mass
+            if torch.any(charge):
+                atomic_masses = self.atomic_masses[atomic_numbers]
+                system_masses = utils.segment_sum(
+                    atomic_masses, sys_i, device=self.device)
+                system_com = (
+                                 utils.segment_sum(
+                                     atomic_masses[..., None] * positions,
+                                     sys_i, device=self.device).reshape(-1, 3)
+                             ) / system_masses[..., None]
+                positions_com = positions - system_com[sys_i]
+            else:
+                positions_com = positions
+
             # Compute molecular dipole moment from atomic charges
             if pbc_atoms is None:
                 results['dipole'] = utils.segment_sum(
-                    results['atomic_charges'][..., None]*positions,
+                    results['atomic_charges'][..., None] * positions_com,
                     sys_i, device=self.device).reshape(-1, 3)
             else:
                 results['dipole'] = utils.segment_sum(
                     results['atomic_charges'][..., None]
-                    *positions[pbc_atoms],
+                    * positions_com[pbc_atoms],
                     sys_i, device=self.device).reshape(-1, 3)
 
             # Refine molecular dipole moment with atomic dipole moments
             if self.model_atomic_dipoles:
                 results['dipole'] = (
-                    results['dipole'] + utils.segment_sum(
-                        results['atomic_dipoles'], sys_i,
-                        device=self.device).reshape(-1, 3)
-                    )
+                        results['dipole'] + utils.segment_sum(
+                    results['atomic_dipoles'], sys_i,
+                    device=self.device).reshape(-1, 3)
+                )
 
         return results
+
+    def calculate(
+            self,
+            atoms: ase.Atoms,
+            charge: Optional[float] = 0.0,
+    ) -> Dict[str, torch.Tensor]:
+
+        """
+        Forward pass of PaiNN Calculator model from ASE Atoms object.
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            ASE Atoms object to calculate properties
+        charge: float, optional, default 0.0
+            Total system charge
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+
+        # Initialize atoms batch
+        atoms_batch = {}
+
+        # Number of atoms
+        Natoms = len(atoms)
+        atoms_batch['atoms_number'] = torch.tensor(
+            [Natoms], dtype=torch.int64)
+
+        # Atomic number
+        atoms_batch['atomic_numbers'] = torch.tensor(
+            atoms.get_atomic_numbers(), dtype=torch.int64)
+
+        # Atom positions
+        atoms_batch['positions'] = torch.zeros(
+            [Natoms, 3], dtype=torch.float64)
+
+        # Atom periodic boundary conditions
+        atoms_batch['pbc'] = torch.tensor(
+            atoms.get_pbc(), dtype=torch.bool)
+
+        # Atom cell information
+        atoms_batch['cell'] = torch.tensor(
+            atoms.get_cell()[:], dtype=torch.float64)
+
+        # Atom segment indices, just one atom segment allowed
+        atoms_batch['sys_i'] = torch.zeros(
+            Natoms, dtype=torch.int64)
+
+        # Total atomic system charge
+        atoms_batch['charge'] = torch.tensor(
+            [charge], dtype=torch.float64)
+
+        neighbor_list = utils.TorchNeighborListRangeSeparated(
+            self.model_cutoff,
+            self.device,
+            self.dtype)
+        atoms_batch = neighbor_list(atoms_batch)
+
+        return self.forward(atoms_batch)
