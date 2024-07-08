@@ -232,7 +232,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         cell: torch.Tensor,
         shifts: torch.Tensor,
         cutoff: torch.Tensor,
-    ):
+    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
         """
         Compute pairs of atoms that are neighbors.
 
@@ -280,13 +280,13 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         # torch.norm(Rij_all, dim=1)
         distances2 = torch.sum(Rij_all**2, dim=1)
         in_cutoffs = [
-            torch.nonzero(distances2 < cutoff_i**2, as_tuple=False)
+            torch.nonzero(distances2 < cutoff_i**2, as_tuple=True)
             for cutoff_i in cutoff]
 
         # 6) Reduce tensors to relevant components
         atom_indices_i, atom_indices_j, offsets = [], [], []
         for in_cutoff in in_cutoffs:
-            pair_index = in_cutoff.squeeze()
+            pair_index = in_cutoff
             atom_indices_i.append(pi_all[pair_index])
             atom_indices_j.append(pj_all[pair_index])
             offsets.append(shifts_all[pair_index])
