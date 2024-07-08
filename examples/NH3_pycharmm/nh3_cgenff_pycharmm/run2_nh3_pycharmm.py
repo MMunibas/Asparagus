@@ -35,10 +35,6 @@ import pycharmm.cons_harm as cons_harm
 from pycharmm.lib import charmm as libcharmm
 import pycharmm.lib as lib
 
-# Asparagus
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
-from asparagus import Asparagus
-
 # Step 0: Load parameter files
 #-----------------------------------------------------------
 
@@ -191,27 +187,8 @@ energy.show()
 # Step 3: Asparagus Setup
 #-----------------------------------------------------------
 
-# Load Asparagus model
-ml_model = Asparagus(config='model_nh3/nh3_meta.json')
+# Keep CGenFF
 
-# Get atomic number from ASE atoms object
-ml_Z = ase_ammonia.get_atomic_numbers()
-
-# Prepare PhysNet input parameter
-ml_selection = pycharmm.SelectAtoms(seg_id='AMM1')
-
-# Initialize PhysNet calculator
-calc = pycharmm.MLpot(
-    ml_model,
-    ml_Z,
-    ml_selection,
-    ml_charge=0,
-    ml_fq=True,
-)
-
-# Custom energy
-energy.show()
-exit()
 # Step 4: Minimization
 #-----------------------------------------------------------
 

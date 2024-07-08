@@ -192,7 +192,7 @@ energy.show()
 #-----------------------------------------------------------
 
 # Load Asparagus model
-ml_model = Asparagus(config='model_nh3/nh3_meta.json')
+ml_model = Asparagus(config='model_nh3/nh3_painn.json')
 
 # Get atomic number from ASE atoms object
 ml_Z = ase_ammonia.get_atomic_numbers()
@@ -211,7 +211,7 @@ calc = pycharmm.MLpot(
 
 # Custom energy
 energy.show()
-exit()
+
 # Step 4: Minimization
 #-----------------------------------------------------------
 
@@ -257,7 +257,7 @@ energy.show()
 # Step 5: Heating - CHARMM, PhysNet
 #-----------------------------------------------------------
 
-if True:
+if False:
     
     timestep = 0.00025   # 0.25 fs
     nsteps = 10.*1./timestep # 10 ps
@@ -306,7 +306,7 @@ if True:
 # Step 6: NVE - CHARMM, PhysNet
 #-----------------------------------------------------------
 
-if True:
+if False:
     
     timestep = 0.00025   # 0.2 fs
     nsteps = 50.*1./timestep # 50 ps
