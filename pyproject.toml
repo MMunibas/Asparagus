@@ -1,0 +1,25 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "asparagus"
+authors = [{name = "K. Toepfer", email = "kai.toepfer@unibas.ch"},
+           {name = "L.I.Vazquez-Salazar",email = "luisitza.vazquezsalazar@unibas.ch"},
+           {name =" M.Meuwly",email = "m.meuwly@unibas.ch"}]
+dynamic = ["version", "description"]
+dependencies = ['ase',
+        'numpy',
+        'tensorboard',
+        'torch>=1.10<2.0',
+        'torch-ema>=0.3',
+        'xtb',
+        'h5py',
+        'pandas',
+        'matplotlib',
+        'seaborn',
+        'scipy',
+        'pytest']
+[project.urls]
+homepage = "http://github.com/LIVazquez/Asparagus"
+documentation = "http://Asparagus-bundle.readthedocs.io/en/latest/"

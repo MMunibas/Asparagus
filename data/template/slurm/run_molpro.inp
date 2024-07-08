@@ -1,0 +1,15 @@
+***,Template Energy, Forces and Dipole
+memory,100,m
+symmetry,nosym
+geomtyp=xyz
+geometry={
+%xyz%
+}
+
+basis=aug-cc-pvdz
+
+{hf,
+ wf,charge=%charge%,spin=%spin2%;
+}
+mp2
+forces
