@@ -66,7 +66,7 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 
 ## What needs to be added?
 
-- [ ] Add more NN architectures (Low priority)
+- [x] Add more NN architectures (Low priority)
 - [x] Read parameters from older PhysNet Versions (i.e. TF1 and TF2) (Luis)
 - [ ] Add sampling methods:
     - [x] MD with XTB
