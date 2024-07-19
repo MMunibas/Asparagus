@@ -263,7 +263,7 @@ class InteractionLayer(torch.nn.Module):
         # Combine features to message vector
         message = xi + xj
 
-        # Apply residual layers and acitvation function for message vector
+        # Apply residual layers and activation function for message vector
         # interaction
         for residual in self.residuals_ij:
             message = residual(message)
@@ -272,6 +272,9 @@ class InteractionLayer(torch.nn.Module):
         # Mix initial atomic feature vector with message vector
         x = self.scaling*x + self.dense_out(message)
 
+        # Normalize feature vectors
+        #x = torch.nn.functional.normalize(x)
+        
         return x
 
 
@@ -334,7 +337,7 @@ class OutputBlock(torch.nn.Module):
             device,
             dtype,
             weight_init=torch.nn.init.zeros_)
-        
+
         return
 
     def forward(
@@ -357,11 +360,12 @@ class OutputBlock(torch.nn.Module):
         """
 
         # Apply residual layers on atomic features
-        for residual in self.residuals:
+        for ir, residual in enumerate(self.residuals):
             features = residual(features)
-
+        
         # Apply last activation function
         features = self.activation_fn(features)
+        #features = torch.nn.functional.normalize(features)
 
         # Transform to result vector
         result = self.output(features)

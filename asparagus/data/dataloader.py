@@ -53,12 +53,12 @@ class DataLoader(torch.utils.data.DataLoader):
         """
         Initialize data loader.
         """
-        
+
         # Check collate function
         if data_collate_fn is None:
             data_collate_fn = self.data_collate_fn
 
-        # Assign reference dataset as class parameter for additions by the 
+        # Assign reference dataset as class parameter for additions by the
         # neighbor list functions
         self.dataset = dataset
         self.data_batch_size = data_batch_size
@@ -78,10 +78,10 @@ class DataLoader(torch.utils.data.DataLoader):
             pin_memory=data_pin_memory,
             **kwargs
         )
-        
+
         # Initialize neighbor list function class parameter
         self.neighbor_list = None
-        
+
         # Assign reference data conversion parameter
         self.device = device
         self.dtype = dtype
@@ -97,7 +97,7 @@ class DataLoader(torch.utils.data.DataLoader):
     ):
         """
         Initialize neighbor list function
-        
+
         Parameters
         ----------
         cutoff: float, optional, default infinity
@@ -106,7 +106,7 @@ class DataLoader(torch.utils.data.DataLoader):
             Pre-compute neighbor list and store in the reference dataset
 
         """
-        
+
         # Check input parameter
         if device is None:
             device = self.device
@@ -126,12 +126,12 @@ class DataLoader(torch.utils.data.DataLoader):
         """
         Prepare batch properties from a dataset such as pair indices and
         return with system properties
-        
+
         Parameters
         ----------
         batch: dict
             Data batch
-        
+
         Returns
         -------
         dict
@@ -152,7 +152,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 sys_i: (Natoms,) torch.Tensor
 
         """
-        
+
         # Collected batch system properties
         coll_batch = {}
 
@@ -201,12 +201,12 @@ class DataLoader(torch.utils.data.DataLoader):
             ],
             dim=0).to(
                 device=self.device, dtype=torch.int64)
-        
+
         # Iterate over batch properties
         skip_props = [
             'atoms_number', 'atomic_numbers', 'positions', 'pbc', 'cell']
         for prop_i in batch[0]:
-            
+
             # Skip previous parameter and None
             if prop_i in skip_props or batch[0].get(prop_i) is None:
 
@@ -214,7 +214,7 @@ class DataLoader(torch.utils.data.DataLoader):
 
             # Properties (float data)
             else:
-                
+
                 # Concatenate tensor data
                 if batch[0][prop_i].size():
                     coll_batch[prop_i] = torch.cat(
@@ -235,4 +235,3 @@ class DataLoader(torch.utils.data.DataLoader):
             atomic_numbers_cumsum=atomic_numbers_cumsum)
 
         return coll_batch
-

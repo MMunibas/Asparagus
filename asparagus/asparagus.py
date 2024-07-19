@@ -56,16 +56,16 @@ class Asparagus():
 
         # Initialize model parameter configuration dictionary
         # Keyword arguments overwrite entries in the configuration dictionary
-        self.config = settings.get_config(
+        config = settings.get_config(
             config, config_file, config_from=self, **kwargs)
 
         # Check model parameter configuration and set default
-        self.config.check(
+        config.check(
             check_default=utils.get_default_args(self, None),
             check_dtype=utils.get_dtype_args(self, None))
 
         # Get configuration file path
-        self.config_file = self.config.get('config_file')
+        self.config_file = config.get('config_file')
 
         # Print Asparagus header
         utils.header(self.config_file)
@@ -161,7 +161,7 @@ class Asparagus():
             data_file=data_file,
             data_file_format=data_file_format,
             **kwargs)
-        
+
         return
     
     def _set_data_container(
@@ -203,7 +203,7 @@ class Asparagus():
                 config.update(data_container.get_info())
         
         else:
-        
+
             # Get model calculator
             data_container = self._get_data_container(
                 config,
@@ -647,14 +647,14 @@ class Asparagus():
         #################################
         # # # Assign Reference Data # # #
         #################################
-        
+
         if self.data_container is None:
             data_container = self.get_data_container(
                 config=config,
                 **kwargs)
         else:
             data_container = self.data_container
-        
+
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
@@ -700,7 +700,7 @@ class Asparagus():
         ###########################################
         # # # Assign Model Calculator Trainer # # #
         ###########################################
-        
+
         trainer = self.get_trainer(
             config=config,
             config_file=config_file,
@@ -967,3 +967,7 @@ class Asparagus():
             **kwargs)
 
         return pycharmm_calculator
+
+    @property
+    def config(self):
+        return self.config_file

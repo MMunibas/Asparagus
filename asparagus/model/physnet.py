@@ -64,20 +64,14 @@ class Model_PhysNet(torch.nn.Module):
     
     # Default arguments for graph module
     _default_args = {
-        'model_properties':             ['energy', 'forces', 'dipole'],
-        'model_unit_properties':        { "positions": "Ang",
-                                          "charge": "e",
-                                          "atomic_charges": "e",
-                                          "energy": "eV",
-                                          "atomic_energies": "eV",
-                                          "forces": "eV/Ang",
-                                          "dipole": "eAng"},
+        'model_properties':             None,
+        'model_unit_properties':        None,
         'model_cutoff':                 12.0,
         'model_cuton':                  None,
         'model_switch_range':           2.0,
         'model_repulsion':              False,
         'model_repulsion_trainable':    True,
-        'model_electrostatic':          True,
+        'model_electrostatic':          None,
         'model_dispersion':             True,
         'model_dispersion_trainable':   True,
         'model_num_threads':            4,
@@ -85,14 +79,14 @@ class Model_PhysNet(torch.nn.Module):
 
     # Expected data types of input variables
     _dtypes_args = {
-        'model_properties':             [utils.is_string_array],
-        'model_unit_properties':        [utils.is_dictionary],
+        'model_properties':             [utils.is_string_array, utils.is_None],
+        'model_unit_properties':        [utils.is_dictionary, utils.is_None],
         'model_cutoff':                 [utils.is_numeric],
         'model_cuton':                  [utils.is_numeric, utils.is_None],
         'model_switch_range':           [utils.is_numeric],
         'model_repulsion':              [utils.is_bool],
         'model_repulsion_trainable':    [utils.is_bool],
-        'model_electrostatic':          [utils.is_bool],
+        'model_electrostatic':          [utils.is_bool, utils.is_None],
         'model_dispersion':             [utils.is_bool],
         'model_dispersion_trainable':   [utils.is_bool],
         'model_num_threads':            [utils.is_integer],
@@ -105,45 +99,33 @@ class Model_PhysNet(torch.nn.Module):
         'output_type':                  'PhysNet',
         }
 
-    _dtypes_args = {
-        'model_properties': [utils.is_string_array],
-        'model_unit_properties': [utils.is_dictionary],
-        'model_cutoff': [utils.is_numeric],
-        'model_cuton': [utils.is_numeric, utils.is_None],
-        'model_switch_range': [utils.is_numeric],
-        'model_repulsion': [utils.is_bool],
-        'model_repulsion_trainable': [utils.is_bool],
-        'model_electrostatic': [utils.is_bool],
-        'model_dispersion': [utils.is_bool],
-        'model_dispersion_trainable': [utils.is_bool],
-        'model_num_threads': [utils.is_integer],
-    }
+    _default_model_properties = ['energy', 'forces', 'dipole']
 
-    # Default module types of the model calculator
-    _default_modules = {
-        'input_type': 'PhysNet',
-        'graph_type': 'PhysNet',
-        'output_type': 'PhysNet',
-    }
+    _supported_model_properties = [
+        'energy',
+        'atomic_energies',
+        'forces',
+        'atomic_charges',
+        'dipole']
 
     def __init__(
-            self,
-            config: Optional[Union[str, dict, object]] = None,
-            config_file: Optional[str] = None,
-            model_properties: Optional[List[str]] = None,
-            model_unit_properties: Optional[Dict[str, str]] = None,
-            model_cutoff: Optional[float] = None,
-            model_cuton: Optional[float] = None,
-            model_switch_range: Optional[float] = None,
-            model_repulsion: Optional[bool] = None,
-            model_repulsion_trainable: Optional[bool] = None,
-            model_electrostatic: Optional[bool] = None,
-            model_dispersion: Optional[bool] = None,
-            model_dispersion_trainable: Optional[bool] = None,
-            model_num_threads: Optional[int] = None,
-            device: Optional[str] = None,
-            dtype: Optional[object] = None,
-            **kwargs
+        self,
+        config: Optional[Union[str, dict, object]] = None,
+        config_file: Optional[str] = None,
+        model_properties: Optional[List[str]] = None,
+        model_unit_properties: Optional[Dict[str, str]] = None,
+        model_cutoff: Optional[float] = None,
+        model_cuton: Optional[float] = None,
+        model_switch_range: Optional[float] = None,
+        model_repulsion: Optional[bool] = None,
+        model_repulsion_trainable: Optional[bool] = None,
+        model_electrostatic: Optional[bool] = None,
+        model_dispersion: Optional[bool] = None,
+        model_dispersion_trainable: Optional[bool] = None,
+        model_num_threads: Optional[int] = None,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
+        **kwargs
     ):
         """
         Initialize PhysNet Calculator model.
@@ -183,6 +165,19 @@ class Model_PhysNet(torch.nn.Module):
         #####################################
         # # # Check PhysNet Model Input # # #
         #####################################
+
+        # Check model properties - Selection
+        if self.model_properties is None:
+            # If no model properties are defined but data properties are,
+            # adopt all supported data properties as model properties,
+            # else adopt default model properties
+            if config.get('data_load_properties') is None:
+                self.model_properties = self._default_model_properties
+            else:
+                self.model_properties = []
+                for prop in config.get('data_load_properties'):
+                    if prop in self._supported_model_properties:
+                        self.model_properties.append(prop)
 
         # Check model properties - Labels
         for prop in self.model_properties:
@@ -231,6 +226,20 @@ class Model_PhysNet(torch.nn.Module):
         else:
             self.model_atomic_charges = False
             self.model_dipole = False
+
+        # Check model property units
+        self.model_unit_properties = self.check_model_properties(
+            self.model_properties,
+            self.model_unit_properties,
+            )
+
+        # If electrostatic energy contribution is undefined, activate 
+        # contribution if atomic charges are predicted.
+        if self.model_electrostatic is None:
+            if self.model_atomic_charges:
+                self.model_electrostatic = True
+            else:
+                self.model_electrostatic = False
 
         # Check lower cutoff switch-off range
         if self.model_cuton is None:
@@ -282,6 +291,7 @@ class Model_PhysNet(torch.nn.Module):
         # Update global configuration dictionary
         config_update = {
             'model_properties': self.model_properties,
+            'model_unit_properties': self.model_unit_properties,
             'model_cutoff': self.model_cutoff,
             'model_cuton': self.model_cuton,
             'model_switch_range': self.model_switch_range}
@@ -383,6 +393,7 @@ class Model_PhysNet(torch.nn.Module):
 
         # Assign dispersion interaction module
         if self.model_dispersion:
+
             # Grep dispersion correction parameters
             d3_s6 = config.get("model_dispersion_d3_s6")
             d3_s8 = config.get("model_dispersion_d3_s8")
@@ -432,18 +443,18 @@ class Model_PhysNet(torch.nn.Module):
         if hasattr(self.output_module, "get_info"):
             info = {**info, **self.output_module.get_info()}
         if (
-                self.model_repulsion
-                and hasattr(self.electrostatic_module, "get_info")
+            self.model_repulsion
+            and hasattr(self.electrostatic_module, "get_info")
         ):
             info = {**info, **self.repulsion_module.get_info()}
         if (
-                self.model_electrostatic
-                and hasattr(self.electrostatic_module, "get_info")
+            self.model_electrostatic
+            and hasattr(self.electrostatic_module, "get_info")
         ):
             info = {**info, **self.electrostatic_module.get_info()}
         if (
-                self.model_dispersion
-                and hasattr(self.dispersion_module, "get_info")
+            self.model_dispersion
+            and hasattr(self.dispersion_module, "get_info")
         ):
             info = {**info, **self.dispersion_module.get_info()}
 
@@ -461,10 +472,80 @@ class Model_PhysNet(torch.nn.Module):
             'model_dispersion_trainable': self.model_dispersion_trainable,
         }
 
+    def check_model_properties(
+        self,
+        properties: List[str],
+        unit_properties: Dict[str, str],
+    ) -> Dict[str, str]:
+        """
+        Check model property units input.
+        
+        Parameters
+        ----------
+        properties: list(str)
+            Properties to predict by calculator model
+        unit_properties: dict
+            Unit labels of the predicted model properties.
+
+        Returns
+        ----------
+        dict(str, str)
+            Checked unit labels of the predicted model properties.
+
+        """
+
+        # Check property units input
+        if unit_properties is None:
+            unit_properties = {}
+
+        # Initialize checked property units dictionary
+        checked_unit_properties = {}
+
+        # Check if positions unit is defined in 'unit_properties'.
+        if 'positions' not in unit_properties:
+            checked_unit_properties['positions'] = (
+                settings._default_units['positions'])
+        else:
+            checked_unit_properties['positions'] = (
+                unit_properties['positions'])
+
+        # Check if charge unit is defined in 'unit_properties'.
+        if 'charge' not in unit_properties:
+            checked_unit_properties['charge'] = (
+                settings._default_units['charge'])
+        else:
+            checked_unit_properties['charge'] = (
+                unit_properties['charge'])
+
+        # Check if all units from 'properties' are defined in 
+        # 'unit_properties'.
+        for prop in properties:
+            if prop not in unit_properties:
+                # Check if a related property unit is defined
+                for rel_props in settings._related_unit_properties:
+                    if prop in rel_props:
+                        for rprop in rel_props:
+                            if rprop in unit_properties:
+                                checked_unit_properties[prop] = (
+                                    unit_properties[rprop])
+                                break
+                # Else, take default
+                logger.warning(
+                    f"WARNING:\nNo unit defined for property '{prop}'!\n"
+                    + f"Default unit of '{settings._default_units[prop]}' "
+                    + "will be used.\n")
+                checked_unit_properties[prop] = (
+                    settings._default_units[prop])
+            else:
+                checked_unit_properties[prop] = (
+                    unit_properties[prop])
+
+        return checked_unit_properties
+
     def set_property_scaling(
-            self,
-            scaling_parameter: Optional[Dict[str, List[float]]] = None,
-            atomic_energies_shifts: Optional[Dict[Union[int, str], float]] = None
+        self,
+        scaling_parameter: Optional[Dict[str, List[float]]] = None,
+        atomic_energies_shifts: Optional[Dict[Union[int, str], float]] = None
     ):
         """
         Prepare property scaling factor and shift terms and set atomic type
@@ -484,8 +565,8 @@ class Model_PhysNet(torch.nn.Module):
         return
 
     def set_unit_properties(
-            self,
-            model_unit_properties: Dict[str, str],
+        self,
+        model_unit_properties: Dict[str, str],
     ):
         """
         Set or change unit property parameter in respective model layers
@@ -519,8 +600,8 @@ class Model_PhysNet(torch.nn.Module):
         return
 
     def get_trainable_parameters(
-            self,
-            no_weight_decay: Optional[bool] = True,
+        self,
+        no_weight_decay: Optional[bool] = True,
     ) -> Dict[str, List]:
         """
         Return a  dictionary of lists for different optimizer options.
@@ -561,8 +642,8 @@ class Model_PhysNet(torch.nn.Module):
     # @torch.compile # Not supporting backwards propagation with torch.float64
     # @torch.jit.export  # No effect, as 'forward' already is
     def forward(
-            self,
-            batch: Dict[str, torch.Tensor]
+        self,
+        batch: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
 
         """
@@ -663,34 +744,34 @@ class Model_PhysNet(torch.nn.Module):
         # Add repulsion model contribution
         if self.model_repulsion:
             results['atomic_energies'] = (
-                    results['atomic_energies']
-                    + self.repulsion_module(
-                atomic_numbers, distances, cutoffs, idx_i, idx_j))
+                results['atomic_energies']
+                + self.repulsion_module(
+                    atomic_numbers, distances, cutoffs, idx_i, idx_j))
 
         # Add dispersion model contributions
         if self.model_dispersion:
             results['atomic_energies'] = (
-                    results['atomic_energies']
-                    + self.dispersion_module(
-                atomic_numbers, distances_uv, idx_u, idx_v))
+                results['atomic_energies']
+                + self.dispersion_module(
+                    atomic_numbers, distances_uv, idx_u, idx_v))
 
         # Scale atomic charges to ensure correct total charge
         if self.model_atomic_charges:
             charge_deviation = (
-                    charge - utils.segment_sum(
-                results['atomic_charges'], sys_i, device=self.device)
-                    / atoms_number
+                charge - utils.segment_sum(
+                    results['atomic_charges'], sys_i, device=self.device
+                    )/atoms_number
             )
             results['atomic_charges'] = (
-                    results['atomic_charges'] + charge_deviation[sys_i])
+                results['atomic_charges'] + charge_deviation[sys_i])
 
         # Add electrostatic model contribution
         if self.model_electrostatic:
             # Apply electrostatic model
             results['atomic_energies'] = (
-                    results['atomic_energies']
-                    + self.electrostatic_module(
-                results, distances_uv, idx_u, idx_v))
+                results['atomic_energies']
+                + self.electrostatic_module(
+                    results, distances_uv, idx_u, idx_v))
 
         # Compute property - Energy
         if self.model_energy:
@@ -737,10 +818,10 @@ class Model_PhysNet(torch.nn.Module):
                 system_masses = utils.segment_sum(
                     atomic_masses, sys_i, device=self.device)
                 system_com = (
-                                 utils.segment_sum(
-                                     atomic_masses[..., None] * positions,
-                                     sys_i, device=self.device).reshape(-1, 3)
-                             ) / system_masses[..., None]
+                    utils.segment_sum(
+                        atomic_masses[..., None]*positions,
+                        sys_i, device=self.device).reshape(-1, 3)
+                    )/system_masses[..., None]
                 positions_com = positions - system_com[sys_i]
             else:
                 positions_com = positions
@@ -748,7 +829,7 @@ class Model_PhysNet(torch.nn.Module):
             # Compute molecular dipole moment from atomic charges
             if pbc_atoms is None:
                 results['dipole'] = utils.segment_sum(
-                    results['atomic_charges'][..., None] * positions_com,
+                    results['atomic_charges'][..., None]*positions_com,
                     sys_i, device=self.device).reshape(-1, 3)
             else:
                 results['dipole'] = utils.segment_sum(
@@ -759,9 +840,9 @@ class Model_PhysNet(torch.nn.Module):
         return results
 
     def calculate(
-            self,
-            atoms: ase.Atoms,
-            charge: Optional[float] = 0.0,
+        self,
+        atoms: ase.Atoms,
+        charge: Optional[float] = 0.0,
     ) -> Dict[str, torch.Tensor]:
 
         """

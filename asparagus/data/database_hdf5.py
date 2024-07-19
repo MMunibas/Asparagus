@@ -1,9 +1,8 @@
 import os
-import sys
 import time
 import json
 import logging
-from typing import Optional, List, Dict, Tuple, Union, Any
+from typing import Optional, Union, List, Dict, Tuple, Callable, Any
 
 import numpy as np
 
@@ -13,7 +12,6 @@ import h5py
 
 from .. import data
 from .. import utils
-from .. import settings
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -50,37 +48,78 @@ structure_properties_shape = {
     'idx_j':            (-1,),
     'pbc_offset':       (-1, 3,),
 }
+reference_properties_shape = {
+    # 'energy':           (-1,),
+    # 'atomic_energies':  (-1,),
+    'forces':           (-1, 3,),
+    # 'hessian':          (-1,),
+    # 'atomic_charge':    (-1,),
+    # 'dipole':           (3),
+    # 'atomic_dipoles':   (-1,),
+    'polarizability':   (3, 3,),
+    }
+
+
+def connect(
+    data_file,
+    mode: Optional[str] = 'r',
+    **kwargs,
+) -> object:
+    """
+    Create connection to database.
+
+    Parameters
+    ----------
+    data_file: str
+        Database file path
+    mode: str, optional, default 'r'
+        Mode to open file ('r': just reading, 'w': writing, 'a': appending)
+
+    Returns
+    -------
+    data.Database_hdf5
+        HDF5 database interface object
+
+    """
+    if os.path.exists(data_file) or mode != 'r':
+        return DataBase_hdf5(data_file, mode)
+    else:
+        return DataBase_hdf5(data_file, 'w')
 
 
 class DataBase_hdf5(data.DataBase):
     """
     HDF5 data base class
     """
-    
+
     # Initialize metadata parameter
     _metadata = {}
-    
+
     def __init__(
-        self, 
-        data_file,
-        mode,
+        self,
+        data_file: str,
+        mode: str,
     ):
         """
         HDF5 Database object that contain reference data.
-        
+
         Parameters
         ----------
         data_file: str
             Reference database file
-            
+        mode: str,
+            Conection mode such as read(r), write(w) or append(a).
+
         Returns
         -------
-        object
+        data.DataBase
             h5py object for data storing
+
         """
-        
+
         # Inherit from DataBase base class
         super().__init__(data_file)
+
         self.data = None
         self.mode = mode
 
@@ -99,25 +138,25 @@ class DataBase_hdf5(data.DataBase):
         return
 
     def _set_metadata(self, metadata):
-        
+
         # Convert metadata dictionary
         md = json.dumps(metadata)
-        
+
         # Update or set metadata
         if self.data.get('metadata') is not None:
             del self.data['metadata']
         self.data['metadata'] = md
-        
+
         # Store metadata
         self._metadata = metadata
 
         return
-    
+
     def _get_metadata(self):
-        
+
         # Read metadata
         if not len(self._metadata):
-            
+
             if self.data.get('metadata') is None:
                 self._metadata = {}
             else:
@@ -127,7 +166,7 @@ class DataBase_hdf5(data.DataBase):
         return self._metadata
 
     def _init_systems(self):
-        
+
         # Set or check version
         if self.data.get('version') is None:
             self.data['version'] = VERSION
@@ -142,11 +181,11 @@ class DataBase_hdf5(data.DataBase):
             self.data.create_group('systems')
         if self.data.get('last_id') is None:
             self.data['last_id'] = 0
-        
+
         return
 
     def _reset(self):
-        
+
         # Reset stored metadata dictionary
         self._metadata = {}
         return
@@ -169,17 +208,17 @@ class DataBase_hdf5(data.DataBase):
         return rows
 
     def get_last_id(self):
-        
+
         # Get last row id
         if self.data.get('last_id') is not None:
             row_id = np.array(self.data['last_id'], dtype=np.int32)
         elif (
-            self.data.get('last_id') is None 
+            self.data.get('last_id') is None
             and self.data.get('systems') is None
         ):
             row_id = 0
         elif (
-            self.data.get('last_id') is None 
+            self.data.get('last_id') is None
             and self.data.get('systems') is not None
         ):
             row_id = 0
@@ -197,14 +236,14 @@ class DataBase_hdf5(data.DataBase):
         return row_id
 
     def _write(self, properties, row_id):
-        
+
         # Reference data list
         ref_data = {}
-        
+
         # Current datatime and User name
         ref_data['mtime'] = time.ctime()
         ref_data['username'] = os.getenv('USER')
-        
+
         # Structural properties
         for prop_i, dtype_i in structure_properties_dtype.items():
             if properties.get(prop_i) is None:
@@ -305,6 +344,14 @@ class DataBase_hdf5(data.DataBase):
 
     def _delete(self, row_ids):
         raise NotImplementedError()
+
+    def _delete_file(self):
+        """
+        Delete database file
+        """
+        if os.path.exists(self.data_file):
+            os.remove(self.data_file)
+        return
 
     @property
     def metadata(self):

@@ -2,8 +2,6 @@ import os
 import logging
 from typing import Optional, List, Dict, Tuple, Union, Any, Callable
 
-import numpy as np
-
 import torch
 
 from .. import data
@@ -15,15 +13,16 @@ logger = logging.getLogger(__name__)
 
 __all__ = ['DataSet', 'DataSubSet']
 
+
 class DataSet():
     """
     DataSet class containing and loading reference data from files
-    
+
     Parameters
     ----------
     data_file: str
         Reference Asparagus database file
-    data_file_format: str, optional, default 'data_file' prefix 
+    data_file_format: str, optional, default 'data_file' prefix
         Reference Asparagus database file format
     data_load_properties: List(str), optional, default None
         Subset of properties to load.
@@ -35,7 +34,7 @@ class DataSet():
                                 'force': 'eV/Ang', ...}
     data_overwrite: bool, optional, default 'False'
         Overwrite database file
-    
+
     Return
     ------
     callable
@@ -61,6 +60,9 @@ class DataSet():
             data_file_format = data_file.split('.')[-1]
         self.data_file_format = data_file_format
 
+        # Get database connect function
+        self.connect = data.get_connect(self.data_file_format)
+
         # Check for data path existence
         path, _ = os.path.split(self.data_file)
         if path and not os.path.isdir(path):
@@ -68,20 +70,21 @@ class DataSet():
 
         # If overwrite, remove old DataSet file
         if os.path.exists(data_file) and data_overwrite:
-            os.remove(data_file)
+            with self.connect(self.data_file, 'w') as f:
+                f.delete_file()
 
         # Copy current metadata
         metadata = self.get_metadata()
-        
+
         # Check data property compatibility
         metadata = self.check_data_compatibility(
             metadata,
             data_load_properties,
             data_unit_properties)
-        
+
         # Set metadata
         self.set_metadata(metadata)
-        
+
         # Initialize DataReader variable
         self.datareader = None
 
@@ -92,7 +95,7 @@ class DataSet():
     ) -> int:
 
         if os.path.isfile(self.data_file):
-            with data.connect(self.data_file, self.data_file_format) as db:
+            with self.connect(self.data_file, mode='r') as db:
                 return db.count()
         else:
             return 0
@@ -111,7 +114,7 @@ class DataSet():
     ):
 
         return self._set_properties([idx], [properties])
-    
+
     def __iter__(
         self
     ):
@@ -150,7 +153,7 @@ class DataSet():
         idx: int,
     ) -> Dict[str, torch.tensor]:
 
-        with data.connect(self.data_file, mode='r') as db:
+        with self.connect(self.data_file, mode='r') as db:
             row = db.get(idx + 1)[0]
 
         return row
@@ -174,11 +177,11 @@ class DataSet():
         properties: List[Dict[str, torch.tensor]],
     ):
 
-        with data.connect(self.data_file, mode='a') as db:
+        with self.connect(self.data_file, mode='a') as db:
             for idx, props in zip(idcs, properties):
                 row_id = db.write(props, row_id=idx + 1)
 
-        return
+        return row_id
 
     def update_properties(
         self,
@@ -199,11 +202,11 @@ class DataSet():
         properties: List[Dict[str, torch.tensor]],
     ):
 
-        with data.connect(self.data_file, mode='a') as db:
+        with self.connect(self.data_file, mode='a') as db:
             for idx, props in zip(idcs, properties):
                 row_id = db.update(row_id=idx + 1, properties=props)
 
-        return
+        return row_id
 
     @property
     def metadata(self):
@@ -225,9 +228,7 @@ class DataSet():
         """
 
         # Read metadata from database file
-        with data.connect(
-            self.data_file, self.data_file_format, mode='r'
-        ) as db:
+        with self.connect(self.data_file, mode='r') as db:
             return db.get_metadata()
 
     def set_metadata(
@@ -243,18 +244,14 @@ class DataSet():
             metadata = self.metadata
 
         # Set metadata
-        with data.connect(
-            self.data_file, self.data_file_format, mode='a'
-        ) as db:
+        with self.connect(self.data_file, mode='a') as db:
             db.set_metadata(metadata)
             db.init_systems()
 
     def reset_database(
         self,
     ):
-        with data.connect(
-            self.data_file, self.data_file_format, mode='a'
-        ) as db:
+        with self.connect(self.data_file, mode='a') as db:
             db.reset()
 
     def load_data(
@@ -279,20 +276,20 @@ class DataSet():
                 + f"written to dataset '{self.data_file:s}'! "
                 + "Loading data source is skipped.\n")
             return
-        
+
         # Append data source information
         metadata['data_source'].append(data_source)
         metadata['data_source_format'].append(data_source_format)
-        
+
         # Reset property scaling flag
         metadata['data_property_scaling_uptodate'] = False
-        
+
         # Initialize DataReader
         datareader = data.DataReader(
             data_file=self.data_file,
             data_file_format=self.data_file_format,
             alt_property_labels=alt_property_labels)
-        
+
         # Load data file
         datareader.load(
             data_source,
@@ -300,7 +297,7 @@ class DataSet():
             data_load_properties,
             data_unit_properties,
             alt_property_labels)
-        
+
         # If metadata properties is empty, initialize database
         if (
             metadata.get('load_properties') is None
@@ -308,15 +305,16 @@ class DataSet():
         ):
             metadata['load_properties'] = data_load_properties
             metadata['unit_properties'] = data_unit_properties
-        
+
         # Set updated metadata
         self.set_metadata(metadata)
+
+        return
 
     def add_atoms(
         self,
         atoms: object,
         properties: Dict[str, Any],
-        #alt_property_labels: Optional[Dict[str, str]] = None,
     ):
         """
         Add ASE Atoms system and properties
@@ -327,7 +325,6 @@ class DataSet():
             self.datareader = data.DataReader(
                 data_file=self.data_file,
                 data_file_format=self.data_file_format,
-                #alt_property_labels=alt_property_labels
                 )
 
         # Get dataset metadata
@@ -339,7 +336,6 @@ class DataSet():
             properties,
             data_load_properties=metadata['load_properties'],
             data_unit_properties=metadata['unit_properties'],
-            #alt_property_labels=alt_property_labels
             )
 
         return
@@ -351,7 +347,7 @@ class DataSet():
         data_unit_properties: Dict[str, str],
     ):
         """
-        Check compatibility between input for 'data_load_properties' and 
+        Check compatibility between input for 'data_load_properties' and
         'data_unit_properties' with metadata.
         """
         if (
@@ -367,7 +363,7 @@ class DataSet():
             mismatch_metadata = []
             mismatch_input = []
             # Check property match except for default properties always stored
-            # in database 
+            # in database
             for prop in metadata.get('load_properties'):
                 if (
                     prop not in data_load_properties
@@ -390,7 +386,7 @@ class DataSet():
                     msg += f"Property '{prop:s}' in input not in metadata.\n"
                 logger.error("Error:\n" + msg)
                 raise SyntaxError(msg)
-        
+
         # Check compatibility between 'data_unit_properties' in metadata
         # and input
         if (
@@ -399,7 +395,19 @@ class DataSet():
         ):
             metadata['unit_properties'] = {}
         elif metadata.get('unit_properties') is None:
-            metadata['unit_properties'] = data_unit_properties
+            metadata['unit_properties'] = {}
+            msg = ""
+            for prop in data_load_properties:
+                if prop in data_unit_properties:
+                    metadata['unit_properties'][prop] = (
+                        data_unit_properties[prop])
+                else:
+                    msg += f"No Property unit defined for '{prop:s}'.\n"
+            if len(msg):
+                raise SyntaxError(
+                    "DataSet 'load_properties' input contains properties with"
+                    + "unkown property units in 'unit_properties'!\n"
+                    + msg)
         elif data_unit_properties is None:
             data_unit_properties = metadata['unit_properties']
         else:
@@ -420,17 +428,30 @@ class DataSet():
                 logger.error("Error:\n" + msg)
                 raise SyntaxError(msg)
 
+        # Check for position and charge entry in 'unit_properties' in
+        # metadata
+        for prop in ['positions', 'charge']:
+            if prop not in metadata['unit_properties']:
+                if prop in data_unit_properties:
+                    metadata['unit_properties'][prop] = (
+                        data_unit_properties[prop])
+                else:
+                    metadata['unit_properties'][prop] = (
+                        settings._default_units[prop])
+
         return metadata
 
 
 class DataSubSet(DataSet):
     """
     DataSubSet class iterating and returning over a subset of DataSet.
-    
+
     Parameters
     ----------
     data_file: str
-        Reference ASE database file
+        Reference database file
+    data_file_format: str
+        Database file format
     subset_idx: List(int)
         List of reference data indices of this subset.
 
@@ -447,7 +468,7 @@ class DataSubSet(DataSet):
         subset_idx: List[int],
     ):
         """
-        DataSubSet class 
+        DataSubSet class
         """
 
         # Inherit from DataSet base class
@@ -509,7 +530,7 @@ class DataSubSet(DataSet):
 
         # Load property data
         properties = self._get_properties(self.subset_idx[idx])
-        
+
         return properties
 
     def set_properties(

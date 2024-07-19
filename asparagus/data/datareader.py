@@ -2,13 +2,10 @@ import os
 import logging
 from typing import Optional, List, Dict, Tuple, Union, Any
 
-import numpy as np 
-
 import ase
 import ase.db as ase_db
 
-
-import torch
+import numpy as np
 
 from .. import data
 from .. import utils
@@ -17,22 +14,116 @@ from .. import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-__all__ = ['DataReader']
+__all__ = ['DataReader', 'check_data_format']
+
+# Possible data format labels (keys) to valid data format label (item)
+# Asparagus database format labels
+_data_file_formats = {
+    'db':       'db.sql',
+    'sql':      'db.sql',
+    'sqlite':   'db.sql',
+    'sqlite3':  'db.sql',
+    'db.sql':   'db.sql',
+    'sql.db':   'db.sql',
+    'npz':      'db.npz',   # Would be updated by _data_source_format
+    'db.npz':   'db.npz',
+    'npz.db':   'db.npz',
+    'h5':       'db.h5',
+    'hdf5':     'db.h5',
+    'h5py':     'db.h5',
+    'db.h5':    'db.h5',
+    'h5.db':    'db.h5',
+    'db.hdf5':  'db.h5',
+    'hdf5.db':  'db.h5',
+    'db.h5py':  'db.h5',
+    'h5py.db':  'db.h5',
+    }
+# External data format labels
+_data_source_formats = {
+    'npz':      'npz',
+    'npy':      'npz',
+    'ase':      'ase.db',
+    'ase.db':   'ase.db',
+    'db.ase':   'ase.db',
+    'traj':     'ase.traj',
+    'ase.traj': 'ase.traj',
+    'traj.ase': 'ase.traj',
+    }
+
+
+def check_data_format(
+    data_format: str,
+    is_source_format: Optional[bool] = False
+):
+    """
+    Check input for compatible data format labels
+    
+    Parameters
+    ----------
+    data_format: str
+        Input string to check for compatible data format labels
+    is_source_format: bool, optional, default False
+        If False, 'data_format' input is only compared with Asparagus 
+        database labels. Else, update format library with source format labels.
+
+    Returns
+    -------
+    str
+        Valid data format label
+    """
+
+    # Assign data format dictionary
+    file_formats = _data_file_formats.copy()
+    if is_source_format:
+        file_formats.update(_data_source_formats)
+
+    # Split path and file
+    data_path, data_file = os.path.split(data_format)
+
+    # Check data file suffix
+    if data_file.lower() in file_formats:
+        return file_formats[data_file.lower()]
+    
+    if '.' in data_file and data_file.count('.') >= 2:
+
+        idcs = [
+            idx for idx, char in enumerate(data_file)
+            if char.lower() == '.']
+        data_format_label = data_file[idcs[-2] + 1:]
+
+        if data_format_label.lower() in file_formats:
+            return file_formats[data_format_label.lower()]
+
+    if '.' in data_file:
+
+        idcs = [
+            idx for idx, char in enumerate(data_file)
+            if char.lower() == '.']
+        data_format_label = data_file[idcs[-1] + 1:]
+
+        if data_format_label.lower() in file_formats:
+            return file_formats[data_format_label.lower()]
+
+    raise SyntaxError(
+        f"Data file format for '{data_format:s}' could not identified!")
+
+    return
+
 
 class DataReader():
     """
     DataReader class that contain functions to read and adapt data.
-    
+
     Parameters
     ----------
     data_file: str, optional, default None
-        if None, the data read by this class are returned as list. Else, the 
+        if None, the data read by this class are returned as list. Else, the
         data are stored in the reference database file and just the data file
         path is returned.
     data_load_properties: List(str)
         Subset of properties to load to dataset file
     alt_property_labels: dictionary, optional, default None
-        Dictionary of alternative property labeling to replace non-valid 
+        Dictionary of alternative property labeling to replace non-valid
         property labels with the valid one if possible.
     """
 
@@ -44,9 +135,12 @@ class DataReader():
         alt_property_labels: Optional[Dict[str, List[str]]] = None,
     ):
 
-        # Assign reference data set path and format
+        # Assign reference database path and format
         self.data_file = data_file
         self.data_file_format = data_file_format
+
+        # Get reference database connect function
+        self.connect = data.get_connect(self.data_file_format)
 
         # Assign property list
         self.data_load_properties = data_load_properties
@@ -63,17 +157,12 @@ class DataReader():
 
         # Assign dataset format with respective load function
         self.data_file_format_load = {
-            'db':       self.load_db,
-            'sql':      self.load_db,
-            'sqlite':   self.load_db,
-            'sqlite3':  self.load_db,
-            'hdf5':     self.load_db,
-            'h5py':     self.load_db,
-            'npz':      self.load_db,
-            'numpy':    self.load_db,
-            'asedb':    self.load_ase,
+            'db.sql':   self.load_db,
+            'db.npz':   self.load_db,
+            'db.h5':    self.load_db,
             'npz':      self.load_npz,
-            'traj':     self.load_traj,
+            'ase.db':   self.load_ase,
+            'ase.traj': self.load_traj,
             }
 
         return
@@ -253,7 +342,7 @@ class DataReader():
                 if (
                         prop in data_load_properties
                         or prop in self.default_property_labels
-                        or prop == 'positions'
+                        or prop in ['positions', 'charge']
                 ):
                     load_str = "   x   "
                 else:
@@ -267,20 +356,20 @@ class DataReader():
         else:
 
             # Check units of positions and properties
+            unit_properties = data_unit_properties.copy()
             unit_conversion = {}
             unit_mismatch = {}
-
+            
             for prop in assigned_properties.keys():
                 if source_metadata['unit_properties'].get(prop) is None:
                     source_metadata['unit_properties'][prop] = 'None'
-                    unit_conversion[prop] = 1.0
-                    unit_mismatch[prop] = False
-                else:
-                    unit_conversion[prop], unit_mismatch[prop] = (
-                        utils.check_units(
-                            data_unit_properties[prop],
-                            source_metadata['unit_properties'].get(prop))
-                        )
+                if unit_properties.get(prop) is None:
+                    unit_properties[prop] = 'None'
+                unit_conversion[prop], unit_mismatch[prop] = (
+                    utils.check_units(
+                        unit_properties[prop],
+                        source_metadata['unit_properties'][prop])
+                    )
 
             message = (
                 "INFO:\nProperty assignment from database "
@@ -293,14 +382,14 @@ class DataReader():
                 if (
                         prop in data_load_properties
                         or prop in self.default_property_labels
-                        or prop == 'positions'
+                        or prop in ['positions', 'charge']
                 ):
                     load_str = "   x   "
                 else:
                     load_str = " "*7
                 message += (
                     f"{load_str:7s} "
-                    + f"{prop:<16s} {data_unit_properties[prop]:<16s} "
+                    + f"{prop:<16s} {unit_properties[prop]:<16s} "
                     + f"{item:<16s} "
                     + f"{source_metadata['unit_properties'][prop]:<16s} "
                     + f"{unit_conversion[prop]:11.9e}\n")
@@ -342,9 +431,7 @@ class DataReader():
 
             # Add atom systems to database
             all_atoms_properties = self.data_file
-            with data.connect(
-                self.data_file, self.data_file_format, mode='a'
-            ) as db:
+            with self.connect(self.data_file, mode='a') as db:
 
                 logger.info(
                     f"INFO:\nWriting '{data_source}' to database " +
@@ -487,13 +574,16 @@ class DataReader():
         else:
 
             # Check units of positions and properties
+            unit_properties = data_unit_properties.copy()
             unit_conversion = {}
             unit_mismatch = {}
 
             for prop in assigned_properties.keys():
+                if unit_properties.get(prop) is None:
+                    unit_properties[prop] = 'None'
                 unit_conversion[prop], unit_mismatch[prop] = (
                     utils.check_units(
-                        data_unit_properties[prop],
+                        unit_properties[prop],
                         None)
                     )
 
@@ -506,7 +596,7 @@ class DataReader():
                 + "\n")
             for prop, item in assigned_properties.items():
                 message += (
-                    f" {prop:<16s} {data_unit_properties[prop]:<16s} "
+                    f" {prop:<16s} {unit_properties[prop]:<16s} "
                     + f"{item:<16s} "
                     + f"{'ASE unit':<16s} "
                     + f"{unit_conversion[prop]:11.9e}\n")
@@ -548,9 +638,7 @@ class DataReader():
 
             # Add atom systems to database
             all_atoms_properties = self.data_file
-            with data.connect(
-                self.data_file, self.data_file_format, mode='a'
-            ) as db:
+            with self.connect(self.data_file, mode='a') as db:
 
                 logger.info(
                     f"INFO:\nWriting '{data_source}' to database " +
@@ -768,6 +856,7 @@ class DataReader():
         elif source_unit_properties is None:
 
             # Set default conversion factor dictionary
+            unit_properties = data_unit_properties.copy()
             unit_conversion = {}
             for prop in assigned_properties.keys():
                 unit_conversion[prop] = 1.0
@@ -779,35 +868,30 @@ class DataReader():
                 + "-"*17*3
                 + "\n")
             for prop, item in assigned_properties.items():
-                if data_unit_properties.get(prop) is None:
-                    data_unit_properties[prop] = 'None'
+                if unit_properties.get(prop) is None:
+                    unit_properties[prop] = 'None'
                 message += (
                     f" {prop:<15s} "
-                    + f" {data_unit_properties[prop]:<15s} "
+                    + f" {unit_properties[prop]:<15s} "
                     + f" {item:<15s}\n")
 
         else:
 
             # Check units of positions and properties
+            unit_properties = data_unit_properties.copy()
             unit_conversion = {}
             unit_mismatch = {}
 
             for prop in assigned_properties.keys():
                 if source_unit_properties.get(prop) is None:
                     source_unit_properties[prop] = 'None'
-                    unit_conversion[prop] = 1.0
-                    unit_mismatch[prop] = False
-                elif source_unit_properties.get(prop) is None:
-                    source_unit_properties[prop] = 'None'
-                    unit_conversion[prop] = 1.0
-                    unit_mismatch[prop] = False
-
-                else:
-                    unit_conversion[prop], unit_mismatch[prop] = (
-                        utils.check_units(
-                            data_unit_properties[prop],
-                            source_unit_properties.get(prop))
-                        )
+                if unit_properties.get(prop) is None:
+                    unit_properties[prop] = 'None'
+                unit_conversion[prop], unit_mismatch[prop] = (
+                    utils.check_units(
+                        unit_properties[prop],
+                        source_unit_properties[prop])
+                    )
 
             message = (
                 "INFO:\nProperty assignment from database "
@@ -817,10 +901,8 @@ class DataReader():
                 + "-"*17*5
                 + "\n")
             for prop, item in assigned_properties.items():
-                if data_unit_properties.get(prop) is None:
-                    data_unit_properties[prop] = 'None'
                 message += (
-                    f" {prop:<16s} {data_unit_properties[prop]:<16s} "
+                    f" {prop:<16s} {unit_properties[prop]:<16s} "
                     + f"{item:<16s} "
                     + f"{source_unit_properties[prop]:<16s} "
                     + f"{unit_conversion[prop]:11.9e}\n")
@@ -889,9 +971,7 @@ class DataReader():
             # Add atom systems to database
             all_atoms_properties = self.data_file
             atoms_properties = {}
-            with data.connect(
-                self.data_file, self.data_file_format, mode='a'
-            ) as db:
+            with self.connect(self.data_file, mode='a') as db:
 
                 logger.info(
                     f"INFO:\nWriting '{data_source}' to database "
@@ -906,7 +986,7 @@ class DataReader():
                         atomic_numbers[idx][:atoms_number[idx]])
                     atoms_properties['positions'] = (
                         unit_conversion['positions']
-                        *positions[idx][:atoms_number[idx]])
+                        * positions[idx][:atoms_number[idx]])
                     atoms_properties['cell'] = (
                         unit_conversion['positions']*cell[idx])
                     atoms_properties['pbc'] = pbc[idx]
@@ -963,7 +1043,7 @@ class DataReader():
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
         """
-        
+
         # Open data source
         db_source = ase.io.Trajectory(data_source)
 
@@ -976,13 +1056,13 @@ class DataReader():
 
         # Get data sample to compare property labels
         data_sample = db_source[0]
-        
+
         # Check if data source has properties
         if data_sample.calc is None:
             logger.warning(
                 f"WARNING:\nData source '{data_source:s}' has no properties!")
             return
-        
+
         # Check alternative property labels
         if alt_property_labels is None:
             alt_property_labels = self.alt_property_labels
@@ -992,7 +1072,7 @@ class DataReader():
         data_sample_properties = ['positions', 'charge']
         data_sample_properties += list(data_sample.calc.results)
         for custom_label in data_sample_properties:
-            
+
             # Skip default system properties
             if custom_label in self.default_property_labels:
                 continue
@@ -1051,27 +1131,26 @@ class DataReader():
         else:
 
             # Check units of positions and properties
+            unit_properties = data_unit_properties.copy()
             unit_conversion = {}
             unit_mismatch = {}
+
             for prop in assigned_properties:
                 if (
-                    data_unit_properties.get(prop) is None
+                    unit_properties.get(prop) is None
                     and settings._default_units.get(prop) is None
                 ):
                     raise SyntaxError(
                         f"Unit for property label '{prop:s}' is not known! "
                         + "Define property unit in '{data_source:s}' "
                         + "within 'data_unit_properties' input!")
-                elif data_unit_properties.get(prop) is None:
-                    data_unit_properties[prop] = settings._default_units[prop]
-                    unit_conversion[prop] = 1.0
-                    unit_mismatch[prop] = False
-                else:
-                    unit_conversion[prop], unit_mismatch[prop] = (
-                        utils.check_units(
-                            data_unit_properties[prop],
-                            None)
-                        )
+                elif unit_properties.get(prop) is None:
+                    unit_properties[prop] = settings._default_units[prop]
+                unit_conversion[prop], unit_mismatch[prop] = (
+                    utils.check_units(
+                        unit_properties[prop],
+                        None)
+                    )
 
             message = (
                 "INFO:\nProperty assignment from database "
@@ -1082,14 +1161,14 @@ class DataReader():
                 + "\n")
             for prop, item in assigned_properties.items():
                 message += (
-                    f" {prop:<16s} {data_unit_properties[prop]:<16s} "
+                    f" {prop:<16s} {unit_properties[prop]:<16s} "
                     + f"{item:<16s} "
                     + f"{'ASE unit':<16s} "
                     + f"{unit_conversion[prop]:11.9e}\n")
 
         # Print Source information
         logger.info(message)
-        
+
         # If not dataset file is given, load source data to memory
         if self.data_file is None:
 
@@ -1097,7 +1176,7 @@ class DataReader():
             all_atoms_properties = []
             logger.info(
                 f"INFO:\nLoad {Ndata} data point from '{data_source}'!\n")
-            
+
             # Iterate over source data
             for idx in range(Ndata):
 
@@ -1106,7 +1185,7 @@ class DataReader():
 
                 # Get atoms object and property data
                 atoms = db_source[idx]
-                
+
                 # Collect system data
                 atoms_properties = self.collect_from_atoms(
                     atoms,
@@ -1122,15 +1201,13 @@ class DataReader():
 
             # Add atom systems to database
             all_atoms_properties = self.data_file
-            with data.connect(
-                self.data_file, self.data_file_format, mode='a'
-            ) as db:
-                
+            with self.connect(self.data_file, mode='a') as db:
+
                 logger.info(
                     f"INFO:\nWriting '{data_source}' to database " +
                     f"'{self.data_file}'!\n" +
                     f"{Ndata} data point will be added.\n")
-                
+
                 # Iterate over source data
                 for idx in range(Ndata):
 
@@ -1142,7 +1219,7 @@ class DataReader():
 
                     # Collect system data
                     atoms_properties = self.collect_from_atoms(
-                        atoms, 
+                        atoms,
                         unit_conversion,
                         data_load_properties,
                         assigned_properties)
@@ -1213,7 +1290,7 @@ class DataReader():
                 unit_conversion[prop] = 1.0
 
         else:
-            
+
             # Check if all property units in 'data_unit_properties' are found
             found_unit_properties = [
                 prop in data_unit_properties
@@ -1230,13 +1307,16 @@ class DataReader():
                     + "found in 'data_unit_properties'!\n")
 
             # Check units of positions and properties
+            unit_properties = data_unit_properties.copy()
             unit_conversion = {}
             unit_mismatch = {}
-            for prop in data_unit_properties.keys():
 
+            for prop in data_unit_properties.keys():
+                if unit_properties.get(prop) is None:
+                    unit_properties[prop] = 'None'
                 unit_conversion[prop], unit_mismatch[prop] = (
                     utils.check_units(
-                        data_unit_properties[prop],
+                        unit_properties[prop],
                         None)
                     )
 
@@ -1272,9 +1352,7 @@ class DataReader():
             # Atoms system data
             atoms_properties = {}
 
-            with data.connect(
-                self.data_file, self.data_file_format, mode='a'
-            ) as db:
+            with self.connect(self.data_file, mode='a') as db:
 
                 # Fundamental properties
                 atoms_properties['atoms_number'] = (
@@ -1312,7 +1390,7 @@ class DataReader():
         """
         Collect properties from database entry to property dictionary and
         apply unit conversion.
-        
+
         Parameters
         ----------
         source: dict
@@ -1331,10 +1409,10 @@ class DataReader():
             System property dictionary
 
         """
-        
+
         # Atoms system data
         atoms_properties = {}
-        
+
         # Fundamental properties
         atoms_properties['atoms_number'] = source['atoms_number']
         atoms_properties['atomic_numbers'] = (
@@ -1368,7 +1446,7 @@ class DataReader():
         """
         Collect properties from database entry to property dictionary and
         apply unit conversion.
-        
+
         Parameters
         ----------
         source: ase.Atoms
@@ -1389,10 +1467,10 @@ class DataReader():
             System property dictionary
 
         """
-        
+
         # Atoms system data
         atoms_properties = {}
-        
+
         # Fundamental properties
         atoms_properties['atoms_number'] = (
             atoms.get_global_number_of_atoms())
@@ -1418,7 +1496,7 @@ class DataReader():
             if prop in load_properties:
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
-        
+
         return atoms_properties
 
     def collect_from_atoms(
@@ -1431,7 +1509,7 @@ class DataReader():
         """
         Collect properties from database entry to property dictionary and
         apply unit conversion.
-        
+
         Parameters
         ----------
         atoms: ase.Atoms
@@ -1450,13 +1528,13 @@ class DataReader():
             System property dictionary
 
         """
-        
+
         # Atoms system data
         atoms_properties = {}
-        
+
         # Get atoms property data
         properties = atoms.calc
-        
+
         # Fundamental properties
         atoms_properties['atoms_number'] = (
             atoms.get_global_number_of_atoms())
@@ -1481,5 +1559,5 @@ class DataReader():
             if prop in properties.results:
                 atoms_properties[prop] = (
                     conversion[prop]*properties.results[prop])
-        
+
         return atoms_properties

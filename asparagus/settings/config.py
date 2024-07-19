@@ -413,10 +413,10 @@ class Configuration():
             config_file = self.config_file
         with open(config_file, 'w') as f:
             json.dump(
-                config_dump, f, 
+                config_dump, f,
                 indent=self.config_indent,
                 default=str)
-        
+
         return
 
     def make_dumpable(
@@ -426,7 +426,7 @@ class Configuration():
         """
         Convert config items to json compatible dictionary
         """
-        
+
         # Initialize dictionary with JSON compatible parameter types
         config_dump = {}
 

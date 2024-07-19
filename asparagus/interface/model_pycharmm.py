@@ -56,6 +56,9 @@ class PyCharmm_Calculator:
     mlmm_cuton: float
         Lower atom pair distance to start interaction switch-off for ML/MM
         electrostatic interactions
+    mlmm_lambda: float, optional, default None
+        ML/MM electrostatic interactions scaling factor. If None, no scaling
+        is applied.
     **kwargs
         Additional keyword arguments.
 
@@ -71,6 +74,7 @@ class PyCharmm_Calculator:
         mlmm_atomic_charges: Optional[List[float]] = None,
         mlmm_cutoff: Optional[float] = None,
         mlmm_cuton: Optional[float] = None,
+        mlmm_lambda: Optional[float] = None,
         **kwargs
     ):
 
@@ -124,6 +128,12 @@ class PyCharmm_Calculator:
         # Non-bonding interaction range
         self.mlmm_cutoff = torch.tensor(mlmm_cutoff, dtype=self.dtype)
         self.mlmm_cuton = torch.tensor(mlmm_cuton, dtype=self.dtype)
+        
+        # Non-bonding electrostatic scaling factor
+        if mlmm_lambda is None:
+            self.mlmm_lambda = torch.tensor(1.0, dtype=self.dtype)
+        else:
+            self.mlmm_lambda = torch.tensor(mlmm_lambda, dtype=self.dtype)
 
         ################################
         # # # Set Model Calculator # # #
@@ -207,7 +217,6 @@ class PyCharmm_Calculator:
             self.electrostatics_calc = Electrostatic_shift(
                 self.mlmm_cutoff,
                 self.mlmm_cuton,
-                #self.max_rcut,
                 self.ml_idxp,
                 self.mlmm_atomic_charges,
                 kehalf=self.kehalf,
@@ -392,12 +401,14 @@ class PyCharmm_Calculator:
             
             # Add electrostatic interaction potential to ML energy
             E += (
-                mlmm_Eele*self.model2charmm_unit_conversion['energy']
+                mlmm_Eele*self.mlmm_lambda
+                * self.model2charmm_unit_conversion['energy']
                 ).detach().numpy()
 
             # Apply dtype conversion
             mlmm_F = (
-                -mlmm_gradient*self.model2charmm_unit_conversion['forces']
+                -mlmm_gradient*self.mlmm_lambda
+                * self.model2charmm_unit_conversion['forces']
                 ).detach().numpy().ctypes.data_as(
                     ctypes.POINTER(ctypes.c_double)
                     )

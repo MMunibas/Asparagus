@@ -122,8 +122,16 @@ class DataContainer():
             # Get database reference file path and format
             if data_file is None:
                 data_file = config.get('data_file')
-            if data_file_format is None:
-                data_file_format = config.get('data_file_format')
+            if (
+                data_file_format is None 
+                and config.get('data_file_format') is None
+            ):
+                data_file_format = data.check_data_format(data_file)
+            elif data_file_format is None:
+                data_file_format = data.check_data_format(
+                    config.get('data_file_format'))
+            else:
+                data_file_format = data.check_data_format(data_file_format)
             metadata = data.get_metadata(data_file, data_file_format)
             # Check input with existing database properties
             data_load_properties, data_unit_properties = (
@@ -134,6 +142,12 @@ class DataContainer():
                     unit_properties=data_unit_properties,
                     )
                 )
+
+        # Check data source file and format input
+        data_source, data_source_format = self.check_data_source(
+            data_source,
+            data_source_format,
+        )
 
         # Check input parameter, set default values if necessary and
         # update the configuration dictionary
@@ -153,9 +167,16 @@ class DataContainer():
         self.device = utils.check_device_option(device, config)
         self.dtype = utils.check_dtype_option(dtype, config)
 
-        ########################################
-        # # # Check DataSet Property Input # # #
-        ########################################
+        ######################################
+        # # # Check Data Parameter Input # # #
+        ######################################
+
+        # Check data file format
+        if self.data_file_format is None:
+            self.data_file_format = data.check_data_format(self.data_file)
+        else:
+            self.data_file_format = data.check_data_format(
+                self.data_file_format)
 
         # Check and prepare data property input
         (self.data_load_properties, self.data_unit_properties,
@@ -189,15 +210,26 @@ class DataContainer():
         config['data_overwrite'] = False
 
         # Load source data
-        self.dataset_load(
+        self.data_source, self.data_source_format = self.dataset_load(
             self.data_source,
             self.data_source_format,
             self.data_alt_property_labels,
             **kwargs)
-        
-        # Finalize DataSet setup
+
+        # Finalize dataset setup
         self.dataset_setup(
             **kwargs)
+
+        # Update global configuration dictionary
+        config.update(
+            {
+                'data_file_format': self.data_file_format,
+                'data_load_properties': self.data_load_properties,
+                'data_unit_properties': self.data_unit_properties,
+                'data_source': self.data_source,
+                'data_source_format': self.data_source_format,
+                }, 
+            config_from=self)
 
         return
 
@@ -262,11 +294,11 @@ class DataContainer():
                 self.data_unit_properties,
                 self.data_alt_property_labels,
             )
-            
-        # Mirror DataSet parameters from metadata
+
+        # Return data source information from metadata
         metadata = self.dataset.metadata
-        self.data_source = metadata.get('data_source')
-        self.data_source_format = metadata.get('data_source_format')
+        
+        return metadata.get('data_source'), metadata.get('data_source_format')
 
     def dataset_setup(
         self,
@@ -700,10 +732,10 @@ class DataContainer():
         # Check for unknown property labels in 'data_unit_properties'
         # and replace if possible with internally used property label in
         # 'data_alt_property_labels'
-        props = list(data_unit_properties.keys())
-        for prop in props:
+        for prop in data_unit_properties:
             match, modified, new_prop = utils.check_property_label(
-                prop,                valid_property_labels=settings._valid_properties,
+                prop,
+                valid_property_labels=settings._valid_properties,
                 alt_property_labels=data_alt_property_labels)
             if match and modified:
                 logger.warning(
@@ -716,25 +748,46 @@ class DataContainer():
                 raise ValueError(
                     f"Unknown property ('{prop}') in 'data_unit_properties'!")
 
-        # Check if all units from data_load_properties are defined in
-        # data_unit_properties, if not assign default units
-        for prop in data_load_properties:
-            if prop not in data_unit_properties.keys():
-                logger.warning(
-                    f"WARNING:\nNo unit defined for property '{prop}'!\n"
-                    + f"Default unit of '{settings._default_units[prop]}' "
-                    + "will be used.\n")
-                data_unit_properties[prop] = settings._default_units[prop]
+        # Initialize checked property units dictionary
+        checked_data_unit_properties = {}
 
-        # Check if positions unit is defined in data_unit_properties
+        # Check if positions unit is defined in 'data_unit_properties'
+        # or 'data_unit_positions'.
         if (
             'positions' not in data_unit_properties 
             and data_unit_positions is not None
         ):
-            data_unit_properties['positions'] = data_unit_positions
-            
+            checked_data_unit_properties['positions'] = data_unit_positions
+        elif data_unit_positions is not None:
+            checked_data_unit_properties['positions'] = (
+                data_unit_properties['positions'])
+        else:
+            checked_data_unit_properties['positions'] = (
+                settings._default_units['positions'])
+
+        # Check if charge unit is defined in 'data_unit_properties'.
+        if 'charge' not in data_unit_properties:
+            checked_data_unit_properties['charge'] = (
+                settings._default_units['charge'])
+        else:
+            checked_data_unit_properties['charge'] = (
+                data_unit_properties['charge'])
+
+        # Check if all units from 'data_load_properties' are defined in
+        # 'data_unit_properties', if not assign default units.
+        for prop in data_load_properties:
+            if prop not in data_unit_properties:
+                logger.warning(
+                    f"WARNING:\nNo unit defined for property '{prop}'!\n"
+                    + f"Default unit of '{settings._default_units[prop]}' "
+                    + "will be used.\n")
+                checked_data_unit_properties[prop] = (
+                    settings._default_units[prop])
+            else:
+                checked_data_unit_properties[prop] = data_unit_properties[prop]
+    
         return (
-            data_load_properties, data_unit_properties, 
+            data_load_properties, checked_data_unit_properties, 
             data_alt_property_labels)
 
     def check_data_source(
@@ -746,6 +799,10 @@ class DataContainer():
         Check data source input.
         """
 
+        # Check data source input
+        if data_source is None:
+            return None, None
+
         # Make data source iterable if necessary
         if not utils.is_array_like(data_source):
             data_source = [data_source]
@@ -754,16 +811,24 @@ class DataContainer():
         if data_source_format is None or not len(data_source_format):
             data_source_format = []
             for path in data_source:
-                data_source_format.append(path.split('.')[-1])
+                data_source_format.append(data.check_data_format(
+                    path, is_source_format=True))
         elif utils.is_string(data_source_format):
-            data_source_format = [data_source_format]*len(data_source)
+            data_source_format = len(data_source)*[
+                data.check_data_format(
+                    data_source_format, is_source_format=True)]
         elif len(data_source_format) != len(data_source):
             raise ValueError(
                 "Number of arguments in 'data_source_format' does not match " 
                 + "number of arguments in 'data_source_format'!")
+        else:
+            data_source_format = [
+                data.check_data_format(data_format, is_source_format=True)
+                for data_format in data_source_format]
         
         # Check if DataSet file is part of data source
-        if self.data_file in data_source:
+        
+        if hasattr(self, 'data_file') and self.data_file in data_source:
             raise SyntaxError(
                 f"DataSet file path '{self.data_file}' is part of data " 
                 + "source list! The conflict must be avoided.")

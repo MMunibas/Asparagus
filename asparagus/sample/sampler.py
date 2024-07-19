@@ -258,7 +258,11 @@ class Sampler:
         self.sample_calculator_tag = ase_calculator_tag
 
         # Check requested system properties
-        self.check_properties(ase_calculator)
+        self.sample_properties, self.sample_unit_properties = (
+            self.check_properties(
+                self.sample_properties,
+                ase_calculator)
+            )
 
         # Check number of calculation threads
         if self.sample_num_threads <= 0:
@@ -495,7 +499,11 @@ class Sampler:
             )
 
         # Check requested system properties
-        self.check_properties(ase_calculator)
+        self.sample_properties, self.sample_unit_properties = (
+            self.check_properties(
+                self.sample_properties,
+                ase_calculator)
+            )
 
         # Assign ASE calculator
         sample_system.set_calculator(ase_calculator)
@@ -503,7 +511,8 @@ class Sampler:
         return sample_system
 
     def check_properties(
-        self, 
+        self,
+        sample_properties: List[str],
         sample_calculator: object
     ):
         """
@@ -512,13 +521,24 @@ class Sampler:
         
         Parameters
         ----------
+        sample_properties: list
+            List of system properties to check for availability by the
+            calculator.
         sample_calculator: object
             ASE Calculator to compare requested and available properties
             from the calculator.
+
+        Returns
+        -------
+        list:
+            Checked sample properties
+        list:
+            Sample properties (+ positions, charge) units
+
         """
 
         # Check requested system properties
-        for prop in self.sample_properties:
+        for prop in sample_properties:
             # TODO Special calculator properties list for special properties
             # not supported by ASE such as, e.g., charge, hessian, etc.
             if prop not in sample_calculator.implemented_properties:
@@ -529,14 +549,17 @@ class Sampler:
                     + f"{sample_calculator.implemented_properties}")
 
         # Define positions and property units
-        self.sample_unit_properties = {
+        sample_unit_properties = {
             prop: interface.ase_calculator_units.get(prop)
-            for prop in self.sample_properties}
-        if 'positions' not in self.sample_unit_properties:
-            self.sample_unit_properties['positions'] = 'Ang'
-        self.sample_unit_positions = self.sample_unit_properties['positions']
+            for prop in sample_properties}
+        if 'positions' not in sample_unit_properties:
+            sample_unit_properties['positions'] = (
+                interface.ase_calculator_units.get('positions'))
+        if 'charge' not in sample_unit_properties:
+            sample_unit_properties['charge'] = (
+                interface.ase_calculator_units.get('charge'))
 
-        return
+        return sample_properties, sample_unit_properties
 
     def get_info(self):
         """

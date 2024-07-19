@@ -15,8 +15,8 @@ from .dtypes import (
 )
 
 from .properties import (
-    _valid_cutoff_fn, _default_property_labels, _valid_properties,
-    _alt_property_labels, _default_units, _default_output_block_options
+    _default_property_labels, _valid_properties, _alt_property_labels, 
+    _default_units, _related_unit_properties
 )
 
 from .config import (

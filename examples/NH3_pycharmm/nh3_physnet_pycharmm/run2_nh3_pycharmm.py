@@ -211,7 +211,7 @@ calc = pycharmm.MLpot(
 
 # Custom energy
 energy.show()
-exit()
+
 # Step 4: Minimization
 #-----------------------------------------------------------
 

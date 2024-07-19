@@ -748,7 +748,7 @@ class Output_PhysNet(torch.nn.Module):
         # Set scaling factor and shifts for output properties
         output_scaling = {}
         for prop in self.output_properties:
-            
+
             # If property scaling input is missing, initialize default
             if (
                 scaling_parameter is None
@@ -757,7 +757,7 @@ class Output_PhysNet(torch.nn.Module):
             
                 output_scaling[prop] = torch.nn.Parameter(
                     torch.tensor(
-                        [[1.0, 0.0] for _ in range(self.n_maxatom)],
+                        [[1.0, 0.0] for _ in range(self.n_maxatom + 1)],
                         device=self.device, 
                         dtype=self.dtype)
                     )
@@ -768,7 +768,7 @@ class Output_PhysNet(torch.nn.Module):
                 (shift, scale) = scaling_parameter.get(prop)
                 output_scaling[prop] = torch.nn.Parameter(
                     torch.tensor(
-                        [[scale, shift] for _ in range(self.n_maxatom)],
+                        [[scale, shift] for _ in range(self.n_maxatom + 1)],
                         device=self.device, 
                         dtype=self.dtype)
                     )
@@ -792,11 +792,11 @@ class Output_PhysNet(torch.nn.Module):
             contribution.
 
         """
-        
+
         # Check atomic energies shift input
         if atomic_energies_shifts is None:
             return
-        
+
         # Set atomic energies
         for atom_type, shift in atomic_energies_shifts.items():
             
@@ -807,7 +807,7 @@ class Output_PhysNet(torch.nn.Module):
                 if atomic_number is None:
                     raise SyntaxError(
                         f"Atom type symbol '{atom_type:s}' is not known "
-                        + "(comparison is not case sensetive)!")
+                        + "(comparison is not case sensitive)!")
             elif utils.is_numeric(atom_type):
                 atomic_number = int(atom_type)
             else:
@@ -822,8 +822,10 @@ class Output_PhysNet(torch.nn.Module):
                     + "is not valid and must be numeric!")
             
             # Set atomic energy shift
-            self.output_scaling['atomic_energies'][atomic_number][1] = shift
-        
+            with torch.no_grad():
+                self.output_scaling['atomic_energies'][atomic_number][1] = (
+                    shift)
+
         return
 
     def forward(
@@ -923,5 +925,3 @@ class Output_PhysNet(torch.nn.Module):
                 output_prediction[prop]*scale + shift)
 
         return output_prediction
-
-        

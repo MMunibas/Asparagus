@@ -930,7 +930,7 @@ class Output_PaiNN(torch.nn.Module):
             
                 output_scaling[prop] = torch.nn.Parameter(
                     torch.tensor(
-                        [[1.0, 0.0] for _ in range(self.n_maxatom)],
+                        [[1.0, 0.0] for _ in range(self.n_maxatom + 1)],
                         device=self.device, 
                         dtype=self.dtype)
                     )
@@ -941,7 +941,7 @@ class Output_PaiNN(torch.nn.Module):
                 (shift, scale) = scaling_parameter.get(prop)
                 output_scaling[prop] = torch.nn.Parameter(
                     torch.tensor(
-                        [[scale, shift] for _ in range(self.n_maxatom)],
+                        [[scale, shift] for _ in range(self.n_maxatom + 1)],
                         device=self.device, 
                         dtype=self.dtype)
                     )
@@ -951,6 +951,56 @@ class Output_PaiNN(torch.nn.Module):
 
         return
     
+    def set_atomic_energies_shift(
+        self,
+        atomic_energies_shifts: Dict[Union[int, str], float],
+    ):
+        """
+        Set atom type related atomic energies shift terms
+        
+        Parameters
+        ----------
+        atomic_energies_shifts: dict(str, torch.Tensor(1))
+            Atom type related atomic energies shift for core electron energy
+            contribution.
+
+        """
+        
+        # Check atomic energies shift input
+        if atomic_energies_shifts is None:
+            return
+        
+        # Set atomic energies
+        for atom_type, shift in atomic_energies_shifts.items():
+            
+            # Check atom type and energy shift definition
+            if utils.is_string(atom_type):
+                atomic_number = utils.data.atomic_numbers.get(
+                    atom_type.lower())
+                if atomic_number is None:
+                    raise SyntaxError(
+                        f"Atom type symbol '{atom_type:s}' is not known "
+                        + "(comparison is not case sensitive)!")
+            elif utils.is_numeric(atom_type):
+                atomic_number = int(atom_type)
+            else:
+                raise SyntaxError(
+                    f"Atom type symbol data type '{type(atom_type):s}' "
+                    + "is not valid! Define either as atomic number (int) or "
+                    + "atom symbol (str).")
+            
+            if not utils.is_numeric(shift):
+                raise SyntaxError(
+                    f"Atom type energy shift type '{type(shift):s}' "
+                    + "is not valid and must be numeric!")
+            
+            # Set atomic energy shift
+            with torch.no_grad():
+                self.output_scaling['atomic_energies'][atomic_number][1] = (
+                    shift)
+
+        return
+
     def __str__(self):
         return self.output_type
     

@@ -11,7 +11,7 @@ Asparagus bundle is a package for the automatic construction of Potential Energy
 #import logging
 #logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
-__version__ = '0.2.1'
+__version__ = '0.2.2'
 
 from .asparagus import (
     Asparagus

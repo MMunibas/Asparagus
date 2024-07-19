@@ -10,13 +10,16 @@ from .dataset import (
     DataSet, DataSubSet
 )
 from .datareader import (
-    DataReader
+    DataReader, check_data_format
 )
 from .database import (
-    DataBase, connect, get_metadata
+    DataBase, connect, get_connect, get_metadata
 )
 from .database_sqlite3 import (
     DataBase_SQLite3, lock, object_to_bytes, bytes_to_object
+)
+from .database_npz import (
+    DataBase_npz
 )
 from .database_hdf5 import (
     DataBase_hdf5
@@ -34,10 +37,8 @@ _default_args = {
     'data_source_format':           [],
     'data_unit_positions':          'Ang',
     'data_load_properties':         ['energy', 'forces', 'dipole'],
-    'data_unit_properties':         {'positions': 'Ang',
-                                     'energy': 'eV',
+    'data_unit_properties':         {'energy': 'eV',
                                      'forces': 'eV/Ang',
-                                     'charge': 'e',
                                      'dipole': 'eAng'},
     'data_alt_property_labels':     {},
     'data_num_train':               0.8,
