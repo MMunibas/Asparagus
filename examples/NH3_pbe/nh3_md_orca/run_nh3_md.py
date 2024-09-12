@@ -1,5 +1,5 @@
 
-from asparagus.sample import MDSampler
+from asparagus.sampling import MDSampler
 
 # Initialize molecule dynamics sampler for an ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the

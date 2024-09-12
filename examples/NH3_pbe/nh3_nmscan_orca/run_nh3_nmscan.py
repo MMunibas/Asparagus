@@ -1,5 +1,5 @@
 
-from asparagus.sample import NormalModeScanner
+from asparagus.sampling import NormalModeScanner
 
 # Initialize normal mode scanner sampler for an equilibrated ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the

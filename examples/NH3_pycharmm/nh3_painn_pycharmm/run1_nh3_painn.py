@@ -1,5 +1,5 @@
 
-from asparagus.sample import MetaSampler
+from asparagus.sampling import MetaSampler
 
 # Initialize meta dynamics sampler for an ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the
@@ -15,7 +15,7 @@ from asparagus.sample import MetaSampler
 # The temperature of the meta dyanmics is set to 500 K and run for
 # 10000 steps a 1 fs time steps (total of 10 ps). Every 10th step is written
 # to the database yielding 1000 reference samples.
-if False:
+if True:
 
     sampler = MetaSampler(
         config='model_nh3/nh3_meta.json',

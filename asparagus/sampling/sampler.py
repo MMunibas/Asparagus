@@ -419,11 +419,14 @@ class Sampler:
                        cell = cell.reshape(3, 3) 
 
                     # Create and append atoms object to sample queue
+                    cell = data_i['cell'].numpy().reshape(-1)
+                    if cell.shape = (9,):
+                        cell = cell.reshape(3, 3)
                     system = ase.Atoms(
                         data_i['atomic_numbers'],
                         positions=data_i['positions'],
                         pbc=data_i['pbc'].numpy().reshape(-1),
-                        cell=data_i['cell'].numpy().reshape(-1))
+                        cell=cell)
                     if 'charge' in data_i:
                         system.info['charge'] = int(
                             data_i['charge'].numpy()[0])

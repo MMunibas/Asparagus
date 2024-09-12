@@ -1,5 +1,5 @@
 
-from asparagus.sample import MetaSampler
+from asparagus.sampling import MetaSampler
 
 # Initialize meta dynamics sampler for an ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the

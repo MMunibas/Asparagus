@@ -4,7 +4,7 @@ from asparagus import Asparagus
 # Sampling
 if True:
 
-    from asparagus.sample import NormalModeSampler
+    from asparagus.sampling import NormalModeSampler
 
     sampler = NormalModeSampler(
         config='model_zundel/zundel_config.json',
@@ -30,7 +30,7 @@ if True:
 
 if True:
     
-    from asparagus.sample import MetaSampler
+    from asparagus.sampling import MetaSampler
     
     sampler = MetaSampler(
         config='model_zundel/zundel_config.json',
