@@ -420,7 +420,7 @@ class Sampler:
 
                     # Create and append atoms object to sample queue
                     cell = data_i['cell'].numpy().reshape(-1)
-                    if cell.shape = (9,):
+                    if cell.shape == (9,):
                         cell = cell.reshape(3, 3)
                     system = ase.Atoms(
                         data_i['atomic_numbers'],
