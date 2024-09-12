@@ -1,7 +1,7 @@
-"""
-This directory contains modules for the construction of the model potentials.
+#"""
+#This directory contains modules for the construction of the model potentials.
 
-"""
+#"""
 
 from .input import (
     get_input_module
@@ -25,4 +25,8 @@ from .electrostatics import (
 
 from .dispersion import (
     D3_dispersion
+)
+
+from .neighborlist import(
+    TorchNeighborListRangeSeparated
 )

@@ -8,11 +8,10 @@ import numpy as np
 
 import torch
 
-from .. import data
-from .. import settings
-from .. import utils
-from .. import model
-from .. import train
+from asparagus import data
+from asparagus import settings
+from asparagus import utils
+from asparagus import training
 
 # These packages are required for all functions of plotting and analysing
 # the model.
@@ -33,9 +32,6 @@ try:
 except ImportError:
     raise UserWarning(
         "You need to install scipy to use all plotting and analysis functions")
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 __all__ = ['Tester']
 
@@ -61,15 +57,25 @@ class Tester:
         Model properties to evaluate which must be available in the
         model prediction and the reference test data set. If None, all
         model properties will be evaluated if available in the test set.
+    test_batch_size: int, optional, default None
+        Reference dataloader batch size
+    test_num_batch_workers: int, optional, default 1
+        Number of data loader workers.
     test_directory: str, optional, default '.'
         Directory to store evaluation graphics and data.
 
     """
 
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     # Default arguments for tester class
     _default_args = {
         'test_datasets':                ['test'],
         'tester_properties':            None,
+        'test_batch_size':              128,
+        'test_num_batch_workers':       1,
         'test_directory':               '.',
         }
 
@@ -79,6 +85,8 @@ class Tester:
             utils.is_string, utils.is_string_array],
         'tester_properties':            [
             utils.is_string, utils.is_string_array, utils.is_None],
+        'test_batch_size':              [utils.is_integer],
+        'test_num_batch_workers':       [utils.is_integer],
         'test_directory':               [utils.is_string],
         }
 
@@ -89,6 +97,8 @@ class Tester:
         data_container: Optional[data.DataContainer] = None,
         test_datasets: Optional[Union[str, List[str]]] = None,
         test_properties: Optional[Union[str, List[str]]] = None,
+        test_batch_size: Optional[int] = None,
+        test_num_batch_workers: Optional[int] = None,
         test_directory: Optional[str] = None,
         device: Optional[str] = None,
         dtype: Optional[object] = None,
@@ -112,8 +122,8 @@ class Tester:
         config_update = config.set(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=utils.get_default_args(self, train),
-            check_dtype=utils.get_dtype_args(self, train)
+            check_default=utils.get_default_args(self, training),
+            check_dtype=utils.get_dtype_args(self, training)
         )
 
         # Update global configuration dictionary
@@ -134,12 +144,21 @@ class Tester:
                 **kwargs)
 
         # Get reference data properties
-        self.data_properties = self.data_container.data_load_properties
+        self.data_properties = self.data_container.data_properties
         self.data_units = self.data_container.data_unit_properties
 
-        ##########################
-        # # # Prepare Tester # # #
-        ##########################
+        #########################################
+        # # # Prepare Reference Data Loader # # #
+        #########################################
+
+        # Initialize training, validation and test data loader
+        self.data_container.init_dataloader(
+            self.test_batch_size,
+            self.test_batch_size,
+            self.test_batch_size,
+            num_workers=self.test_num_batch_workers,
+            device=self.device,
+            dtype=self.dtype)
 
         # Prepare list of data set definition for evaluation
         if utils.is_string(self.test_datasets):
@@ -151,6 +170,10 @@ class Tester:
         self.test_data = {
             label: self.data_container.get_dataloader(label)
             for label in self.test_datasets}
+
+        ##########################
+        # # # Prepare Tester # # #
+        ##########################
 
         # Check test properties if defined
         self.test_properties = self.check_test_properties(
@@ -198,8 +221,8 @@ class Tester:
             checked_properties = []
             for prop in test_properties:
                 if prop not in data_properties:
-                    logger.warning(
-                        f"WARNING:\nRequested property '{prop}' in " +
+                    self.logger.warning(
+                        f"Requested property '{prop}' in " +
                         "'test_properties' for the model evaluation " +
                         "is not avaible in the reference data set and " +
                         "will be ignored!")
@@ -309,8 +332,8 @@ class Tester:
             if prop in model_properties:
                 eval_properties.append(prop)
             else:
-                logger.warning(
-                    f"WARNING:\nRequested property '{prop}' in " +
+                self.logger.warning(
+                    f"Requested property '{prop}' in " +
                     "'test_properties' is not predicted by the " +
                     "model calculator and will be ignored!")
 
@@ -333,10 +356,9 @@ class Tester:
                     cutoff = [input_cutoff, model_cutoff]
             else:
                 cutoff = [model_cutoff]
-            
+
             # Set maximum model cutoff for neighbor list calculation
-            datasubset.init_neighbor_list(
-                cutoff=model_calculator.model_cutoff)
+            datasubset.init_neighbor_list(cutoff=cutoff)
 
             # Set device
             datasubset.device = self.device
@@ -438,8 +460,7 @@ class Tester:
                         test_property_scaling[prop],
                         test_directory,
                         test_plot_format,
-                        test_plot_dpi,
-                        )
+                        test_plot_dpi)
 
             # Plot histogram of the prediction error
             if test_plot_histogram:
@@ -453,8 +474,7 @@ class Tester:
                         metrics_test[prop],
                         test_directory,
                         test_plot_format,
-                        test_plot_dpi
-                        )
+                        test_plot_dpi)
 
             # Plot histogram of the prediction error
             if test_plot_residual:
@@ -469,8 +489,7 @@ class Tester:
                         test_property_scaling[prop],
                         test_directory,
                         test_plot_format,
-                        test_plot_dpi
-                        )
+                        test_plot_dpi)
 
         # Change back to training mode for calculator
         model_calculator.train()
@@ -519,11 +538,11 @@ class Tester:
         """
 
         path_to_save = os.path.join(test_directory, npz_name)
-        logger.info(
-            "INFO:\nSaving results of the test set to file "
+        self.logger.info(
+            "Saving results of the test set to file "
             + f"'{path_to_save:s}'!")
         np.savez(path_to_save, **vals)
-        
+
         return
 
     def save_csv(
@@ -550,9 +569,8 @@ class Tester:
         if '.csv' == csv_name[-4:]:
             csv_name += '.csv'
         path_to_save = os.path.join(test_directory, csv_name)
-        logger.info(
-            "INFO:\nSaving results of the test set to file "
-            + f"'{path_to_save:s}'!")
+        self.logger.info(
+            f"Saving results of the test set to file '{path_to_save:s}'!")
 
         # Check that all the keys have the same length
 
@@ -576,8 +594,8 @@ class Tester:
             df = pd.DataFrame(vals_padded)
             df.to_csv(path_to_save, index=False)
         else:
-            logger.warning(
-                "WARNING:\nModule 'pandas' is not available. "
+            self.logger.warning(
+                "Module 'pandas' is not available. "
                 + "Test properties are not written to a csv file!")
 
         return
@@ -622,7 +640,7 @@ class Tester:
         test_properties: List[str],
     ) -> Dict[str, float]:
         """
-        Compute the metrics mean absolute error (MAE) and mean squared error 
+        Compute the metrics mean absolute error (MAE) and mean squared error
         (MSE) for the test set.
 
         Parameters
@@ -672,10 +690,9 @@ class Tester:
         metrics_update: Dict[str, float],
         test_properties: List[str],
     ) -> Dict[str, float]:
-
         """
         Update the metrics dictionary.
-        
+
         Parameters
         ----------
         metrics: dict
@@ -708,7 +725,6 @@ class Tester:
                     )
 
         return metrics
-
 
     def print_metric(
         self,
@@ -744,8 +760,8 @@ class Tester:
             msg += f"{metrics[prop]['mae']:3.2e},  "
             msg += f"{np.sqrt(metrics[prop]['mse']):3.2e} "
             msg += f"{self.data_units[prop]:s}\n"
-        logger.info("INFO:\n" + msg)
-        
+        self.logger.info(msg)
+
         return
 
     def plain_data(
@@ -895,7 +911,7 @@ class Tester:
             format=test_plot_format,
             dpi=test_plot_dpi)
         plt.close()
-        
+
         return
 
     def plot_histogram(
@@ -1022,7 +1038,7 @@ class Tester:
             format=test_plot_format,
             dpi=test_plot_dpi)
         plt.close()
-        
+
         return
 
     def plot_residual(
@@ -1162,5 +1178,5 @@ class Tester:
             format=test_plot_format,
             dpi=test_plot_dpi)
         plt.close()
-        
+
         return

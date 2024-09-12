@@ -20,11 +20,10 @@ module load molpro/molpro2024-gcc-9.2.0
 #------------
 
 rm -f run_molpro.xml
-molpro -o run_molpro.out run_molpro.inp
+molpro -o run_molpro.out run_molpro.inp --no-xml-output
 
 #-------------
 # Read Result
 #-------------
 
-python run_molpro.py run_molpro.xml
-
+python run_molpro.py run_molpro.out

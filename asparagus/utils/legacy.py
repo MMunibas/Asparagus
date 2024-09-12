@@ -11,13 +11,13 @@ import torch
 
 # import tensorflow as tf
 
-from .. import settings
-from .. import utils
+from asparagus import settings
+from asparagus import utils
 
-# from ... import Asparagus
+# Initialize logger
+name = f"{__name__:s}"
+logger = utils.set_logger(logging.getLogger(name))
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 def convert_from_tensorflow(
     checkpoint,
@@ -43,7 +43,7 @@ def convert_from_tensorflow(
         model_dtype = torch.float64
     
     # Load Tensorflow checkpoint file
-    logger.info(f"INFO:\nLoad checkpoint '{checkpoint:s}'.\n")
+    self.logger.info(f"Load checkpoint '{checkpoint:s}'.")
     chkpt = tf.train.load_checkpoint(checkpoint)
     shape_from_key = chkpt.get_variable_to_shape_map()
     dtype_from_key = chkpt.get_variable_to_dtype_map()
@@ -74,9 +74,8 @@ def convert_from_tensorflow(
             raise SyntaxError(
                 f"Tensorflow key '{tf_name:s}' was found multiple times!")
         elif sum(torch_key_match) == 0:
-            logger.warning(
-                f"WARNING:\nCheckpoint parameter '{tf_name:s}' not assigned!"
-                + "\n")
+            self.logger.warning(
+                f"Checkpoint parameter '{tf_name:s}' not assigned!")
             continue
         torch_name = np.array(
             list(dct_conversion.values()))[torch_key_match][0]
@@ -94,7 +93,7 @@ def convert_from_tensorflow(
     model_state['input_model.input_descriptor_fn.rbf_cutoff_fn.cutoff'] = (
         cutoff)
     model_state['electrostatic_model.switch_fn.cutoff'] = cutoff
-    logger.info(f"INFO:\nCutoff radii assigned!")
+    self.logger.info(f"Cutoff radii assigned!")
 
     # Energy and charge scaling
     if v1:
@@ -119,7 +118,7 @@ def convert_from_tensorflow(
         [escale, eshift], dim=1)
     model_state['atomic_charges_scaling'] = torch.stack(
         [qscale, qshift], dim=1)
-    logger.info(f"INFO:\nEnergy and charge scaling assigned!")
+    self.logger.info(f"Energy and charge scaling assigned!")
 
     # Unit conversion parameter
     if config_data.use_electrostatic:

@@ -1,29 +1,20 @@
-import os
 import sys
-import inspect
 import logging
-import datetime
-from typing import Optional, List, Dict, Tuple, Union, Callable
-
-import numpy as np 
+from typing import Optional, Union, Any, List, Dict, Callable
 
 import ase
 
 import torch
-#import pytorch_lightning as pl
-#from pytorch_lightning.accelerators import GPUAccelerator #TODO
 
-from . import settings
-from . import utils
-from . import data
-from . import model
-from . import train as training
-from . import interface
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import settings
+from asparagus import utils
+from asparagus import data
+from asparagus import model
+from asparagus import training
+from asparagus import interface
 
 __all__ = ['Asparagus']
+
 
 class Asparagus():
     """
@@ -31,7 +22,7 @@ class Asparagus():
 
     Parameters
     ----------
-    config: (str, dict, object)
+    config: (str, dict, settings.Configuration), optional, default None
         Either the path to json file (str), dictionary (dict) or
         settings.config class object of model parameters
     config_file: str, optional, default see settings.default['config_file']
@@ -41,9 +32,13 @@ class Asparagus():
 
     """
 
+    name = f"{__name__:s}: {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     def __init__(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         **kwargs
     ):
@@ -68,7 +63,7 @@ class Asparagus():
         self.config_file = config.get('config_file')
 
         # Print Asparagus header
-        utils.header(self.config_file)
+        self.logger.info(utils.get_header(self.config_file))
 
         ###########################
         # # # Class Parameter # # #
@@ -85,19 +80,19 @@ class Asparagus():
 
         return
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Return class descriptor
         """
         return "Asparagus Main"
 
-    def __getitem__(self, args):
+    def __getitem__(self, args: str) -> Any:
         """
         Return item(s) from configuration dictionary
         """
         return self.config.get(args)
 
-    def get(self, args):
+    def get(self, args: str) -> Any:
         """
         Return item(s) from configuration dictionary
         """
@@ -105,11 +100,10 @@ class Asparagus():
 
     def set_data_container(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         data_container: Optional[data.DataContainer] = None,
-        data_file: Optional[str] = None,
-        data_file_format: Optional[str] = None,
         **kwargs
     ):
         """
@@ -117,24 +111,20 @@ class Asparagus():
 
         Parameter:
         ----------
-        config: (str, dict, object), optional, default None
+        config: (str, dict, settings.Config), optional, default None
             Either the path to json file (str), dictionary (dict) or
             settings.config class object of model parameters.
         config_file: str, optional, default None
             Path to json file (str)
         data_container: data.DataContainer, optional, default None
             DataContainer object to assign to the Asparagus object
-        data_file: str, optional, default None
-            Reference Asparagus database file
-        data_file_format: str, optional, default None
-            Reference Asparagus database file format
 
         """
-        
+
         ######################################
         # # # Check Data Container Input # # #
         ######################################
-        
+
         if config is None:
             config = settings.get_config(
                 self.config, config_file, config_from=self)
@@ -158,18 +148,14 @@ class Asparagus():
         self._set_data_container(
             config,
             data_container=data_container,
-            data_file=data_file,
-            data_file_format=data_file_format,
             **kwargs)
 
         return
-    
+
     def _set_data_container(
         self,
-        config: object,
+        config: settings.Configuration,
         data_container: Optional[data.DataContainer] = None,
-        data_file: Optional[str] = None,
-        data_file_format: Optional[str] = None,
         **kwargs
     ):
         """
@@ -177,51 +163,44 @@ class Asparagus():
 
         Parameter:
         ----------
-        config: object
+        config: settings.Configuration
             Asparagus parameter settings.config class object
         data_container: data.DataContainer, optional, default None
             DataContainer object to assign to the Asparagus object
-        data_file: str, optional, default None
-            Reference Asparagus database file
-        data_file_format: str, optional, default None
-            Reference Asparagus database file format
-        
+
         """
-        
+
         #################################
         # # # Assign Data Container # # #
         #################################
 
         # Check custom model calculator
         if data_container is not None:
-            
+
             # Assign data container
             self.data_container = data_container
 
             # Add data container info to configuration dictionary
             if hasattr(data_container, "get_info"):
                 config.update(data_container.get_info())
-        
+
         else:
 
             # Get model calculator
             data_container = self._get_data_container(
                 config,
-                data_file=data_file,
-                data_file_format=data_file_format,
                 **kwargs)
-            
+
             # Assign data container
             self.data_container = data_container
 
         return
-    
+
     def get_data_container(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
-        data_file: Optional[str] = None,
-        data_file_format: Optional[str] = None,
         **kwargs
     ) -> data.DataContainer:
         """
@@ -229,15 +208,11 @@ class Asparagus():
 
         Parameter:
         ----------
-        config: (str, dict, object), optional, default None
+        config: (str, dict, settings.Configuration), optional, default None
             Either the path to json file (str), dictionary (dict) or
             settings.config class object of model parameters.
         config_file: str, optional, default None
             Path to json file (str)
-        data_file: str, optional, default None
-            Reference Asparagus database file
-        data_file_format: str, optional, default None
-            Reference Asparagus database file format
 
         Returns
         -------
@@ -245,11 +220,11 @@ class Asparagus():
             Asparagus data container object
 
         """
-        
+
         ######################################
         # # # Check Data Container Input # # #
         ######################################
-        
+
         if config is None:
             config = settings.get_config(
                 self.config, config_file, config_from=self)
@@ -269,20 +244,16 @@ class Asparagus():
         ##################################
         # # # Prepare Data Container # # #
         ##################################
-        
+
         data_container = self._get_data_container(
             config,
-            data_file=data_file,
-            data_file_format=data_file_format,
             **kwargs)
 
         return data_container
 
     def _get_data_container(
         self,
-        config: object,
-        data_file: Optional[str] = None,
-        data_file_format: Optional[str] = None,
+        config: settings.Configuration,
         **kwargs
     ) -> data.DataContainer:
         """
@@ -290,12 +261,8 @@ class Asparagus():
 
         Parameter:
         ----------
-        config: object
+        config: settings.Configuration
             Asparagus parameter settings.config class object
-        data_file: str, optional, default None
-            Reference Asparagus database file
-        data_file_format: str, optional, default None
-            Reference Asparagus database file format
 
         Returns
         -------
@@ -310,15 +277,14 @@ class Asparagus():
 
         data_container = data.DataContainer(
             config,
-            data_file=data_file,
-            data_file_format=data_file_format,
             **kwargs)
-        
+
         return data_container
 
     def set_model_calculator(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         model_calculator: Optional[torch.nn.Module] = None,
         model_type: Optional[str] = None,
@@ -341,10 +307,10 @@ class Asparagus():
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
         model_checkpoint: (int, str), optional, default 'best'
-            If None or 'best', load best model checkpoint. 
+            If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
-        
+
         Returns
         -------
         torch.nn.Module
@@ -375,19 +341,19 @@ class Asparagus():
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
-        
+
         self._set_model_calculator(
             config,
             model_calculator=model_calculator,
             model_type=model_type,
             model_checkpoint=model_checkpoint,
             **kwargs)
-        
+
         return
 
     def _set_model_calculator(
         self,
-        config: object,
+        config: settings.Configuration,
         model_calculator: Optional[torch.nn.Module] = None,
         model_type: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = 'best',
@@ -398,7 +364,7 @@ class Asparagus():
 
         Parameters
         ----------
-        config: object
+        config: settings.Configuration
             Asparagus parameter settings.config class object
         model_calculator: torch.nn.Module, optional, default None
             Model calculator object to assign as class model calculator.
@@ -406,42 +372,37 @@ class Asparagus():
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
         model_checkpoint: (int, str), optional, default 'best'
-            If None or 'best', load best model checkpoint. 
+            If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
-        
-        Returns
-        -------
-        torch.nn.Module
-            Asparagus calculator model object
 
         """
-        
+
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
 
         # Get model calculator
-        model_calculator, restart = self._get_model_calculator(
+        model_calculator = self._get_model_calculator(
             config,
             model_calculator=model_calculator,
             model_type=model_type,
             model_checkpoint=model_checkpoint,
             **kwargs)
-        
+
         # Assign model calculator
         self.model_calculator = model_calculator
-        self.model_restart = restart
 
         return
 
     def get_model_calculator(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         model_calculator: Optional[torch.nn.Module] = None,
         model_type: Optional[str] = None,
-        model_checkpoint: Optional[Union[int, str]] = 'best',
+        model_checkpoint: Optional[Union[int, str]] = None,
         **kwargs,
     ) -> torch.nn.Module:
         """
@@ -459,11 +420,11 @@ class Asparagus():
         model_type: str, optional, default None
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
-        model_checkpoint: (int, str), optional, default 'best'
-            If None or 'best', load best model checkpoint. 
+        model_checkpoint: (int, str), optional, default None
+            If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
-        
+
         Returns
         -------
         torch.nn.Module
@@ -497,7 +458,7 @@ class Asparagus():
         ####################################
 
         # Get model calculator
-        model_calculator, restart = self._get_model_calculator(
+        model_calculator = self._get_model_calculator(
             config=config,
             model_calculator=model_calculator,
             model_type=model_type,
@@ -509,65 +470,67 @@ class Asparagus():
 
     def _get_model_calculator(
         self,
-        config: object,
+        config: settings.Configuration,
         model_calculator: Optional[torch.nn.Module] = None,
         model_type: Optional[str] = None,
-        model_checkpoint: Optional[Union[int, str]] = 'last',
+        model_checkpoint: Optional[Union[int, str]] = 'best',
         **kwargs,
-    ) -> (torch.nn.Module, bool):
+    ) -> torch.nn.Module:
         """
-        Return calculator model class object and restart flag.
+        Return calculator model class object.
 
         Parameters
         ----------
-        config: object
+        config: settings.Configuration
             Asparagus parameter settings.config class object
         model_calculator: torch.nn.Module, optional, default None
             Model calculator object.
         model_type: str, optional, default None
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
-        model_checkpoint: int, optional, default 'last'
-            If None or 'best', load best model checkpoint. 
+        model_checkpoint: int, optional, default 'best'
+            If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
-        
+
         Returns
         -------
         torch.nn.Module
             Asparagus calculator model object
-        bool
-            Restart flag, True if checkpoint file is loaded.
 
         """
 
         ####################################
         # # # Prepare Model Calculator # # #
         ####################################
-        
-        # Assign model calculator
-        model_calculator, checkpoint = model.get_model_calculator(
-            config,
-            model_calculator=model_calculator,
-            model_type=model_type,
-            model_checkpoint=model_checkpoint,
-            **kwargs)
 
+        # Assign model calculator
+        model_calculator, checkpoint, checkpoint_file = (
+            model.get_model_calculator(
+                config,
+                model_calculator=model_calculator,
+                model_type=model_type,
+                model_checkpoint=model_checkpoint,
+                **kwargs)
+            )
+
+        # TODO put into a model function not main Asparagus
         # Load model checkpoint file
         if checkpoint is None:
-            logger.info(f"INFO:\nNo checkpoint file loaded.\n")
-            restart = False
+            self.logger.info("No checkpoint file load.")
         else:
             model_calculator.load_state_dict(
                 checkpoint['model_state_dict'])
-            logger.info(f"INFO:\nCheckpoint file loaded.\n")
-            restart = True
+            self.logger.info("Checkpoint file loaded.")
+            model_calculator.checkpoint_loaded = True
+            model_calculator.checkpoint_file = checkpoint_file
 
-        return model_calculator, restart
+        return model_calculator
 
     def get_trainer(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         **kwargs,
     ) -> training.Trainer:
@@ -606,7 +569,7 @@ class Asparagus():
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
             check_dtype=utils.get_dtype_args(self, None))
-        
+
         # Update configuration dictionary
         config.update(config_update)
 
@@ -626,7 +589,7 @@ class Asparagus():
 
     def _get_trainer(
         self,
-        config: object,
+        config: settings.Configuration,
         **kwargs,
     ) -> training.Trainer:
         """
@@ -634,7 +597,7 @@ class Asparagus():
 
         Parameters
         ----------
-        config: object
+        config: settings.Configuration
             Asparagus parameter settings.config class object
 
         Returns:
@@ -658,7 +621,7 @@ class Asparagus():
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
-        
+
         if self.model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,
@@ -669,7 +632,7 @@ class Asparagus():
         ###########################################
         # # # Assign Model Calculator Trainer # # #
         ###########################################
-            
+
         trainer = training.Trainer(
             config=config,
             data_container=data_container,
@@ -680,7 +643,8 @@ class Asparagus():
 
     def train(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         **kwargs,
     ):
@@ -696,7 +660,7 @@ class Asparagus():
             Path to config json file (str)
 
         """
-        
+
         ###########################################
         # # # Assign Model Calculator Trainer # # #
         ###########################################
@@ -716,7 +680,8 @@ class Asparagus():
 
     def get_tester(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         **kwargs,
     ) -> training.Tester:
@@ -755,7 +720,7 @@ class Asparagus():
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
             check_dtype=utils.get_dtype_args(self, None))
-        
+
         # Update configuration dictionary
         config.update(config_update)
 
@@ -775,7 +740,7 @@ class Asparagus():
 
     def _get_tester(
         self,
-        config: object,
+        config: settings.Configuration,
         **kwargs,
     ) -> training.Tester:
         """
@@ -783,7 +748,7 @@ class Asparagus():
 
         Parameters
         ----------
-        config: object
+        config: settings.Configuration
             Asparagus parameter settings.config class object
 
         Returns:
@@ -817,7 +782,8 @@ class Asparagus():
 
     def test(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         **kwargs,
     ):
@@ -837,7 +803,7 @@ class Asparagus():
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
-        
+
         if self.model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,
@@ -845,11 +811,11 @@ class Asparagus():
                 **kwargs)
         else:
             model_calculator = self.model_calculator
-        
+
         ##########################################
         # # # Assign Model Calculator Tester # # #
         ##########################################
-        
+
         tester = self.get_tester(
             config=config,
             config_file=config_file,
@@ -867,11 +833,12 @@ class Asparagus():
 
     def get_ase_calculator(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = 'best',
         **kwargs,
-    ) -> ase.calculators.calculator.Calculator:
+    ) -> 'ase.Calculator':
         """
         Return ASE calculator class object of the model calculator
 
@@ -883,13 +850,13 @@ class Asparagus():
         config_file: str, optional, default see settings.default['config_file']
             Path to json file (str)
         model_checkpoint: (int, str), optional, default 'best'
-            If None or 'best', load best model checkpoint. 
+            If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
 
         Returns
         -------
-        ase.calculators.calculator.Calculator
+        ase.Calculator
             ASE calculator instance of the model calculator
 
         """
@@ -897,7 +864,7 @@ class Asparagus():
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
-        
+
         if self.model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,
@@ -919,13 +886,14 @@ class Asparagus():
 
     def get_pycharmm_calculator(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
         model_checkpoint: Optional[int] = None,
         **kwargs
     ) -> Callable:
         """
-        Return PyCHARMM calculator class object of the initialized model 
+        Return PyCHARMM calculator class object of the initialized model
         calculator.
 
         Parameters
@@ -948,7 +916,7 @@ class Asparagus():
         ###################################
         # # # Assign Model Calculator # # #
         ###################################
-        
+
         if self.model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,

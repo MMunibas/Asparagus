@@ -1,51 +1,15 @@
-import time
-import socket
-import threading
-import numpy as np
+from typing import Optional, List, Any
 
-from typing import Optional, List, Dict, Tuple, Union, Any
+import numpy as np
 
 import torch
 
-from .. import utils
+from asparagus import utils
 
-def header(
-    config_file: str
-) -> None:
-    """
-    Provide the Asparagus header. 
 
-    Parameters
-    ----------
-    config_file: str
-        Current configuration file path
-
-    Returns
-    -------
-    str
-        Asparagus header
-    """
-
-    current_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    host = socket.gethostname()
-
-    print(f"""
-       '   _______                                                  ______                  _ _        
-       '  (_______)                                                (____  \                | | |       
-       '   _______  ___ ____  _____  ____ _____  ____ _   _  ___    ____)  )_   _ ____   __| | | _____ 
-       '  |  ___  |/___)  _ \(____ |/ ___|____ |/ _  | | | |/___)  |  __  (| | | |  _ \ / _  | || ___ |
-       '  | |   | |___ | |_| / ___ | |   / ___ ( (_| | |_| |___ |  | |__)  ) |_| | | | ( (_| | || ____|
-       '  |_|   |_(___/|  __/\_____|_|   \_____|\___ |____/(___/   |______/|____/|_| |_|\____|\_)_____)
-       '               |_|                     (_____|                            
-       '
-       '                        Authors: K. Toepfer and L.I. Vazquez-Salazar
-       '                        Date: {current_time:s}
-       '                        Running on: {host:s}
-       '                        Details of this run are stored in: {config_file:s} 
-       ' ---------------------------------------------------------------------------------------------     
-       """)
-
-def detach_tensor(x):
+def detach_tensor(
+    x: torch.Tensor
+) -> np.ndarray:
     """
     Detach a torch tensor from the computational graph
 
@@ -66,16 +30,32 @@ def detach_tensor(x):
         x.detach().numpy()
     return x
 
-def flatten_array_like(x):
-    for xi in x:
-        if utils.is_string(xi):
-            yield x
-        else:
-            try:
-                yield from flatten_array_like(xi)
-            except TypeError:
-                yield xi
 
+#def flatten_array_like(
+    #x: List[Any],
+#) -> List[Any]:
+    #for xi in x:
+        #if utils.is_string(xi):
+            #yield x
+        #else:
+            #try:
+                #yield from flatten_array_like(xi)
+            #except TypeError:
+                #yield xi
+
+def flatten_array_like(
+    x: List[Any],
+) -> List[Any]:
+    # In case x is a "list" of characters aka a string
+    if utils.is_string(x):
+        yield x
+    else:
+        for xi in x:
+            if utils.is_array_like(xi):
+                for xj in flatten_array_like(xi):
+                    yield xj
+            else:
+                yield xi
 
 def segment_sum(
     data: torch.Tensor,
@@ -85,7 +65,7 @@ def segment_sum(
     debug: Optional[bool] = False,
 ) -> torch.Tensor:
     """
-    Adapted from : 
+    Adapted from :
         https://gist.github.com/bbrighttaer/207dc03b178bbd0fef8d1c0c1390d4be
     Analogous to tf.segment_sum :
         https://www.tensorflow.org/api_docs/python/tf/math/segment_sum
@@ -126,9 +106,10 @@ def segment_sum(
                 + f"({segment_ids.shape[0]}).")
 
     if num_segments is None:
-        num_segments = segment_ids[-1] + 1 # len(torch.unique(segment_ids))
+        num_segments = segment_ids[-1] + 1  # len(torch.unique(segment_ids))
     return unsorted_segment_sum(
         data, segment_ids, num_segments, device=data.device)
+
 
 def unsorted_segment_sum(
     data: torch.Tensor,
@@ -154,18 +135,21 @@ def unsorted_segment_sum(
     -------
     torch.Tensor
         A tensor of same data type as the data argument.
+
     """
 
     if debug:
 
-        assert all([i in data.shape for i in segment_ids.shape]), "'segment_ids.shape' should be a prefix of 'data.shape'!"
+        msg = "'segment_ids.shape' should be a prefix of 'data.shape'!"
+        assert all([i in data.shape for i in segment_ids.shape]), msg
 
         if len(segment_ids.shape) == 1:
             s = torch.prod(torch.tensor(data.shape[1:])).long().to(device)
             segment_ids = segment_ids.repeat_interleave(s).view(
                 segment_ids.shape[0], *data.shape[1:]).to(device)
 
-        assert data.shape == segment_ids.shape, "'data.shape' and 'segment_ids.shape' should be equal!"
+        msg = "'data.shape' and 'segment_ids.shape' should be equal!"
+        assert data.shape == segment_ids.shape, msg
 
     else:
 
@@ -181,8 +165,8 @@ def unsorted_segment_sum(
     return tensor
 
 
-def softplus_inverse(x):
-    """
+def softplus_inverse(x: torch.Tensor) -> torch.Tensor:
+    r"""
     Numerically stable inverse of softplus transform
     .. math:: f(x) = x + \log(1 - \exp(x))
 
@@ -197,13 +181,14 @@ def softplus_inverse(x):
 
 
 def gather_nd(
-    params,
-    indices,
-):
+    params: torch.Tensor,
+    indices: torch.Tensor,
+) -> torch.Tensor:
     """
     The input indices must be a 2d tensor in the form of [[a,b,..,c],...],
     which represents the location of the elements.
-    This function comes from: https://discuss.pytorch.org/t/implement-tf-gather-nd-in-pytorch/37502/6
+    This function comes from:
+    https://discuss.pytorch.org/t/implement-tf-gather-nd-in-pytorch/37502/6
 
     Parameters
     ----------
@@ -211,6 +196,7 @@ def gather_nd(
         A tensor of any shape.
     indices: torch.Tensor
         A 2d tensor in the form of [[a,b,..,c],...]
+
     """
 
     # Generate indices
@@ -226,53 +212,3 @@ def gather_nd(
 
     params = params.reshape((-1, *tuple(torch.tensor(params.size()[ndim:]))))
     return params[idx]
-
-
-def printProgressBar(
-    iteration,
-    total,
-    prefix='',
-    suffix='',
-    decimals=1,
-    length=100,
-    fill='#',
-    printEnd="\r",
-):
-    """
-
-    Call in a loop to create terminal progress bar
-
-    Parameters
-    ----------
-
-    iteration (int) Required:
-        current iteration (Int)
-    total (int) Required:
-        total iterations
-    prefix (str) Optional:
-        prefix string
-    suffix (str) Optional:
-        suffix string
-    decimals Optional:
-        positive number of decimals in percent complete
-    length (Int) Optional:
-        Character length of bar (Int)
-    fill (str) Optional:
-        bar fill character
-    printEnd (str) Optional:
-        end character (e.g. "/r", "/r/n") (Str)
-    """
-
-    percent = (
-        ("{0:." + str(decimals) + "f}").format(
-            100 * (iteration / float(total)))
-        )
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-
-    print("\r{0} |{1}| {2}% {3}".format(
-        prefix, bar, percent, suffix), end=printEnd)
-
-    # Print New Line on Complete
-    if iteration == total:
-        print()

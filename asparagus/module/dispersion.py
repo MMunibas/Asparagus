@@ -6,8 +6,8 @@ import numpy as np
 
 import torch
 
-from .. import utils
-from .. import settings
+from asparagus import utils
+from asparagus import settings
 
 __all__ = ["D3_dispersion"]
 
@@ -57,7 +57,7 @@ class D3_dispersion(torch.nn.Module):
         cuton: float,
         trainable: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         unit_properties: Optional[Dict[str, str]] = None,
         d3_s6: Optional[float] = None,
         d3_s8: Optional[float] = None,
@@ -109,13 +109,13 @@ class D3_dispersion(torch.nn.Module):
         
         if trainable:
             self.d3_s6 = torch.nn.Parameter(
-                torch.tensor([d3_s6], dtype=dtype)).to(device)
+                torch.tensor([d3_s6], device=device, dtype=dtype))
             self.d3_s8 = torch.nn.Parameter(
-                torch.tensor([d3_s8], dtype=dtype)).to(device)
+                torch.tensor([d3_s8], device=device, dtype=dtype))
             self.d3_a1 = torch.nn.Parameter(
-                torch.tensor([d3_a1], dtype=dtype)).to(device)
+                torch.tensor([d3_a1], device=device, dtype=dtype))
             self.d3_a2 = torch.nn.Parameter(
-                torch.tensor([d3_a2], dtype=dtype)).to(device)
+                torch.tensor([d3_a2], device=device, dtype=dtype))
         else:
             self.register_buffer(
                 "d3_s6", torch.tensor([d3_s6], device=device, dtype=dtype))
@@ -125,20 +125,20 @@ class D3_dispersion(torch.nn.Module):
                 "d3_a1", torch.tensor([d3_a1], device=device, dtype=dtype))
             self.register_buffer(
                 "d3_a2", torch.tensor([d3_a2], device=device, dtype=dtype))
-        self.d3_k1 = torch.tensor([16.000], dtype=dtype).to(device)
-        self.d3_k2 = torch.tensor([4./3.], dtype=dtype).to(device)
-        self.d3_k3 = torch.tensor([-4.000], dtype=dtype).to(device)
+        self.d3_k1 = torch.tensor([16.000], device=device, dtype=dtype)
+        self.d3_k2 = torch.tensor([4./3.], device=device, dtype=dtype)
+        self.d3_k3 = torch.tensor([-4.000], device=device, dtype=dtype)
         
         # Prepare interaction switch-off range
-        self.cutoff = torch.tensor([cutoff], dtype=dtype).to(device)
+        self.cutoff = torch.tensor([cutoff], device=device, dtype=dtype)
         if cuton is None or cuton == cutoff:
             self.cuton = None
             self.switchoff_range = None
             self.use_switch = False
         else:
-            self.cuton = torch.tensor([cuton], dtype=dtype).to(device)
+            self.cuton = torch.tensor([cuton], device=device, dtype=dtype)
             self.switchoff_range = torch.tensor(
-                [cutoff - cuton], dtype=dtype).to(device)
+                [cutoff - cuton], device=device, dtype=dtype)
             self.use_switch = True
 
         # Unit conversion factors
@@ -160,6 +160,18 @@ class D3_dispersion(torch.nn.Module):
         self,
         unit_properties: Dict[str, str],
     ):
+        """
+        Set unit conversion factors for compatibility between requested
+        property units and applied property units (for physical constants)
+        of the module.
+        
+        Parameters
+        ----------
+        unit_properties: dict
+            Dictionary with the units of the model properties to initialize 
+            correct conversion factors.
+        
+        """
         
         # Get conversion factors
         if unit_properties is None:

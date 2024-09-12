@@ -1,7 +1,7 @@
 
-#======================================
-# Property labels
-#======================================
+# ======================================
+#  Property labels
+# ======================================
 
 # Essential property labels
 _default_property_labels = [
@@ -41,18 +41,17 @@ _alt_property_labels = {
     'hessian':          ['H', 'hessians'],
     'charge':           ['Q', 'charges', 'total_charge', 'total_charges'],
     'atomic_charges':    [
-        'Qa', 'Qi', 'atom_charge', 'atom_charges', 
+        'Qa', 'Qi', 'atom_charge', 'atom_charges',
         'atomic_charge'],
     'atomic_dipoles':    [
-        'Da', 'Fi', 'atom_dipole', 'atom_dipoles', 
+        'Da', 'Fi', 'atom_dipole', 'atom_dipoles',
         'atomic_dipole'],
     'dipole':           ['D', 'dipoles'],
     'polarizability':   ['polarizability'],
     }
-    
 
-# Default property units - ASE units
-_default_units = {
+# ASE units
+_ase_units = {
     'atoms_number':     '',
     'atomic_numbers':   '',
     'positions':        'Ang',
@@ -65,6 +64,9 @@ _default_units = {
     'dipole':           'e*Ang',
     'atomic_dipoles':   'e*Ang',
     }
+
+# Default property units - ASE units
+_default_units = _ase_units.copy()
 
 # Valid property labels
 _related_unit_properties = [

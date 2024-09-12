@@ -14,25 +14,23 @@ from ase.constraints import FixAtoms
 from ase.parallel import world, paropen
 from ase import units
 
-from .. import settings
-from .. import utils
-from .. import sample
-from .. import interface
+from asparagus import sampling
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import settings
+from asparagus import utils
+from asparagus import interface
 
 __all__ = ['NormalModeScanner', 'NormalModeSampler']
 
 
-class NormalModeScanner(sample.Sampler):
+class NormalModeScanner(sampling.Sampler):
     """
     Normal Mode Scanning class
 
 
     Parameters
     ----------
-    config: (str, dict, object)
+    config: (str, dict, settings.Configuration)
         Either the path to json file (str), dictionary (dict) or
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
@@ -64,14 +62,14 @@ class NormalModeScanner(sample.Sampler):
         If True, add results of atom displacement calculations from the normal
         mode analysis to the dataset.
 
-    Returns
-    -------
-    object
-        Normal Mode Scanning class object
     """
 
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     # Default arguments for sample module
-    sample.Sampler._default_args.update({
+    sampling.Sampler._default_args.update({
         'nms_harmonic_energy_step':     0.05,
         'nms_energy_limits':            1.0,
         'nms_number_of_coupling':       1,
@@ -81,7 +79,7 @@ class NormalModeScanner(sample.Sampler):
         })
     
     # Expected data types of input variables
-    sample.Sampler._dtypes_args.update({
+    sampling.Sampler._dtypes_args.update({
         'nms_harmonic_energy_step':     [utils.is_numeric],
         'nms_energy_limits':            [
             utils.is_numeric, utils.is_numeric_array],
@@ -93,7 +91,7 @@ class NormalModeScanner(sample.Sampler):
 
     def __init__(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[Union[str, dict, settings.Configuration]] = None,
         config_file: Optional[str] = None, 
         nms_harmonic_energy_step: Optional[float] = None,
         nms_energy_limits: Optional[Union[float, List[float]]] = None,
@@ -128,8 +126,8 @@ class NormalModeScanner(sample.Sampler):
         config_update = config.set(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=utils.get_default_args(self, sample),
-            check_dtype=utils.get_dtype_args(self, sample)
+            check_default=utils.get_default_args(self, sampling),
+            check_dtype=utils.get_dtype_args(self, sampling)
         )
 
         # Check sample properties for energy property which is required for
@@ -297,9 +295,10 @@ class NormalModeScanner(sample.Sampler):
         (system, isample, source, index) = sample_systems_queue.get()
 
         # Print sampler info
-        msg = "INFO:\nStart normal mode scanning of the system "
-        msg += f"from '{source}' of index {index:d}.\n"
-        logger.info(msg)
+        message = (
+            "Start normal mode scanning of the system "
+            + f"from '{source}' of index {index:d}.")
+        self.logger.info(message)
         
         # Get non-fixed atoms indices
         if nms_indices is None:
@@ -377,9 +376,10 @@ class NormalModeScanner(sample.Sampler):
                 thread.join()
 
         # Print sampler info
-        msg = "INFO:\nNormal mode analysis calculation completed for "
-        msg += f"the system from '{source}' of index {index:d}.\n"
-        logger.info(msg)
+        message = (
+            "Normal mode analysis calculation completed for "
+            + f"the system from '{source}' of index {index:d}.")
+        self.logger.info(message)
         
         # Finish normal mode analysis and diagonalize Hessian matrix
         system_vibrations.summary(**kwargs)
@@ -442,8 +442,8 @@ class NormalModeScanner(sample.Sampler):
                 if imode < len(system_vib_modes):
                     system_vib_modes[imode] = False
                 else:
-                    logger.warning(
-                        f"WARNING:\nVibrational mode {imode:d} in the "
+                    self.logger.warning(
+                        f"Vibrational mode {imode:d} in the "
                         + "exclusion list is larger than the number of "
                         + "vibrational modes!")
 
@@ -494,21 +494,23 @@ class NormalModeScanner(sample.Sampler):
             2.*self.nms_harmonic_energy_step/system_forceconst)
 
         # Add normal mode analysis results to log file
-        msg = "\nStart Normal Mode Scanning at system: "
+        message = "\nStart Normal Mode Scanning at system: "
         if self.sample_data_file is None:
-            msg += f"{system.get_chemical_formula():s}\n"
+            message += f"{system.get_chemical_formula():s}\n"
         else:
-            msg += f"{self.sample_data_file:s}\n"
-        msg += " Index | Frequency (cm**-1) | Vibration (CoM displacemnt)\n"
-        msg += "---------------------------------------------------------\n"
+            message += f"{self.sample_data_file:s}\n"
+        message += (
+            " Index | Frequency (cm**-1) | Selected Vib. (CoM displacemnt)\n"
+            + "-------------------------------------------------------------\n")
         for ivib, freq in enumerate(system_frequencies):
-            msg += f" {ivib + 1:5d} | {freq:18.2f} |"
+            message += f" {ivib + 1:5d} | {freq:18.2f} |"
             if system_vib_modes[ivib]:
-                msg += f"   x   ({system_com_shift[ivib]:2.1e})\n"
+                message += f"   x   ({system_com_shift[ivib]:2.1e})\n"
             else:
-                msg += f"       ({system_com_shift[ivib]:2.1e})\n"
+                message += f"       ({system_com_shift[ivib]:2.1e})\n"
         with open(self.sample_log_file.format(isample), 'a') as flog:
-            flog.write(msg)
+            flog.write(message)
+        self.logger.info(message)
         
         # Iterate over number of normal mode combinations
         vib_modes = np.where(system_vib_modes)[0]
@@ -595,16 +597,17 @@ class NormalModeScanner(sample.Sampler):
         # Print sampling info
         for ithread in range(self.sample_num_threads):
 
-            msg = f"Sampling method '{self.sample_tag:s}' complete for "
-            msg += f"system of index {index:d} from '{source}!'\n"
+            message = (
+                f"Sampling method '{self.sample_tag:s}' complete for "
+                + f"system of index {index:d} from '{source}!'\n")
             if Nsamples[ithread] == 0:
-                msg += f"No samples written to "
+                message += f"No samples written to "
             if Nsamples[ithread] == 1:
-                msg += f"{Nsamples[ithread]:d} sample written to "
+                message += f"{Nsamples[ithread]:d} sample written to "
             else:
-                msg += f"{Nsamples[ithread]:d} samples written to "
-            msg += f"'{self.sample_data_file:s}'.\n"
-            logger.info(f"INFO:\n{msg:s}")
+                message += f"{Nsamples[ithread]:d} samples written to "
+            message += f"'{self.sample_data_file:s}'."
+            self.logger.info(message)
 
     def run_scan(
         self,
@@ -780,7 +783,7 @@ class NormalModeScanner(sample.Sampler):
         return
 
 
-class NormalModeSampler(sample.Sampler):
+class NormalModeSampler(sampling.Sampler):
     """
     Normal Mode Sampling class.
 
@@ -789,7 +792,7 @@ class NormalModeSampler(sample.Sampler):
 
     Parameters
     ----------
-    config: (str, dict, object)
+    config: (str, dict, settings.Configuration)
         Either the path to json file (str), dictionary (dict) or
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
@@ -806,15 +809,15 @@ class NormalModeSampler(sample.Sampler):
     nms_save_displacements: bool, optional, default False
         If True, add results of atom displacement calculations from the normal
         mode analysis to the dataset.
-    
-    Returns
-    -------
-    object
-        Normal Mode Sampler class object
+
     """
-    
+
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     # Default arguments for sample module
-    sample.Sampler._default_args.update({
+    sampling.Sampler._default_args.update({
         'nms_temperature':              300.0,
         'nms_nsamples':                 100,
         'nms_limit_com_shift':          0.1,
@@ -822,7 +825,7 @@ class NormalModeSampler(sample.Sampler):
         })
     
     # Expected data types of input variables
-    sample.Sampler._dtypes_args.update({
+    sampling.Sampler._dtypes_args.update({
         'nms_temperature':              [utils.is_numeric],
         'nms_nsamples':                 [utils.is_integer],
         'nms_limit_com_shift':          [utils.is_numeric],
@@ -831,7 +834,7 @@ class NormalModeSampler(sample.Sampler):
 
     def __init__(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[Union[str, dict, settings.Configuration]] = None,
         config_file: Optional[str] = None, 
         nms_temperature: Optional[float] = None,
         nms_nsamples: Optional[int] = None,
@@ -864,8 +867,8 @@ class NormalModeSampler(sample.Sampler):
         config_update = config.set(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=utils.get_default_args(self, sample),
-            check_dtype=utils.get_dtype_args(self, sample)
+            check_default=utils.get_default_args(self, sampling),
+            check_dtype=utils.get_dtype_args(self, sampling)
         )
 
         # Check sample properties for energy and forces property which is 
@@ -1027,9 +1030,10 @@ class NormalModeSampler(sample.Sampler):
         (system, isample, source, index) = sample_systems_queue.get()
 
         # Print sampler info
-        msg = "INFO:\nStart normal mode sampling of the system "
-        msg += f"from '{source}' of index {index:d}.\n"
-        logger.info(msg)
+        message = (
+            "Start normal mode sampling of the system "
+            + f"from '{source}' of index {index:d}.")
+        self.logger.info(message)
         
         # Get non-fixed atoms indices
         if nms_indices is None:
@@ -1107,9 +1111,10 @@ class NormalModeSampler(sample.Sampler):
                 thread.join()
 
         # Print sampler info
-        msg = "INFO:\nNormal mode analysis calculation completed for "
-        msg += f"the system from '{source}' of index {index:d}.\n"
-        logger.info(msg)
+        message = (
+            "Normal mode analysis calculation completed for "
+            + f"the system from '{source}' of index {index:d}.")
+        self.logger.info(message)
         
         # Finish normal mode analysis and diagonalize Hessian matrix
         system_vibrations.summary(**kwargs)
@@ -1172,8 +1177,8 @@ class NormalModeSampler(sample.Sampler):
                 if imode < len(system_vib_modes):
                     system_vib_modes[imode] = False
                 else:
-                    logger.warning(
-                        f"WARNING:\nVibrational mode {imode:d} in the "
+                    self.logger.warning(
+                        f"Vibrational mode {imode:d} in the "
                         + "exclusion list is larger than the number of "
                         + "vibrational modes!")
 
@@ -1220,21 +1225,23 @@ class NormalModeSampler(sample.Sampler):
             system_vib_modes = np.logical_and(system_vib_modes, include_modes)
 
         # Add normal mode analysis results to log file
-        msg = "\nStart Normal Mode Sampling at system: "
+        message = "\nStart Normal Mode Sampling at system: "
         if self.sample_data_file is None:
-            msg += f"{system.get_chemical_formula():s}\n"
+            message += f"{system.get_chemical_formula():s}\n"
         else:
-            msg += f"{self.sample_data_file:s}\n"
-        msg += " Index | Frequency (cm**-1) | Vibration (CoM displacemnt)\n"
-        msg += "---------------------------------------------------------\n"
+            message += f"{self.sample_data_file:s}\n"
+        message += (
+            " Index | Frequency (cm**-1) | Selected Vib. (CoM displacemnt)\n"
+            + "-------------------------------------------------------------\n")
         for ivib, freq in enumerate(system_frequencies):
-            msg += f" {ivib + 1:5d} | {freq:18.2f} |"
+            message += f" {ivib + 1:5d} | {freq:18.2f} |"
             if system_vib_modes[ivib]:
-                msg += f"   x   ({system_com_shift[ivib]:2.1e})\n"
+                message += f"   x   ({system_com_shift[ivib]:2.1e})\n"
             else:
-                msg += f"       ({system_com_shift[ivib]:2.1e})\n"
+                message += f"       ({system_com_shift[ivib]:2.1e})\n"
         with open(self.sample_log_file.format(isample), 'a') as flog:
-            flog.write(msg)
+            flog.write(message)
+        self.logger.info(message)
 
         # Initialize normal mode sampling queue
         sample_calculate_queue = queue.Queue()
@@ -1312,17 +1319,17 @@ class NormalModeSampler(sample.Sampler):
 
         # Print sampling info
         for ithread in range(self.sample_num_threads):
-
-            msg = f"Sampling method '{self.sample_tag:s}' complete for "
-            msg += f"system of index {index:d} from '{source}!'\n"
+            message = (
+                f"Sampling method '{self.sample_tag:s}' complete for "
+                + f"system of index {index:d} from '{source}!'\n")
             if Nsamples[ithread] == 0:
-                msg += f"No samples written to "
+                message += f"No samples written to "
             if Nsamples[ithread] == 1:
-                msg += f"{Nsamples[ithread]:d} sample written to "
+                message += f"{Nsamples[ithread]:d} sample written to "
             else:
-                msg += f"{Nsamples[ithread]:d} samples written to "
-            msg += f"'{self.sample_data_file:s}'.\n"
-            logger.info(f"INFO:\n{msg:s}")
+                message += f"{Nsamples[ithread]:d} samples written to "
+            message += f"'{self.sample_data_file:s}'."
+            self.logger.info(message)
 
     def run_sampling(
         self,
@@ -1494,7 +1501,11 @@ class Vibrations_Asparagus(Vibrations_ASE):
     Calculate vibrational modes using finite difference or calculated Hessian 
     directly.
     """
-    
+
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     def __init__(
         self,
         sampler,
@@ -1689,8 +1700,7 @@ class Vibrations_Asparagus(Vibrations_ASE):
         energies = self.get_energies(method=method, direction=direction)
         summary_lines = VibrationsData._tabulate_from_energies(energies)
         log_text = '\n'.join(summary_lines) + '\n'
-        
-        logger.info("INFO:\n" + log_text)
+        self.logger.info(log_text)
         
         return
         

@@ -2,7 +2,7 @@ from typing import Union, Callable
 
 import torch
 
-from .. import utils
+from asparagus import utils
 
 __all__ = [
     'get_activation_fn', 'swish', 'softplus', 'shifted_softplus',
@@ -250,6 +250,8 @@ def linear(
 #======================================
 
 functions_avaiable = {
+    'default'.lower(): linear,
+    'linear'.lower(): linear,
     'swish'.lower(): swish,
     'silu'.lower(): torch.nn.functional.silu,
     'softplus'.lower(): softplus,
@@ -261,7 +263,6 @@ functions_avaiable = {
     'self_normalizing_smooth_ELU'.lower(): self_normalizing_smooth_ELU,
     'self_normalizing_asinh'.lower(): self_normalizing_asinh,
     'self_normalizing_tanh'.lower(): self_normalizing_tanh,
-    'linear'.lower(): linear,
     }
 
 
@@ -285,15 +286,17 @@ def get_activation_fn(
 
     """
 
-    # Check for default option
+    # If not specified, set default option
     if name is None:
-        return functions_avaiable['linear']
+        name = 'default'
 
     # Get activation function
-    elif utils.is_callable(name):
+    if utils.is_callable(name):
+
         return name
 
     elif utils.is_string(name):
+
         if name.lower() in [key.lower() for key in functions_avaiable.keys()]:
             return functions_avaiable[name.lower()]
         else:
@@ -303,7 +306,8 @@ def get_activation_fn(
                 + str(functions_avaiable.keys()))
 
     else:
+
         raise ValueError(
             f"Activation function input of type '{type(name)}' " +
-            "is not valid! Input 'name' has to be an object or 'str' from;\n"
+            "is not valid! Input 'name' has to be an object or 'str' from:\n"
             + str(functions_avaiable.keys()))

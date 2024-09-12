@@ -2,11 +2,11 @@ import numpy as np
 
 import torch
 
-from .. import utils
+from asparagus import utils
 
-#======================================
-# Input data types
-#======================================
+# ======================================
+#  Input data types
+# ======================================
 
 # Expected data types of input variables
 _dtypes_args = {
@@ -29,14 +29,14 @@ _dtypes_args = {
     'output_type':                  [utils.is_string, utils.is_None],
     }
 
-#======================================
-# Python data type library
-#======================================
+# ======================================
+#  Python data type library
+# ======================================
 
 _dtype_library = {
-    'float': float, 
-    'np.float16': np.float16, 
-    'np.float32': np.float32, 
+    'float': float,
+    'np.float16': np.float16,
+    'np.float32': np.float32,
     'np.float64': np.float64,
     'torch.float16': torch.float16,
     'torch.half': torch.float16,

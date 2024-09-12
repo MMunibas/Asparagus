@@ -1,16 +1,12 @@
 import sys
 import ctypes
-import logging
 import numpy as np
 from typing import Optional, List, Dict, Tuple, Union, Any
 
 import torch
 
-from .. import utils
-from .. import layer
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import utils
+from asparagus import layer
 
 __all__ = ['PyCharmm_Calculator']
 

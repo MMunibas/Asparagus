@@ -3,8 +3,8 @@ from typing import Optional, List, Dict, Tuple, Union, Any
 
 import torch
 
-from .. import utils
-from .. import settings
+from asparagus import utils
+from asparagus import settings
 
 __all__ = ["ZBL_repulsion"]
 
@@ -39,7 +39,7 @@ class ZBL_repulsion(torch.nn.Module):
         self,
         trainable: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         unit_properties: Optional[Dict[str, str]] = None,
         **kwargs
     ):
@@ -55,20 +55,20 @@ class ZBL_repulsion(torch.nn.Module):
         self.device = device
         
         # Initialize repulsion model parameters
-        a_coefficient = 0.8854    # Angstrom
+        a_coefficient = 0.8854 # Angstrom
         a_exponent = 0.23
         phi_coefficients = [0.18175, 0.50986, 0.28022, 0.02817]
-        phi_exponents = [3.19980, 0.94229, 0.40290, 0.20162]    # 1/Angstrom
+        phi_exponents = [3.19980, 0.94229, 0.40290, 0.20162] # 1/Angstrom
         
         if trainable:
             self.a_coefficient = torch.nn.Parameter(
-                torch.tensor([a_coefficient], dtype=dtype)).to(device)
+                torch.tensor([a_coefficient], device=device, dtype=dtype))
             self.a_exponent = torch.nn.Parameter(
-                torch.tensor([a_exponent], dtype=dtype)).to(device)
+                torch.tensor([a_exponent], device=device, dtype=dtype))
             self.phi_coefficients = torch.nn.Parameter(
-                torch.tensor(phi_coefficients, dtype=dtype)).to(device)
+                torch.tensor(phi_coefficients, device=device, dtype=dtype))
             self.phi_exponents = torch.nn.Parameter(
-                torch.tensor(phi_exponents, dtype=dtype)).to(device)
+                torch.tensor(phi_exponents, device=device, dtype=dtype))
         else:
             self.register_buffer(
                 "a_coefficient",
@@ -101,7 +101,19 @@ class ZBL_repulsion(torch.nn.Module):
         self,
         unit_properties: Dict[str, str],
     ):
+        """
+        Set unit conversion factors for compatibility between requested
+        property units and applied property units (for physical constants)
+        of the module.
         
+        Parameters
+        ----------
+        unit_properties: dict
+            Dictionary with the units of the model properties to initialize 
+            correct conversion factors.
+        
+        """
+
         # Get conversion factors
         if unit_properties is None:
             unit_energy = settings._default_units.get('energy')

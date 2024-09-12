@@ -1,9 +1,9 @@
-"""
-This directory contains activation and cutoff functions as well as Neural
-Network layer and blocks of layer for the construction of the modules used by
-the model potentials.
+#"""
+#This directory contains activation and cutoff functions as well as Neural
+#Network layer and blocks of layer for the construction of the modules used by
+#the model potentials.
 
-"""
+#"""
 
 from .activation import (
     get_activation_fn

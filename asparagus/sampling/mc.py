@@ -10,24 +10,22 @@ import ase
 from ase.constraints import FixAtoms
 from ase import units
 
-from .. import settings
-from .. import utils
-from .. import sample
+from asparagus import sampling
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import settings
+from asparagus import utils
 
 __all__ = ['MCSampler']
 
 
-class MCSampler(sample.Sampler):
+class MCSampler(sampling.Sampler):
     """
     A very simple Monte Carlo (MC) sampler class.
     Uses the Metropolis algorithm to generate samples for a molecule.
 
     Parameters
     ----------
-    config: (str, dict, object)
+    config: (str, dict, settings.Configuration)
         Either the path to json file (str), dictionary (dict) or
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
@@ -47,8 +45,12 @@ class MCSampler(sample.Sampler):
         Monta-Carlo Sampler class object
     """
 
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     # Default arguments for sample module
-    sample.Sampler._default_args.update({
+    sampling.Sampler._default_args.update({
         'mc_temperature':               300.,
         'mc_steps':                     1000,
         'mc_max_displacement':          0.1,
@@ -56,7 +58,7 @@ class MCSampler(sample.Sampler):
         })
     
     # Expected data types of input variables
-    sample.Sampler._dtypes_args.update({
+    sampling.Sampler._dtypes_args.update({
         'mc_temperature':               [utils.is_numeric],
         'mc_steps':                     [utils.is_numeric],
         'mc_max_displacement':          [utils.is_numeric],
@@ -65,7 +67,7 @@ class MCSampler(sample.Sampler):
 
     def __init__(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[Union[str, dict, settings.Configuration]] = None,
         config_file: Optional[str] = None, 
         mc_temperature: Optional[float] = None,
         mc_steps: Optional[int] = None,
@@ -98,8 +100,8 @@ class MCSampler(sample.Sampler):
         config_update = config.set(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=utils.get_default_args(self, sample),
-            check_dtype=utils.get_dtype_args(self, sample)
+            check_default=utils.get_default_args(self, sampling),
+            check_dtype=utils.get_dtype_args(self, sampling)
         )
         
         # Check sample properties for energy properties which are required for 
@@ -244,17 +246,17 @@ class MCSampler(sample.Sampler):
                 ithread=ithread)
             
             # Print sampling info
-            msg = f"Sampling method '{self.sample_tag:s}' complete for system "
-            msg += f"of index {index:d} from '{source}!'\n"
+            message = (
+                f"Sampling method '{self.sample_tag:s}' complete for system "
+                + f"of index {index:d} from '{source}!'\n")
             if Nsample == 0:
-                msg += f"No samples written to "
+                message += f"No samples written to "
             if Nsample == 1:
-                msg += f"{Nsample:d} sample written to "
+                message += f"{Nsample:d} sample written to "
             else:
-                msg += f"{Nsample:d} samples written to "
-            msg += f"'{self.sample_data_file:s}'.\n"
-            
-            logger.info(f"INFO:\n{msg:s}")
+                message += f"{Nsample:d} samples written to "
+            message += f"'{self.sample_data_file:s}'."
+            self.logger.info(message)
         
         return
 
@@ -266,7 +268,7 @@ class MCSampler(sample.Sampler):
         max_displacement: Optional[float] = None,
         trajectory_file: Optional[str] = None,
         ithread: Optional[int] = None,
-    ):
+    ) -> int:
         """
         This does a simple Monte-Carlo simulation using the Metropolis
         algorithm.
@@ -293,6 +295,7 @@ class MCSampler(sample.Sampler):
         ------
         int
             Number of sampled systems to database
+
         """
     
         # Check sample steps

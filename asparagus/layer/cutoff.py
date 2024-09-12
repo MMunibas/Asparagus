@@ -4,7 +4,7 @@ from typing import Optional, Union, Callable
 
 import torch
 
-from .. import utils
+from asparagus import utils
 
 __all__ = [
     'get_cutoff_fn', 'Poly6Cutoff', 'Poly6Cutoff_range', 'CosineCutoff',
@@ -37,7 +37,7 @@ class Poly6Cutoff(torch.nn.Module):
         self,
         cutoff: float,
         device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        dtype: Optional['dtype'] = torch.float64,
     ):
         """
         Initialize cutoff function.
@@ -107,7 +107,7 @@ class Poly6Cutoff_range(torch.nn.Module):
         cutoff: float,
         cuton: float,
         device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        dtype: Optional['dtype'] = torch.float64,
     ):
         """
         Initialize cutoff function.
@@ -184,7 +184,7 @@ class CosineCutoff(torch.nn.Module):
         self,
         cutoff: float,
         device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        dtype: Optional['dtype'] = torch.float64,
     ):
         """
         Initialize cutoff function.
@@ -257,7 +257,7 @@ class CosineCutoff_range(torch.nn.Module):
         cuton: float,
         cutoff: float,
         device: Optional[str] = 'cpu',
-        dtype: Optional[object] = torch.float64,
+        dtype: Optional['dtype'] = torch.float64,
     ):
         """
         Initialize cutoff function.
@@ -346,15 +346,17 @@ def get_cutoff_fn(
 
     """
 
-    # Check for default option
+    # If not specified, set default option
     if name is None:
         name = 'default'
 
     # Get cutoff function
-    elif utils.is_callable(name):
+    if utils.is_callable(name):
+
         return name
 
     elif utils.is_string(name):
+
         if name.lower() in functions_avaiable:
             return functions_avaiable[name.lower()]
         else:
@@ -364,6 +366,7 @@ def get_cutoff_fn(
                 + str(functions_avaiable.keys()))
 
     else:
+
         raise ValueError(
             f"Cutoff function input of type '{type(name)}' "
             + "is not valid! Input 'name' has to be an object or 'str' from;\n"

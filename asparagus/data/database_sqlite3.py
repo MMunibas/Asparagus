@@ -2,7 +2,6 @@ import os
 import time
 import json
 import sqlite3
-import logging
 import functools
 from typing import Optional, Union, List, Dict, Tuple, Callable, Any
 from contextlib import contextmanager
@@ -15,11 +14,8 @@ import numpy as np
 
 import torch
 
-from .. import data
-from .. import utils
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+from asparagus import data
+from asparagus import utils
 
 __all__ = ['connect', 'DataBase_SQLite3']
 
@@ -63,8 +59,6 @@ structure_properties_dtype = {
     'idx_j':            np.int32,
     'pbc_offset':       np.float32,
 }
-properties_numpy_dtype = np.float64
-reference_properties_torch_dtype = torch.float64
 
 # Structural property labels and array shape
 structure_properties_shape = {
@@ -72,7 +66,7 @@ structure_properties_shape = {
     'atomic_numbers':   (-1,),
     'positions':        (-1, 3,),
     'charge':           (-1,),
-    'cell':             (-1,),
+    'cell':             (-1, 3,),
     'pbc':              (-1, 3,),
     'idx_i':            (-1,),
     'idx_j':            (-1,),
@@ -245,6 +239,10 @@ class DataBase_SQLite3(data.DataBase):
     # Used for autoincrement id
     default = 'NULL'
 
+    # Structural and reference property dtypes
+    properties_numpy_dtype = np.float64
+    properties_torch_dtype = torch.float64
+
     def __init__(
         self,
         data_file: str,
@@ -293,12 +291,15 @@ class DataBase_SQLite3(data.DataBase):
             self.connection.rollback()
         self.connection.close()
         self.connection = None
+        return
 
     @contextmanager
     def managed_connection(
         self,
         commit_frequency: Optional[int] = 5000,
     ):
+        if self.data_file == 'data.db':
+            exit()
         try:
             con = self.connection or self._connect()
             yield con
@@ -353,6 +354,9 @@ class DataBase_SQLite3(data.DataBase):
         # Store metadata
         self._metadata = metadata
 
+        # Initialize data system
+        self._init_systems()
+
         return
 
     def _get_metadata(self) -> Dict[str, Any]:
@@ -390,7 +394,6 @@ class DataBase_SQLite3(data.DataBase):
 
         return self._metadata
 
-    @lock
     def _init_systems(self):
 
         # Get metadata
@@ -467,9 +470,9 @@ class DataBase_SQLite3(data.DataBase):
         if selection is None or selection == '':
             cmps = []
         elif utils.is_integer(selection):
-            cmps = [('id', '=', selection)]
+            cmps = [('id', '=', int(selection))]
         elif utils.is_integer_array(selection):
-            cmps = [('id', '=', selection_i) for selection_i in selection]
+            cmps = [('id', '=', int(selection_i)) for selection_i in selection]
         else:
             raise ValueError(
                 f"Database selection '{selection}' is not a valid input!\n" +
@@ -564,7 +567,7 @@ class DataBase_SQLite3(data.DataBase):
             return None
 
         if dtype is None:
-            dtype = properties_numpy_dtype
+            dtype = self.properties_numpy_dtype
 
         if len(buf):
             item = np.frombuffer(buf, dtype)
@@ -617,9 +620,10 @@ class DataBase_SQLite3(data.DataBase):
                     values += [self.blob(
                         np.array(
                             properties.get(prop_i),
-                            dtype=properties_numpy_dtype))]
+                            dtype=self.properties_numpy_dtype))]
                 else:
-                    values += [properties_numpy_dtype(properties.get(prop_i))]
+                    values += [self.properties_numpy_dtype(
+                        properties.get(prop_i))]
 
         # Convert values to tuple
         columns = tuple(columns)
@@ -688,9 +692,10 @@ class DataBase_SQLite3(data.DataBase):
                     values += [self.blob(
                         np.array(
                             properties.get(prop_i),
-                            dtype=properties_numpy_dtype))]
+                            dtype=self.properties_numpy_dtype))]
                 else:
-                    values += [properties_numpy_dtype(properties.get(prop_i))]
+                    values += [self.properties_numpy_dtype(
+                        properties.get(prop_i))]
 
         # Convert values to tuple
         columns = tuple(columns)
@@ -820,7 +825,6 @@ class DataBase_SQLite3(data.DataBase):
         # Structural properties
         Np = 3
         for prop_i, dtype_i in structure_properties_dtype.items():
-
             if row[Np] is None:
                 properties[prop_i] = None
             elif isinstance(row[Np], bytes):
@@ -847,11 +851,11 @@ class DataBase_SQLite3(data.DataBase):
             elif isinstance(row[Np], bytes):
                 properties[prop_i] = torch.from_numpy(
                     self.deblob(
-                        row[Np], dtype=properties_numpy_dtype).copy()
-                    ).to(reference_properties_torch_dtype)
+                        row[Np], dtype=self.properties_numpy_dtype).copy()
+                    ).to(self.properties_torch_dtype)
             else:
                 properties[prop_i] = torch.tensor(
-                    row[Np], dtype=reference_properties_torch_dtype)
+                    row[Np], dtype=self.properties_torch_dtype)
 
             if prop_i in reference_properties_shape:
                 properties[prop_i] = torch.reshape(

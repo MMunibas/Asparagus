@@ -1,27 +1,26 @@
-import os
 from typing import Optional, List, Dict, Tuple, Union, Any
-
-import numpy as np
-
-from ase import Atoms
-from ase.neighborlist import neighbor_list as ase_neighbor_list
 
 import torch
 
-from .. import utils
+from asparagus import utils
 
 __all__ = ["TorchNeighborListRangeSeparated"]
 
 class TorchNeighborListRangeSeparated(torch.nn.Module):
     """
     Environment provider making use of neighbor lists as implemented in
-    TorchAni. 
-    Modified to provide neighbor lists for a set of cutoff radii.
+    TorchAni. Modified to provide neighbor lists for a set of cutoff radii.
 
     Supports cutoffs and PBCs and can be performed on either CPU or GPU.
 
     References:
         https://github.com/aiqm/torchani/blob/master/torchani/aev.py
+
+    Parameters
+    ----------
+    cutoff: list(float)
+        List of Cutoff distances
+
     """
 
     def __init__(
@@ -31,19 +30,15 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         dtype: object,
     ):
         """
-        Parameters
-        ----------
-        cutoff: list(float)
-            List of Cutoff distances
-
+        Initialize neighbor list computation class
         """
-        
+
         super().__init__()
-        
+
         # Assign module variable parameters
         self.device = device
         self.dtype = dtype
-        
+
         # Check cutoffs
         if utils.is_numeric(cutoff):
             self.cutoff = torch.tensor(
@@ -88,11 +83,11 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
             sys_i = torch.zeros_like(atomic_numbers)
         else:
             sys_i = coll_batch["sys_i"]
-        
+
         # Check for system batch or single system input
         # System batch:
         if coll_batch["atoms_number"].dim():
-            
+
             # Compute, eventually, cumulative atomic number list
             if atomic_numbers_cumsum is None:
                 atomic_numbers_cumsum = torch.cat(
@@ -104,11 +99,11 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
         # Single system
         else:
-            
+
             # Assign cumulative atomic number list and system index
             atomic_numbers_cumsum = torch.zeros((1,), dtype=sys_i.dtype)
             sys_i = torch.zeros_like(atomic_numbers)
-            
+
             # Extend periodic system data
             cell = cell[None, ...]
             pbc = pbc[None, ...]
@@ -116,11 +111,11 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         # Compute atom pair neighbor list
         idcs_i, idcs_j, pbc_offsets = self._build_neighbor_list(
             self.cutoff,
-            atomic_numbers, 
-            positions, 
-            cell, 
+            atomic_numbers,
+            positions,
+            cell,
             pbc,
-            sys_i, 
+            sys_i,
             atomic_numbers_cumsum)
 
         # Add neighbor lists to batch data
@@ -172,7 +167,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                 if cell[iseg].shape[0] == 3:
                     cell_seg = cell[iseg].diag()
                 else:
-                    cell_seg = cell[iseg].reshape(3,3)
+                    cell_seg = cell[iseg].reshape(3, 3)
             else:
                 cell_seg = cell[iseg]
 
@@ -212,7 +207,6 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                 idcs_i[ic].append(sys_idx_i + idx_off)
                 idcs_j[ic].append(sys_idx_j + idx_off)
                 offsets[ic].append(seg_offset)
-                #syss_ij[ic].append(torch.full_like(sys_idx_i, iseg))
 
         idcs_i = [
             torch.cat(idx_i, dim=0).to(dtype=atomic_numbers.dtype)
@@ -294,9 +288,9 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         return atom_indices_i, atom_indices_j, offsets
 
     def _get_shifts(
-        self, 
-        cell, 
-        pbc, 
+        self,
+        cell,
+        pbc,
         cutoff
     ) -> torch.Tensor:
         """
@@ -322,7 +316,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         """
         reciprocal_cell = cell.inverse().t()
         inverse_lengths = torch.norm(reciprocal_cell, dim=1)
-        
+
         num_repeats = torch.ceil(cutoff*inverse_lengths).to(cell.dtype)
         num_repeats = torch.where(
             pbc.flatten(),

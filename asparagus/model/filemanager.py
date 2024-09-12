@@ -9,11 +9,9 @@ from typing import Optional, List, Dict, Tuple, Union, Any
 
 import torch
 
-from .. import settings
-from .. import utils
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import model
+from asparagus import settings
+from asparagus import utils
 
 __all__ = ['FileManager']
 
@@ -38,7 +36,11 @@ class FileManager():
         Additional keyword arguments for tensorboards 'SummaryWriter'
 
     """
-    
+
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     # Default arguments for graph module
     _default_args = {
         'model_directory':              None,
@@ -96,19 +98,6 @@ class FileManager():
                 model_type
                 + datetime.datetime.now().strftime("%Y%m%d%H%M%S"))
             config['model_directory'] = self.model_directory
-        # I would prefer if we keep the specifications of the NN model in the
-        # name of the directory...LIVS
-        # I see your point, but the commented version seems very PhysNet specific.
-        # Maybe add a __str__() function to the model which returns a model
-        # tag for the directory name.
-        #(
-            #datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
-            #+ "_" + id_generator() + "_F" + str(config['input_n_atombasis'])
-            #+ "K" + str(config['input_nradialbasis']) + "b" + str(config['graph_n_blocks'])
-            #+ "a" + str(config['graph_n_residual_atomic'])
-            #+ "i" + str(config['graph_n_residual_interaction'])
-            #+ "o" + str(config['output_n_residual']) + "cut" + str(config['input_cutoff_descriptor'])
-            #+ "e" + str(config['model_electrostatic']) + "d" + str(config['model_dispersion']) + "r" + str(config['model_repulsion']))
 
         # Prepare model subdirectory paths
         self.best_dir = os.path.join(self.model_directory, 'best')
@@ -139,9 +128,9 @@ class FileManager():
 
     def save_checkpoint(
         self,
-        model: object,
-        optimizer: object,
-        scheduler: object,
+        model_calc: "model.BaseModel",
+        optimizer: "torch.Optimizer",
+        scheduler: "torch.Scheduler",
         epoch: int,
         best: Optional[bool] = False,
         best_loss: Optional[float] = None,
@@ -153,11 +142,11 @@ class FileManager():
 
         Parameters
         ----------
-        model: object
+        model_calc: model.BaseModel
             Torch calculator model
-        optimizer: object
+        optimizer: torch.Optimizer
             Torch optimizer
-        scheduler: object
+        scheduler: torch.Scheduler
             Torch scheduler
         best: bool, optional, default False
             If True, save as best model checkpoint file.
@@ -179,14 +168,14 @@ class FileManager():
         # For best model, just store model parameter
         if best:
             state = {
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': model_calc.state_dict(),
                 'best_loss': best_loss,
                 'epoch': epoch,
                 }
         # Else the complete current model training state
         else:
             state = {
-                'model_state_dict': model.state_dict(),
+                'model_state_dict': model_calc.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
                 'epoch': epoch,
@@ -210,7 +199,10 @@ class FileManager():
 
         # Write checkpoint file
         torch.save(state, ckpt_name)
-        
+
+        # Store latest checkpoint file in model calculator
+        model_calc.checkpoint_file = ckpt_name
+
         # Check number of epoch checkpoints
         if not best and num_checkpoint is None:
             self.check_max_checkpoints(max_checkpoints)
@@ -220,7 +212,8 @@ class FileManager():
     def load_checkpoint(
         self,
         checkpoint_label: Union[str, int],
-    ) -> Any:
+        verbose: Optional[bool] = False
+    ) -> Dict[str, Any]:
         """
         Load model parameters and training state from checkpoint file.
 
@@ -232,6 +225,9 @@ class FileManager():
             file (as with None) or the with the highest epoch number.
             If integer, load the checkpoint file of the respective epoch 
             number.
+        verbose: bool, optional, default False
+            If True, return checkpoint state and checkpoint file batch.
+            Else, only return checkpoint state
 
         Returns
         -------
@@ -239,9 +235,12 @@ class FileManager():
             Torch module checkpoint file
         """
 
+        # Check checkpoint label input
+        if checkpoint_label is None:
+            checkpoint_label = 'best'
+
         if (
-            checkpoint_label is None
-            or utils.is_string(checkpoint_label)
+            utils.is_string(checkpoint_label)
             and checkpoint_label.lower() == 'best'
         ):
 
@@ -249,10 +248,10 @@ class FileManager():
 
             # Check if best checkpoint file exists or return None
             if not os.path.exists(ckpt_name):
-                logger.info(
-                    "INFO:\nNo best checkpoint file found in "
-                    + f"{self.best_dir:s}.\n")
-                return None
+                self.logger.info(
+                    "No best checkpoint file found in "
+                    + f"{self.best_dir:s}.")
+                ckpt_name = None
 
         elif (
             utils.is_string(checkpoint_label)
@@ -269,10 +268,10 @@ class FileManager():
 
             # If no checkpoint files available return None
             if ckpt_max < 0:
-                logger.info(
-                    "INFO:\nNo latest checkpoint file found in "
-                    + f"{self.ckpt_dir:s}.\n")
-                return None
+                self.logger.info(
+                    "No latest checkpoint file found in "
+                    + f"{self.ckpt_dir:s}.")
+                ckpt_name = None
             else:
                 ckpt_name = os.path.join(
                     self.ckpt_dir, f'model_{ckpt_max:d}.pt')
@@ -288,6 +287,15 @@ class FileManager():
                     f"Checkpoint file '{ckpt_name}' of index "
                     + f"{checkpoint_label:d} does not exist!")
         
+        elif utils.is_string(checkpoint_label):
+
+            ckpt_name = checkpoint_label
+
+            # Check existence
+            if not os.path.exists(ckpt_name):
+                raise FileNotFoundError(
+                    f"Checkpoint file '{ckpt_name}' does not exist!")
+
         else:
             
             raise SyntaxError(
@@ -295,11 +303,17 @@ class FileManager():
                 + "'checkpoint_label' is not valid type!")
 
         # Load checkpoint
-        checkpoint = torch.load(ckpt_name)
-        logger.info(
-            f"INFO:\nCheckpoint file '{ckpt_name:s}' will be loaded.\n")
+        if ckpt_name is None:
+            checkpoint = None
+        else:
+            checkpoint = torch.load(ckpt_name, weights_only=False)
+            self.logger.info(
+                f"Checkpoint file '{ckpt_name:s}' will be loaded.")
 
-        return checkpoint
+        if verbose:
+            return checkpoint, ckpt_name
+        else:
+            return checkpoint
 
     def check_max_checkpoints(
         self,

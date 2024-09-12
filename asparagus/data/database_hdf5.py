@@ -1,7 +1,6 @@
 import os
 import time
 import json
-import logging
 from typing import Optional, Union, List, Dict, Tuple, Callable, Any
 
 import numpy as np
@@ -10,16 +9,13 @@ import torch
 
 import h5py
 
-from .. import data
-from .. import utils
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+from asparagus import data
+from asparagus import utils
 
 __all__ = ['DataBase_hdf5']
 
 # Current npz database version
-VERSION = 0
+VERSION = 1
 
 # Structural property labels and dtypes
 structure_properties_dtype = {
@@ -29,12 +25,7 @@ structure_properties_dtype = {
     'charge':           np.float32,
     'cell':             np.float32,
     'pbc':              np.bool_,
-    'idx_i':            np.int32,
-    'idx_j':            np.int32,
-    'pbc_offset':       np.float32,
 }
-properties_numpy_dtype = np.float64
-properties_torch_dtype = torch.float64
 
 # Structural property labels and array shape
 structure_properties_shape = {
@@ -44,9 +35,6 @@ structure_properties_shape = {
     'charge':           (-1,),
     'cell':             (-1),
     'pbc':              (1, 3,),
-    'idx_i':            (-1,),
-    'idx_j':            (-1,),
-    'pbc_offset':       (-1, 3,),
 }
 reference_properties_shape = {
     # 'energy':           (-1,),
@@ -94,6 +82,10 @@ class DataBase_hdf5(data.DataBase):
 
     # Initialize metadata parameter
     _metadata = {}
+
+    # Structural and reference property dtypes
+    properties_numpy_dtype = np.float64
+    properties_torch_dtype = torch.float64
 
     def __init__(
         self,

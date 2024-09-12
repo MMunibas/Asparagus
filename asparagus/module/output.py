@@ -42,6 +42,7 @@ def get_output_module(
     -------
     torch.nn.Module
         Output model object for property predictions
+
     """
 
     # Check input parameter

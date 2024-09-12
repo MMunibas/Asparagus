@@ -7,12 +7,9 @@ import ase.db as ase_db
 
 import numpy as np
 
-from .. import data
-from .. import utils
-from .. import settings
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import data
+from asparagus import utils
+from asparagus import settings
 
 __all__ = ['DataReader', 'check_data_format']
 
@@ -57,13 +54,13 @@ def check_data_format(
 ):
     """
     Check input for compatible data format labels
-    
+
     Parameters
     ----------
     data_format: str
         Input string to check for compatible data format labels
     is_source_format: bool, optional, default False
-        If False, 'data_format' input is only compared with Asparagus 
+        If False, 'data_format' input is only compared with Asparagus
         database labels. Else, update format library with source format labels.
 
     Returns
@@ -83,7 +80,7 @@ def check_data_format(
     # Check data file suffix
     if data_file.lower() in file_formats:
         return file_formats[data_file.lower()]
-    
+
     if '.' in data_file and data_file.count('.') >= 2:
 
         idcs = [
@@ -116,40 +113,56 @@ class DataReader():
 
     Parameters
     ----------
-    data_file: str, optional, default None
-        if None, the data read by this class are returned as list. Else, the
-        data are stored in the reference database file and just the data file
-        path is returned.
-    data_load_properties: List(str)
+    data_file: (str, list(str))
+        File path or a tuple of file path and file format label of data
+        source to file.
+    data_properties: List(str), optional, default None
         Subset of properties to load to dataset file
-    alt_property_labels: dictionary, optional, default None
+    data_unit_properties: dict, optional, default None
+        Dictionary from properties (keys) to corresponding unit as a string
+        (item).
+    data_alt_property_labels: dict, optional, default None
         Dictionary of alternative property labeling to replace non-valid
         property labels with the valid one if possible.
+
     """
+
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
 
     def __init__(
         self,
         data_file: Optional[str] = None,
-        data_file_format: Optional[str] = None,
-        data_load_properties: Optional[List[str]] = None,
-        alt_property_labels: Optional[Dict[str, List[str]]] = None,
+        data_properties: Optional[List[str]] = None,
+        data_unit_properties: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, List[str]]] = None,
     ):
+        """
+        Initialize DataReader.
 
-        # Assign reference database path and format
-        self.data_file = data_file
-        self.data_file_format = data_file_format
+        """
+
+        # Assign data file and format
+        if utils.is_string(data_file):
+            self.data_file = (
+                data_file, data.check_data_format(
+                    data_file, is_source_format=False))
+        else:
+            self.data_file = data_file
 
         # Get reference database connect function
-        self.connect = data.get_connect(self.data_file_format)
+        self.connect = data.get_connect(self.data_file[1])
 
-        # Assign property list
-        self.data_load_properties = data_load_properties
+        # Assign property list and units
+        self.data_properties = data_properties
+        self.data_unit_properties = data_unit_properties
 
         # Check alternative property labels
-        if alt_property_labels is None:
-            self.alt_property_labels = settings._alt_property_labels
+        if data_alt_property_labels is None:
+            self.data_alt_property_labels = settings._alt_property_labels
         else:
-            self.alt_property_labels = alt_property_labels
+            self.data_alt_property_labels = data_alt_property_labels
 
         # Default property labels
         self.default_property_labels = [
@@ -169,11 +182,11 @@ class DataReader():
 
     def load(
         self,
-        data_source: str,
-        data_source_format: str,
-        data_load_properties: Optional[List[str]] = None,
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
-        alt_property_labels: Optional[Dict[str, List[str]]] = None,
+        data_alt_property_labels: Optional[Dict[str, List[str]]] = None,
+        data_source_unit_properties: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         """
@@ -181,11 +194,9 @@ class DataReader():
 
         Parameters
         ----------
-        data_source: str
-            Path to data source file of asparagus type
-        data_source_format: str
-            Dataset format of 'data_source'
-        data_load_properties: List(str)
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file
+        data_properties: List(str), optional, default None
             Subset of properties to load
         data_unit_properties: dict, optional, default None
             Dictionary from properties (keys) to corresponding unit as a
@@ -193,221 +204,137 @@ class DataReader():
                 {property: unit}: { 'positions': 'Ang',
                                     'energy': 'eV',
                                     'force': 'eV/Ang', ...}
-        alt_property_labels: dictionary, optional, default None
+        data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        data_source_unit_properties: dictionary, optional, default None
+            Dictionary from properties (keys) to corresponding unit as a 
+            string (item) in the source data files.
+
         """
 
-        # Check property list
-        if data_load_properties is None:
-            data_load_properties = self.data_load_properties
-
-        # Check alternative property labels
-        if alt_property_labels is None:
-            alt_property_labels = self.alt_property_labels
-        else:
-            update_alt_property_labels = self.alt_property_labels
-            update_alt_property_labels.update(alt_property_labels)
-            alt_property_labels = update_alt_property_labels
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
+        if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
 
         # Load data from source of respective format
-        if self.data_file_format_load.get(data_source_format) is None:
+        if self.data_file_format_load.get(data_source[1]) is None:
             raise SyntaxError(
-                f"Data format '{data_source_format:s}' of data source file "
-                + f"'{data_source:s}' is unknown!\n"
+                f"Data format '{data_source[1]:s}' of data source file "
+                + f"'{data_source[0]:s}' is unknown!\n"
                 + "Supported data formats are: "
                 + f"{self.data_file_format_load.keys()}"
                 )
         else:
-            _ = self.data_file_format_load[data_source_format](
+            _ = self.data_file_format_load[data_source[1]](
                 data_source,
-                data_source_format,
-                data_load_properties,
+                data_properties=data_properties,
                 data_unit_properties=data_unit_properties,
-                alt_property_labels=alt_property_labels,
+                data_alt_property_labels=data_alt_property_labels,
+                data_source_unit_properties=data_source_unit_properties,
                 **kwargs)
 
         return
 
     def load_db(
         self,
-        data_source: str,
-        data_source_format: str,
-        data_load_properties: List[str],
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
-        alt_property_labels: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
         **kwargs,
-    ):
+    ) -> Union[str, List[Dict[str, Any]]]:
         """
         Load data from asparagus dataset format.
 
         Parameters
         ----------
-        data_source: str
-            Path to data source file of asparagus type
-        data_source_format: str
-            Dataset format of 'data_source'
-        data_load_properties: List(str)
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_properties: List(str), optional, default None
             Subset of properties to load
         data_unit_properties: dict, optional, default None
             Dictionary from properties (keys) to corresponding unit as a
             string (item), e.g.:
                 {property: unit}: { 'energy': 'eV',
                                     'force': 'eV/Ang', ...}
-        alt_property_labels: dictionary, optional, default None
+        data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        (str, list(dict(str, any)))
+            Either data file path or list of source properties if data file is
+            not defined.
+
         """
 
         # Check if data source is empty
-        if os.path.isfile(data_source):
-            with data.connect(data_source, data_source_format, mode='r') as db:
+        if os.path.isfile(data_source[0]):
+            with data.connect(data_source[0], data_source[1], mode='r') as db:
                 Ndata = db.count()
         else:
             Ndata = 0
         if Ndata == 0:
-            logger.warning(
-                f"WARNING:\nData source '{data_source:s}' is empty!\n")
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' is empty!")
             return
 
-        # Get data sample to compare property labels
-        with data.connect(data_source, data_source_format, mode='r') as db:
-            data_sample = db.get(1)[0]
-
-        # Check alternative property labels
-        if alt_property_labels is None:
-            alt_property_labels = self.alt_property_labels
-
-        # Assign data source property labels to valid labels.
-        assigned_properties = {}
-        for custom_label in data_sample.keys():
-
-            # Skip default system properties
-            if custom_label in self.default_property_labels:
-                continue
-
-            match, modified, valid_label = utils.check_property_label(
-                custom_label,
-                valid_property_labels=settings._valid_properties,
-                alt_property_labels=alt_property_labels)
-            if match:
-                assigned_properties[valid_label] = custom_label
-            elif modified:
-                logger.warning(
-                    f"WARNING:\nProperty key '{custom_label:s}' in "
-                    + f"database '{data_source:s}' is not a valid label!\n"
-                    + f"Property key '{custom_label:s}' is assigned as "
-                    + f"'{valid_label:s}'.\n")
-            else:
-                logger.warning(
-                    f"WARNING:\nUnknown property '{custom_label:s}' in "
-                    + f"database '{data_source:s}'!\nProperty ignored.\n")
-
-        # Check if all properties in 'data_load_properties' are found
-        found_properties = [
-            prop in assigned_properties
-            for prop in data_load_properties]
-        for ip, prop in enumerate(data_load_properties):
-            if not found_properties[ip]:
-                logger.error(
-                    f"ERROR:\nRequested property '{prop}' in "
-                    + "'data_load_properties' is not found in "
-                    + f"database '{data_source}'!\n")
-        if not all(found_properties):
-            raise ValueError(
-                "Not all properties in 'data_load_properties' are found "
-                + f"in database '{data_source}'!\n")
-
-        # Get data source metadata
-        with data.connect(data_source, data_source_format, mode='r') as db:
-            source_metadata = db.get_metadata()
-
-        # Property match summary and unit conversion
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
         if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
 
-            # Set default conversion factor dictionary
-            unit_conversion = {}
-            for prop in assigned_properties.keys():
-                unit_conversion[prop] = 1.0
+        # Get data sample property labels for label to comparison
+        with data.connect(data_source[0], data_source[1], mode='r') as db:
+            source_properties = db.get(1)[0].keys()
 
-            message = (
-                "INFO:\nProperties from database "
-                + f"'{data_source}'!\n"
-                + " Load | Property Label | Data Unit      | Source Label   |"
-                + "\n" + "-"*(7 + 17*3)
-                + "\n")
-            for prop, item in assigned_properties.items():
-                if source_metadata['unit_properties'].get(prop) is None:
-                    source_metadata['unit_properties'][prop] = None
-                if (
-                        prop in data_load_properties
-                        or prop in self.default_property_labels
-                        or prop in ['positions', 'charge']
-                ):
-                    load_str = "   x   "
-                else:
-                    load_str = " "*7
-                message += (
-                    f"{load_str:7s} "
-                    + f"{prop:<16s} "
-                    + f"{source_metadata['unit_properties'][prop]:<16s} "
-                    + f"{item:<16s} ")
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            data_source,
+            source_properties,
+            data_properties,
+            data_alt_property_labels)
 
-        else:
+        # Get source property units
+        with data.connect(data_source[0], data_source[1], mode='r') as db:
+            source_unit_properties = db.get_metadata()['unit_properties']
 
-            # Check units of positions and properties
-            unit_properties = data_unit_properties.copy()
-            unit_conversion = {}
-            unit_mismatch = {}
-            
-            for prop in assigned_properties.keys():
-                if source_metadata['unit_properties'].get(prop) is None:
-                    source_metadata['unit_properties'][prop] = 'None'
-                if unit_properties.get(prop) is None:
-                    unit_properties[prop] = 'None'
-                unit_conversion[prop], unit_mismatch[prop] = (
-                    utils.check_units(
-                        unit_properties[prop],
-                        source_metadata['unit_properties'][prop])
-                    )
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
-            message = (
-                "INFO:\nProperty assignment from database "
-                + f"'{data_source}'!\n"
-                + " Load | Property Label | Data Unit      |"
-                + " Source Label   | Source Unit    | Conversion Fac.\n"
-                + "-"*(7 + 17*5)
-                + "\n")
-            for prop, item in assigned_properties.items():
-                if (
-                        prop in data_load_properties
-                        or prop in self.default_property_labels
-                        or prop in ['positions', 'charge']
-                ):
-                    load_str = "   x   "
-                else:
-                    load_str = " "*7
-                message += (
-                    f"{load_str:7s} "
-                    + f"{prop:<16s} {unit_properties[prop]:<16s} "
-                    + f"{item:<16s} "
-                    + f"{source_metadata['unit_properties'][prop]:<16s} "
-                    + f"{unit_conversion[prop]:11.9e}\n")
-
-        # Print Source information
-        logger.info(message)
+        # Property match summary
+        self.print_property_summary(
+            data_source,
+            assigned_properties,
+            unit_conversion,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
         # If not dataset file is given, load source data to memory
         if self.data_file is None:
 
             # Add atoms systems to list
             all_atoms_properties = []
-            logger.info(
-                f"INFO:\nLoad {Ndata} data point from '{data_source}'!\n")
+            self.logger.info(
+                f"Load {Ndata} data point from '{data_source[0]:s}'!")
 
             # Open source dataset
             with data.connect(
-                data_source, data_source_format, mode='r'
+                data_source[0], data_source[1], mode='r'
             ) as db_source:
 
                 # Iterate over source data
@@ -420,7 +347,7 @@ class DataReader():
                     atoms_properties = self.collect_from_source(
                         source,
                         unit_conversion,
-                        data_load_properties,
+                        data_properties,
                         assigned_properties)
 
                     # Add system data to database
@@ -430,17 +357,17 @@ class DataReader():
         else:
 
             # Add atom systems to database
-            all_atoms_properties = self.data_file
-            with self.connect(self.data_file, mode='a') as db:
+            all_atoms_properties = self.data_file[0]
+            with self.connect(self.data_file[0], mode='a') as db:
 
-                logger.info(
-                    f"INFO:\nWriting '{data_source}' to database " +
-                    f"'{self.data_file}'!\n" +
-                    f"{Ndata} data point will be added.\n")
+                self.logger.info(
+                    f"Writing '{data_source[0]:s}' to database " +
+                    f"'{self.data_file[0]:s}'!\n" +
+                    f"{Ndata} data point will be added.")
 
                 # Open source dataset
                 with data.connect(
-                    data_source, data_source_format, mode='r'
+                    data_source[0], data_source[1], mode='r'
                 ) as db_source:
 
                     # Iterate over source data
@@ -453,167 +380,112 @@ class DataReader():
                         atoms_properties = self.collect_from_source(
                             source,
                             unit_conversion,
-                            data_load_properties,
+                            data_properties,
                             assigned_properties)
 
                         # Write to reference database file
                         db.write(properties=atoms_properties)
 
         # Print completion message
-        logger.info(
-            f"INFO:\nLoading from Asparagus dataset '{data_source}' "
-            + "complete!\n")
+        self.logger.info(
+            f"Loading from Asparagus dataset '{data_source[0]:s}' "
+            + "complete!")
 
         return all_atoms_properties
 
     def load_ase(
         self,
-        data_source: str,
-        data_source_format: str,
-        data_load_properties: List[str],
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
-        alt_property_labels: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
         **kwargs,
-    ):
+    ) -> Union[str, List[Dict[str, Any]]]:
         """
-        Load data from asparagus dataset format.
+        Load data from ASE database formats.
 
         Parameters
         ----------
-        data_source: str
-            Path to data source file of asparagus type
-        data_source_format: str
-            Dataset format of 'data_source'
-        data_load_properties: List(str)
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_properties: List(str), optional, default None
             Subset of properties to load
         data_unit_properties: dict, optional, default None
             Dictionary from properties (keys) to corresponding unit as a
             string (item), e.g.:
-                {property: unit}: { 'energy', 'eV',
-                                    'force', 'eV/Ang', ...}
-        alt_property_labels: dictionary, optional, default None
+                {property: unit}: { 'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        (str, list(dict(str, any)))
+            Either data file path or list of source properties if data file is
+            not defined.
+
         """
 
         # Check if data source is empty
-        with ase_db.connect(data_source) as db:
-            Ndata = db.count()
+        if os.path.isfile(data_source[0]):
+            with data.connect(data_source[0], data_source[1], mode='r') as db:
+                Ndata = db.count()
+        else:
+            Ndata = 0
         if Ndata == 0:
-            logger.warning(
-                f"WARNING:\nData source '{data_source:s}' is empty!")
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' is empty!")
             return
 
-        # Get data sample to compare property labels
-        with ase_db.connect(data_source) as db:
-            data_sample = db.get(1)
-
-        # Check alternative property labels
-        if alt_property_labels is None:
-            alt_property_labels = self.alt_property_labels
-
-        # Assign data source property labels to valid labels.
-        assigned_properties = {}
-        for custom_label in data_sample:
-
-            # Skip default system properties
-            if custom_label in self.default_property_labels:
-                continue
-
-            match, modified, valid_label = utils.check_property_label(
-                custom_label,
-                valid_property_labels=settings._valid_properties,
-                alt_property_labels=alt_property_labels)
-            if match:
-                assigned_properties[valid_label] = custom_label
-            elif modified:
-                logger.warning(
-                    f"WARNING:\nProperty key '{custom_label:s}' in "
-                    + f"database '{data_source:s}' is not a valid label!\n"
-                    + f"Property key '{custom_label:s}' is assigned as "
-                    + f"'{valid_label:s}'.\n")
-            else:
-                logger.warning(
-                    f"WARNING:\nUnknown property '{custom_label:s}' in "
-                    + f"database '{data_source:s}'!\nProperty ignored.\n")
-
-        # Check if all properties in 'data_load_properties' are found
-        found_properties = [
-            prop in assigned_properties
-            for prop in data_load_properties]
-        for ip, prop in enumerate(data_load_properties):
-            if not found_properties[ip]:
-                logger.error(
-                    f"ERROR:\nRequested property '{prop}' in "
-                    + "'data_load_properties' is not found in "
-                    + f"database '{data_source}'!\n")
-        if not all(found_properties):
-            raise ValueError(
-                "Not all properties in 'data_load_properties' are found "
-                + f"in database '{data_source}'!\n")
-
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
         if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
 
-            # Set default conversion factor dictionary
-            unit_conversion = {}
-            for prop in assigned_properties.keys():
-                unit_conversion[prop] = 1.0
+        # Get data sample property labels for label to comparison
+        with data.connect(data_source[0], data_source[1], mode='r') as db:
+            source_properties = db.get(1)[0].keys()
 
-            message = (
-                "INFO:\nProperties from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      | Source Label   |\n"
-                + "-"*17*3
-                + "\n")
-            for prop, item in assigned_properties.items():
-                message += (
-                    f"{prop:<16s} "
-                    + f"{'ASE unit':<16s} "
-                    + f"{item:<16s} ")
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            data_source,
+            source_properties,
+            data_properties,
+            data_alt_property_labels)
 
-        else:
+        # Get source property units - default ASE units
+        source_unit_properties = settings._ase_units
 
-            # Check units of positions and properties
-            unit_properties = data_unit_properties.copy()
-            unit_conversion = {}
-            unit_mismatch = {}
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
-            for prop in assigned_properties.keys():
-                if unit_properties.get(prop) is None:
-                    unit_properties[prop] = 'None'
-                unit_conversion[prop], unit_mismatch[prop] = (
-                    utils.check_units(
-                        unit_properties[prop],
-                        None)
-                    )
-
-            message = (
-                "INFO:\nProperty assignment from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      |"
-                + " Source Label   | Source Unit    | Conversion Fac.\n"
-                + "-"*17*5
-                + "\n")
-            for prop, item in assigned_properties.items():
-                message += (
-                    f" {prop:<16s} {unit_properties[prop]:<16s} "
-                    + f"{item:<16s} "
-                    + f"{'ASE unit':<16s} "
-                    + f"{unit_conversion[prop]:11.9e}\n")
-
-        # Print Source information
-        logger.info(message)
+        # Property match summary
+        self.print_property_summary(
+            data_source,
+            assigned_properties,
+            unit_conversion,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
         # If not dataset file is given, load source data to memory
         if self.data_file is None:
 
             # Add atoms systems to list
             all_atoms_properties = []
-            logger.info(
-                f"INFO:\nLoad {Ndata} data point from '{data_source}'!\n")
+            self.logger.info(
+                f"Load {Ndata:d} data point from '{data_source[0]:s}'!")
 
             # Open source dataset
-            with ase_db.connect(data_source) as db_source:
+            with ase_db.connect(data_source[0]) as db_source:
 
                 # Iterate over source data
                 for idx in range(Ndata):
@@ -627,7 +499,7 @@ class DataReader():
                         atoms,
                         source,
                         unit_conversion,
-                        data_load_properties,
+                        data_properties,
                         assigned_properties)
 
                     # Add atoms system data
@@ -637,16 +509,16 @@ class DataReader():
         else:
 
             # Add atom systems to database
-            all_atoms_properties = self.data_file
-            with self.connect(self.data_file, mode='a') as db:
+            all_atoms_properties = self.data_file[0]
+            with self.connect(self.data_file[0], mode='a') as db:
 
-                logger.info(
-                    f"INFO:\nWriting '{data_source}' to database " +
-                    f"'{self.data_file}'!\n" +
-                    f"{Ndata} data point will be added.\n")
+                self.logger.info(
+                    f"Writing '{data_source[0]}' to database " +
+                    f"'{self.data_file[0]}'!\n" +
+                    f"{Ndata} data point will be added.")
 
                 # Open source dataset
-                with ase_db.connect(data_source) as db_source:
+                with ase_db.connect(data_source[0]) as db_source:
 
                     # Iterate over source data
                     for idx in range(Ndata):
@@ -660,26 +532,25 @@ class DataReader():
                             atoms,
                             source,
                             unit_conversion,
-                            data_load_properties,
+                            data_properties,
                             assigned_properties)
 
                         # Write to reference database file
                         db.write(properties=atoms_properties)
 
         # Print completion message
-        logger.info(
-            f"INFO:\nLoading from ASE database '{data_source}' complete!\n")
+        self.logger.info(
+            f"Loading from ASE database '{data_source[0]}' complete!")
 
         return all_atoms_properties
 
     def load_npz(
         self,
-        data_source: str,
-        data_source_format: str,
-        data_load_properties: List[str],
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
-        source_unit_properties: Optional[Dict[str, str]] = None,
-        alt_property_labels: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
+        data_source_unit_properties: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         """
@@ -687,238 +558,155 @@ class DataReader():
 
         Parameters
         ----------
-        data_source: str
-            Path to data source file of asparagus type
-        data_source_format: str
-            Dataset format of 'data_source'
-        data_load_properties: List(str)
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_properties: List(str), optional, default None
             Subset of properties to load
         data_unit_properties: dict, optional, default None
             Dictionary from properties (keys) to corresponding unit as a
             string (item), e.g.:
-                {property: unit}: { 'energy', 'eV',
-                                    'force', 'eV/Ang', ...}
-        source_unit_properties: dict, optional, default None
-            As 'unit_properties' but four source npz data.
-        alt_property_labels: dictionary, optional, default None
+                {property: unit}: { 'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        data_source_unit_properties: dictionary, optional, default None
+            Dictionary from properties (keys) to corresponding unit as a 
+            string (item) in the source data files.
+
+        Returns
+        -------
+        (str, list(dict(str, any)))
+            Either data file path or list of source properties if data file is
+            not defined.
+
         """
 
-        # Open npz file
-        source = np.load(data_source)
-
         # Check if data source is empty
-        Nprop = len(source.keys())
-        if Nprop == 0:
-            logger.warning(
-                f"WARNING:\nData source '{data_source:s}' is empty!")
+        if os.path.isfile(data_source[0]):
+            source = np.load(data_source[0])
+            Ndata = len(source.keys())
+        else:
+            source = None
+            Ndata = 0
+        if Ndata == 0:
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' is empty!")
             return
 
-        # Check alternative property labels
-        if alt_property_labels is None:
-            alt_property_labels = self.alt_property_labels
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
+        if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
 
-        # Assign data source property labels to valid labels.
-        assigned_properties = {}
-        for custom_label in source.keys():
+        # Get data sample property labels for label to comparison
+        source_properties = source.keys()
 
-            match, modified, valid_label = utils.check_property_label(
-                custom_label,
-                valid_property_labels=settings._valid_properties,
-                alt_property_labels=alt_property_labels)
-            if match:
-                assigned_properties[valid_label] = custom_label
-            elif modified:
-                logger.warning(
-                    f"WARNING:\nProperty key '{custom_label:s}' in "
-                    + f"database '{data_source:s}' is not a valid label!\n"
-                    + f"Property key '{custom_label:s}' is assigned as "
-                    + f"'{valid_label:s}'.\n")
-            else:
-                logger.warning(
-                    f"WARNING:\nUnknown property '{custom_label:s}' in "
-                    + f"database '{data_source:s}'!\nProperty ignored.\n")
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            data_source,
+            source_properties,
+            data_properties,
+            data_alt_property_labels)
+
+        # Initialize source data dictionary and assign properties
+        source_dict = {}
 
         # Atom numbers
-        if 'atoms_number' in assigned_properties.keys():
-            atoms_number = source[assigned_properties['atoms_number']]
-            Ndata = len(atoms_number)
+        if 'atoms_number' in assigned_properties:
+            source_dict['atoms_number'] = (
+                source[assigned_properties['atoms_number']])
+            Ndata = len(source_dict['atoms_number'])
         else:
             raise ValueError(
                 "Property 'atoms_number' not found in npz dataset "
-                + f"'{self.data_file}'!\n")
+                + f"'{self.data_file[0]}'!\n")
 
         # Atomic number
-        if 'atomic_numbers' in assigned_properties.keys():
-            atomic_numbers = source[assigned_properties['atomic_numbers']]
+        if 'atomic_numbers' in assigned_properties:
+            source_dict['atomic_numbers'] = (
+                source[assigned_properties['atomic_numbers']])
         else:
             raise ValueError(
                 "Property 'atomic_numbers' not found in npz dataset "
-                + f"'{self.data_file}'!\n")
-
-        # Max atom number
-        max_atoms_number = atomic_numbers.shape[1]
+                + f"'{self.data_file[0]}'!\n")
 
         # Atom positions
-        if 'positions' in assigned_properties.keys():
-            positions = source[assigned_properties['positions']]
+        if 'positions' in assigned_properties:
+            source_dict['positions'] = source[assigned_properties['positions']]
         else:
             raise ValueError(
                 "Property 'positions' not found in npz dataset "
-                + f"'{self.data_file}'!\n")
+                + f"'{self.data_file[0]}'!\n")
 
         # Total atoms charge
-        if 'charge' in assigned_properties.keys():
-            charge = source[assigned_properties['charge']]
+        if 'charge' in assigned_properties:
+            source_dict['charge'] = source[assigned_properties['charge']]
         else:
-            charge = np.zeros(Ndata, dtype=float)
-            logger.warning(
-                "WARNING:\nProperty 'charge' not found in npz dataset "
-                + f"'{self.data_file}'!\nCharges are assumed to be zero.")
+            source_dict['charge'] = np.zeros(Ndata, dtype=float)
+            self.logger.warning(
+                "Property 'charge' not found in npz dataset "
+                + f"'{self.data_file[0]}'!\nCharges are assumed to be zero.")
 
         # Cell information
-        if 'cell' in assigned_properties.keys():
-            cell = source[assigned_properties['cell']]
+        if 'cell' in assigned_properties:
+            source_dict['cell'] = source[assigned_properties['cell']]
         else:
-            cell = np.zeros((Ndata, 3), dtype=float)
-            logger.info(
-                "INFO:\nNo cell information in npz dataset "
-                + f"'{self.data_file}'!\n")
+            source_dict['cell'] = np.zeros((Ndata, 3), dtype=float)
+            self.logger.info(
+                "No cell information in npz dataset "
+                + f"'{self.data_file[0]}'!")
 
         # PBC information
-        if 'pbc' in assigned_properties.keys():
-            pbc = source[assigned_properties['pbc']]
+        if 'pbc' in assigned_properties:
+            source_dict['pbc'] = source[assigned_properties['pbc']]
         else:
-            pbc = np.zeros((Ndata, 3), dtype=bool)
-            logger.info(
-                "INFO:\nNo pbc information in npz dataset "
-                + f"'{self.data_file}'!\n")
+            source_dict['pbc'] = np.zeros((Ndata, 3), dtype=bool)
+            self.logger.info(
+                "No pbc information in npz dataset "
+                + f"'{self.data_file[0]}'!")
 
-        # Check if all properties in 'data_load_properties' are found
+        # Check if all properties in 'data_properties' are found
         found_properties = [
             prop in assigned_properties.keys()
-            for prop in data_load_properties]
-        for ip, prop in enumerate(data_load_properties):
+            for prop in data_properties]
+        for ip, prop in enumerate(data_properties):
             if not found_properties[ip]:
-                logger.error(
-                    f"ERROR:\nRequested property '{prop}' in "
-                    + "'data_load_properties' is not found in Numpy "
-                    + f"dataset '{data_source}'!\n")
+                self.logger.error(
+                    f"Requested property '{prop:s}' in "
+                    + "'data_properties' is not found in Numpy "
+                    + f"dataset '{data_source[0]}'!")
         if not all(found_properties):
             raise ValueError(
-                "Not all properties in 'data_load_properties' are found "
-                + f"in Numpy dataset '{data_source}'!\n")
+                "Not all properties in 'data_properties' are found "
+                + f"in Numpy dataset '{data_source[0]}'!\n")
 
-        # Property match summary and unit conversion
-        if data_unit_properties is None and source_unit_properties is None:
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            data_source_unit_properties,
+            )
 
-            # Set default conversion factor dictionary
-            unit_conversion = {}
-            for prop in assigned_properties.keys():
-                unit_conversion[prop] = 1.0
+        # Property match summary
+        self.print_property_summary(
+            data_source,
+            assigned_properties,
+            unit_conversion,
+            data_unit_properties,
+            data_source_unit_properties,
+        )
 
-            message = (
-                "INFO:\nProperties from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      | Source Label   |\n"
-                + "-"*17*3
-                + "\n")
-            for prop, item in assigned_properties.items():
-                message += (
-                    f" {prop:<15s} "
-                    + f" {'None':<15s} "
-                    + f" {item:<15s}\n")
-
-        elif data_unit_properties is None:
-
-            # Set default conversion factor dictionary
-            unit_conversion = {}
-            for prop in assigned_properties.keys():
-                unit_conversion[prop] = 1.0
-
-            message = (
-                "INFO:\nProperties from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      | Source Label   |\n"
-                + "-"*17*3
-                + "\n")
-            for prop, item in assigned_properties.items():
-                if source_unit_properties.get(item) is None:
-                    source_unit_properties[prop] = 'None'
-                elif source_unit_properties.get(prop) is None:
-                    source_unit_properties[prop] = 'None'
-                message += (
-                    f"{prop:<16s} "
-                    + f"{source_unit_properties[prop]:<16s} "
-                    + f"{item:<16s}\n")
-
-        elif source_unit_properties is None:
-
-            # Set default conversion factor dictionary
-            unit_properties = data_unit_properties.copy()
-            unit_conversion = {}
-            for prop in assigned_properties.keys():
-                unit_conversion[prop] = 1.0
-
-            message = (
-                "INFO:\nProperties from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      | Source Label   |\n"
-                + "-"*17*3
-                + "\n")
-            for prop, item in assigned_properties.items():
-                if unit_properties.get(prop) is None:
-                    unit_properties[prop] = 'None'
-                message += (
-                    f" {prop:<15s} "
-                    + f" {unit_properties[prop]:<15s} "
-                    + f" {item:<15s}\n")
-
-        else:
-
-            # Check units of positions and properties
-            unit_properties = data_unit_properties.copy()
-            unit_conversion = {}
-            unit_mismatch = {}
-
-            for prop in assigned_properties.keys():
-                if source_unit_properties.get(prop) is None:
-                    source_unit_properties[prop] = 'None'
-                if unit_properties.get(prop) is None:
-                    unit_properties[prop] = 'None'
-                unit_conversion[prop], unit_mismatch[prop] = (
-                    utils.check_units(
-                        unit_properties[prop],
-                        source_unit_properties[prop])
-                    )
-
-            message = (
-                "INFO:\nProperty assignment from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      |"
-                + " Source Label   | Source Unit    | Conversion Fac.\n"
-                + "-"*17*5
-                + "\n")
-            for prop, item in assigned_properties.items():
-                message += (
-                    f" {prop:<16s} {unit_properties[prop]:<16s} "
-                    + f"{item:<16s} "
-                    + f"{source_unit_properties[prop]:<16s} "
-                    + f"{unit_conversion[prop]:11.9e}\n")
-
-        # Print Source information
-        logger.info(message)
-
-        # Pre-Collect properties from source
-        source_properties = {}
+        # Collect properties from source
         for prop, item in assigned_properties.items():
             if prop in self.default_property_labels:
                 continue
-            if prop in data_load_properties:
+            if prop in data_properties:
                 try:
-                    source_properties[prop] = (
-                        unit_conversion[prop]*source[item])
+                    source_dict[prop] = source[item]
                 except ValueError:
                     raise ValueError(
                         f"Property '{prop:s}' from the npz entry "
@@ -928,254 +716,149 @@ class DataReader():
         if self.data_file is None:
 
             # Add atoms systems to list
-            all_atoms_properties = []
-            logger.info(
-                f"INFO:\nLoad {Ndata} data point from '{data_source}'!\n")
-
-            for idx in range(Ndata):
-
-                # Atoms system data
-                atoms_properties = {}
-
-                # Fundamental properties
-                atoms_properties['atoms_number'] = atoms_number[idx]
-                atoms_properties['atomic_numbers'] = (
-                    atomic_numbers[idx][:atoms_number[idx]])
-                atoms_properties['positions'] = (
-                    unit_conversion['positions']
-                    *positions[idx][:atoms_number[idx]])
-                atoms_properties['cell'] = (
-                    unit_conversion['positions']*cell[idx])
-                atoms_properties['pbc'] = pbc[idx]
-                atoms_properties['charge'] = charge[idx]
-
-                # Collect properties
-                for prop, item in source_properties.items():
-                    if (
-                        item[idx].shape
-                        and atoms_number[idx] != max_atoms_number
-                        and item[idx].shape[0] == max_atoms_number
-                        and np.all(item[idx][atoms_number[idx]:] == 0.0)
-                    ):
-                        atoms_properties[prop] = item[idx][:atoms_number[idx]]
-                    else:
-                        atoms_properties[prop] = item[idx]
-
-
-                # Add atoms system data
-                all_atoms_properties.append(atoms_properties)
+            self.logger.info(
+                f"Load {Ndata:d} data point from '{data_source[0]:s}'!")
+            all_atoms_properties = self.collect_from_source_list(
+                source_dict,
+                unit_conversion,
+                data_properties,
+                assigned_properties)
 
         # If dataset file is given, write to dataset
         else:
 
             # Add atom systems to database
-            all_atoms_properties = self.data_file
-            atoms_properties = {}
-            with self.connect(self.data_file, mode='a') as db:
+            self.logger.info(
+                f"Writing '{data_source[0]:s}' to database "
+                + f"'{self.data_file[0]:s}'!\n"
+                + f"{Ndata:d} data point will be added.")
+            all_atoms_properties = self.collect_from_source_list(
+                source_dict,
+                unit_conversion,
+                data_properties,
+                assigned_properties)
 
-                logger.info(
-                    f"INFO:\nWriting '{data_source}' to database "
-                    + f"'{self.data_file}'!\n"
-                    + f"{Ndata} data point will be added.\n")
+            # Write to reference database file
+            with self.connect(self.data_file[0], mode='a') as db:
 
                 for idx in range(Ndata):
+                    db.write(properties=all_atoms_properties[idx])
 
-                    # Fundamental properties
-                    atoms_properties['atoms_number'] = atoms_number[idx]
-                    atoms_properties['atomic_numbers'] = (
-                        atomic_numbers[idx][:atoms_number[idx]])
-                    atoms_properties['positions'] = (
-                        unit_conversion['positions']
-                        * positions[idx][:atoms_number[idx]])
-                    atoms_properties['cell'] = (
-                        unit_conversion['positions']*cell[idx])
-                    atoms_properties['pbc'] = pbc[idx]
-                    atoms_properties['charge'] = charge[idx]
-
-                    # Collect properties
-                    for prop, item in source_properties.items():
-                        if (
-                            item[idx].shape
-                            and atoms_number[idx] != max_atoms_number
-                            and item[idx].shape[0] == max_atoms_number
-                            and np.all(item[idx][atoms_number[idx]:] == 0.0)
-                        ):
-                            atoms_properties[prop] = (
-                                item[idx][:atoms_number[idx]])
-                        else:
-                            atoms_properties[prop] = item[idx]
-
-                    # Write to reference database file
-                    db.write(properties=atoms_properties)
+            # Reassign data file path as usual when written to database
+            all_atoms_properties = self.data_file[0]
 
         # Print completion message
-        logger.info(
-            f"INFO:\nLoading from npz database '{data_source}' complete!\n")
+        self.logger.info(
+            f"Loading from npz database '{data_source[0]}' complete!")
 
         return all_atoms_properties
 
     def load_traj(
         self,
-        data_source: str,
-        data_source_format: str,
-        data_load_properties: List[str],
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
-        alt_property_labels: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
         """
-        Load data from asparagus dataset format.
+        Load data from ASE trajectory file.
 
         Parameters
         ----------
-        data_source: str
-            Path to data source file of asparagus type
-        data_source_format: str
-            Dataset format of 'data_source'
-        data_load_properties: List(str)
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_properties: List(str), optional, default None
             Subset of properties to load
         data_unit_properties: dict, optional, default None
             Dictionary from properties (keys) to corresponding unit as a
             string (item), e.g.:
-                {property: unit}: { 'energy', 'eV',
-                                    'force', 'eV/Ang', ...}
-        alt_property_labels: dictionary, optional, default None
+                {property: unit}: { 'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        (str, list(dict(str, any)))
+            Either data file path or list of source properties if data file is
+            not defined.
+
         """
 
-        # Open data source
-        db_source = ase.io.Trajectory(data_source)
-
         # Check if data source is empty
-        Ndata = len(db_source)
+        if os.path.isfile(data_source[0]):
+            source = ase.io.Trajectory(data_source[0])
+            Ndata = len(source)
+        else:
+            source = None
+            Ndata = 0
         if Ndata == 0:
-            logger.warning(
-                f"WARNING:\nData source '{data_source:s}' is empty!")
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' is empty!")
             return
 
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
+        if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
+
         # Get data sample to compare property labels
-        data_sample = db_source[0]
+        data_sample = source[0]
 
         # Check if data source has properties
         if data_sample.calc is None:
-            logger.warning(
-                f"WARNING:\nData source '{data_source:s}' has no properties!")
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' has no properties!")
             return
 
-        # Check alternative property labels
-        if alt_property_labels is None:
-            alt_property_labels = self.alt_property_labels
+        # Check if data source has properties
+        if source[0].calc is None:
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' has no properties!")
+            return
 
-        # Assign data source property labels to valid labels.
-        assigned_properties = {}
-        data_sample_properties = ['positions', 'charge']
-        data_sample_properties += list(data_sample.calc.results)
-        for custom_label in data_sample_properties:
+        # Get data sample property labels for label to comparison
+        source_properties = ['positions', 'charge']
+        source_properties += list(data_sample.calc.results)
 
-            # Skip default system properties
-            if custom_label in self.default_property_labels:
-                continue
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            data_source,
+            source_properties,
+            data_properties,
+            data_alt_property_labels)
 
-            match, modified, valid_label = utils.check_property_label(
-                custom_label,
-                valid_property_labels=settings._valid_properties,
-                alt_property_labels=alt_property_labels)
-            if match:
-                assigned_properties[valid_label] = custom_label
-            elif modified:
-                logger.warning(
-                    f"WARNING:\nProperty key '{custom_label:s}' in "
-                    + f"database '{data_source:s}' is not a valid label!\n"
-                    + f"Property key '{custom_label:s}' is assigned as "
-                    + f"'{valid_label:s}'.\n")
-            else:
-                logger.warning(
-                    f"WARNING:\nUnknown property '{custom_label:s}' in "
-                    + f"database '{data_source:s}'!\nProperty ignored.\n")
+        # Get source property units - default ASE units
+        source_unit_properties = settings._ase_units
 
-        # Check if all properties in 'data_load_properties' are found
-        found_properties = [
-            prop in assigned_properties
-            for prop in data_load_properties]
-        for ip, prop in enumerate(data_load_properties):
-            if not found_properties[ip]:
-                logger.error(
-                    f"ERROR:\nRequested property '{prop}' in "
-                    + "'data_load_properties' is not found in "
-                    + f"database '{data_source}'!\n")
-        if not all(found_properties):
-            raise ValueError(
-                "Not all properties in 'data_load_properties' are found "
-                + f"in database '{data_source}'!\n")
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
-        if data_unit_properties is None:
-
-            # Set default conversion factor dictionary
-            unit_conversion = {}
-            for prop in assigned_properties.keys():
-                unit_conversion[prop] = 1.0
-
-            message = (
-                "INFO:\nProperties from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      | Source Label   |\n"
-                + "-"*17*3
-                + "\n")
-            for prop, item in assigned_properties.items():
-                message += (
-                    f"{prop:<16s} "
-                    + f"{'ASE unit':<16s} "
-                    + f"{item:<16s} ")
-
-        else:
-
-            # Check units of positions and properties
-            unit_properties = data_unit_properties.copy()
-            unit_conversion = {}
-            unit_mismatch = {}
-
-            for prop in assigned_properties:
-                if (
-                    unit_properties.get(prop) is None
-                    and settings._default_units.get(prop) is None
-                ):
-                    raise SyntaxError(
-                        f"Unit for property label '{prop:s}' is not known! "
-                        + "Define property unit in '{data_source:s}' "
-                        + "within 'data_unit_properties' input!")
-                elif unit_properties.get(prop) is None:
-                    unit_properties[prop] = settings._default_units[prop]
-                unit_conversion[prop], unit_mismatch[prop] = (
-                    utils.check_units(
-                        unit_properties[prop],
-                        None)
-                    )
-
-            message = (
-                "INFO:\nProperty assignment from database "
-                + f"'{data_source}'!\n"
-                + " Property Label | Data Unit      |"
-                + " Source Label   | Source Unit    | Conversion Fac.\n"
-                + "-"*17*5
-                + "\n")
-            for prop, item in assigned_properties.items():
-                message += (
-                    f" {prop:<16s} {unit_properties[prop]:<16s} "
-                    + f"{item:<16s} "
-                    + f"{'ASE unit':<16s} "
-                    + f"{unit_conversion[prop]:11.9e}\n")
-
-        # Print Source information
-        logger.info(message)
+        # Property match summary
+        self.print_property_summary(
+            data_source,
+            assigned_properties,
+            unit_conversion,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
         # If not dataset file is given, load source data to memory
         if self.data_file is None:
 
             # Add atoms systems to list
             all_atoms_properties = []
-            logger.info(
-                f"INFO:\nLoad {Ndata} data point from '{data_source}'!\n")
+            self.logger.info(
+                f"Load {Ndata:d} data point from '{data_source[0]:s}'!")
 
             # Iterate over source data
             for idx in range(Ndata):
@@ -1184,13 +867,13 @@ class DataReader():
                 atoms_properties = {}
 
                 # Get atoms object and property data
-                atoms = db_source[idx]
+                atoms = source[idx]
 
                 # Collect system data
                 atoms_properties = self.collect_from_atoms(
                     atoms,
                     unit_conversion,
-                    data_load_properties,
+                    data_properties,
                     assigned_properties)
 
                 # Add atoms system data
@@ -1201,12 +884,12 @@ class DataReader():
 
             # Add atom systems to database
             all_atoms_properties = self.data_file
-            with self.connect(self.data_file, mode='a') as db:
+            with self.connect(self.data_file[0], mode='a') as db:
 
-                logger.info(
-                    f"INFO:\nWriting '{data_source}' to database " +
-                    f"'{self.data_file}'!\n" +
-                    f"{Ndata} data point will be added.\n")
+                self.logger.info(
+                    f"Writing '{data_source[0]}' to database " +
+                    f"'{self.data_file[0]}'!\n" +
+                    f"{Ndata} data point will be added.")
 
                 # Iterate over source data
                 for idx in range(Ndata):
@@ -1215,32 +898,32 @@ class DataReader():
                     atoms_properties = {}
 
                     # Get atoms object and property data
-                    atoms = db_source[idx]
+                    atoms = source[idx]
 
                     # Collect system data
                     atoms_properties = self.collect_from_atoms(
                         atoms,
                         unit_conversion,
-                        data_load_properties,
+                        data_properties,
                         assigned_properties)
 
                     # Write to reference database file
                     db.write(properties=atoms_properties)
 
         # Print completion message
-        logger.info(
-            f"INFO:\nLoading from ASE trajectory '{data_source}' complete!\n")
+        self.logger.info(
+            f"Loading from ASE trajectory '{data_source[0]:s}' complete!")
 
         return all_atoms_properties
 
     def load_atoms(
         self,
         atoms: object,
-        properties: Dict[str, Any],
-        data_load_properties: Optional[List[str]] = None,
+        atoms_properties: Dict[str, Any],
+        data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
-        alt_property_labels: Optional[Dict[str, str]] = None,
-    ):
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
+    ) -> Union[str, List[Dict[str, Any]]]:
         """
         Load atoms object with properties to dataset format.
 
@@ -1248,137 +931,338 @@ class DataReader():
         ----------
         atoms: ASE Atoms object
             ASE Atoms object with conformation belonging to the properties.
-        properties: dict
+        atoms_properties: dict
             Atoms object properties
-        data_load_properties: List(str)
-            Subset of properties to load to dataset file
+        data_properties: List(str), optional, default None
+            Subset of properties to load
         data_unit_properties: dict, optional, default None
             Dictionary from properties (keys) to corresponding unit as a
             string (item), e.g.:
-                {property: unit}: { 'energy', 'eV',
-                                    'force', 'eV/Ang', ...}
-        alt_property_labels: dictionary, optional, default None
+                {property: unit}: { 'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        (str, list(dict(str, any)))
+            Either data file path or list of source properties if data file is
+            not defined.
+
         """
 
-        # Check property list
-        if data_load_properties is None:
-            data_load_properties = self.data_load_properties
-
-        # Check if all properties in 'data_load_properties' are found
-        found_load_properties = [
-            prop in properties
-            for prop in data_load_properties]
-        for ip, prop in enumerate(data_load_properties):
-            if not found_load_properties[ip]:
-                logger.error(
-                    f"ERROR:\nRequested property '{prop}' in "
-                    + "'data_load_properties' is not found in "
-                    + "property input!\n")
-        if not all(found_load_properties):
-            raise ValueError(
-                "Not all properties in 'data_load_properties' are found "
-                + "property input!\n")
-
-        # Check property unit conversion
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
         if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
 
-            # Set default conversion factor dictionary
-            unit_conversion = {}
-            for prop in data_load_properties:
-                unit_conversion[prop] = 1.0
+        # Get data sample property labels for label to comparison
+        source_properties = atoms_properties.keys()
 
-        else:
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            'ase.Atoms',
+            source_properties,
+            data_properties,
+            data_alt_property_labels)
 
-            # Check if all property units in 'data_unit_properties' are found
-            found_unit_properties = [
-                prop in data_unit_properties
-                for prop in data_load_properties]
-            for ip, prop in enumerate(data_load_properties):
-                if not found_unit_properties[ip]:
-                    logger.error(
-                        f"ERROR:\nRequested property '{prop}' from "
-                        + "'data_load_properties' is not found in "
-                        + "property unit dictionary 'data_unit_properties'!\n")
-            if not all(found_unit_properties):
-                raise ValueError(
-                    "Not all property units in 'data_load_properties' are "
-                    + "found in 'data_unit_properties'!\n")
+        # Get source property units - default ASE units
+        source_unit_properties = settings._ase_units
 
-            # Check units of positions and properties
-            unit_properties = data_unit_properties.copy()
-            unit_conversion = {}
-            unit_mismatch = {}
-
-            for prop in data_unit_properties.keys():
-                if unit_properties.get(prop) is None:
-                    unit_properties[prop] = 'None'
-                unit_conversion[prop], unit_mismatch[prop] = (
-                    utils.check_units(
-                        unit_properties[prop],
-                        None)
-                    )
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            source_unit_properties,
+        )
 
         # If not dataset file is given, load data to memory
         if self.data_file is None:
 
             # Atoms system data
-            atoms_properties = {}
+            load_properties = {}
 
             # Fundamental properties
-            atoms_properties['atoms_number'] = (
+            load_properties['atoms_number'] = (
                 atoms.get_global_number_of_atoms())
-            atoms_properties['atomic_numbers'] = (
+            load_properties['atomic_numbers'] = (
                 atoms.get_atomic_numbers())
-            atoms_properties['positions'] = (
+            load_properties['positions'] = (
                 unit_conversion['positions']*atoms.get_positions())
-            atoms_properties['cell'] = (
-                unit_conversion['positions']*atoms.get_cell()[:])
-            atoms_properties['pbc'] = atoms.get_pbc()
-            if properties.get('charge') is None:
-                atoms_properties['charge'] = 0.0
+            load_properties['cell'] = (
+                unit_conversion['positions']*self.convert_cell(
+                    atoms.get_cell()[:]))
+            load_properties['pbc'] = atoms.get_pbc()
+            if atoms_properties.get('charge') is None:
+                load_properties['charge'] = 0.0
             else:
-                atoms_properties['charge'] = properties['charge']
+                load_properties['charge'] = atoms_properties['charge']
 
             # Collect properties
-            for prop, item in properties.items():
-                atoms_properties[prop] = (
+            for prop, item in atoms_properties.items():
+                load_properties[prop] = (
                     unit_conversion[prop]*item)
 
         # If dataset file is given, write to dataset
         else:
 
             # Atoms system data
-            atoms_properties = {}
-
-            with self.connect(self.data_file, mode='a') as db:
+            load_properties = {}
+            with self.connect(self.data_file[0], mode='a') as db:
 
                 # Fundamental properties
-                atoms_properties['atoms_number'] = (
+                load_properties['atoms_number'] = (
                     atoms.get_global_number_of_atoms())
-                atoms_properties['atomic_numbers'] = (
+                load_properties['atomic_numbers'] = (
                     atoms.get_atomic_numbers())
-                atoms_properties['positions'] = (
+                load_properties['positions'] = (
                     unit_conversion['positions']*atoms.get_positions())
-                atoms_properties['cell'] = (
-                    unit_conversion['positions']*atoms.get_cell()[:])
-                atoms_properties['pbc'] = atoms.get_pbc()
-                if properties.get('charge') is None:
-                    atoms_properties['charge'] = 0.0
+                load_properties['cell'] = (
+                    unit_conversion['positions']*self.convert_cell(
+                        atoms.get_cell()[:]))
+                load_properties['pbc'] = atoms.get_pbc()
+                if atoms_properties.get('charge') is None:
+                    load_properties['charge'] = 0.0
                 else:
-                    atoms_properties['charge'] = properties['charge']
+                    load_properties['charge'] = atoms_properties['charge']
 
                 # Collect properties
-                for prop, item in properties.items():
-                    if prop in data_load_properties:
-                        atoms_properties[prop] = (
+                for prop, item in atoms_properties.items():
+                    if prop in data_properties:
+                        load_properties[prop] = (
                             unit_conversion[prop]*item)
 
                 # Write to ASE database file
-                db.write(properties=atoms_properties)
+                db.write(properties=load_properties)
 
-        return atoms_properties
+        return load_properties
+
+    def assign_property_labels(
+        self,
+        data_source: List[str],
+        source_properties: List[str],
+        data_properties: List[str],
+        data_alt_property_labels: Dict[str, List[str]],
+    ) -> Dict[str, str]:
+        """
+        Assign data source property labels to valid property labels.
+
+        Parameters
+        ----------
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file
+        source_properties: List(str)
+            Properties list of source data
+        data_properties: List(str)
+            Subset of properties to load
+        data_alt_property_labels: dict
+            Dictionary of alternative property labeling to replace
+            non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        dict(str, str)
+            Assigned data property label (key) to source label (item)
+
+        """
+
+        # Assign data source property labels to valid labels.
+        assigned_properties = {}
+        for source_label in source_properties:
+
+            # Skip default system properties
+            if source_label in self.default_property_labels:
+                continue
+
+            match, modified, valid_label = utils.check_property_label(
+                source_label,
+                valid_property_labels=settings._valid_properties,
+                alt_property_labels=data_alt_property_labels)
+            if match:
+                assigned_properties[valid_label] = source_label
+            elif modified:
+                self.logger.warning(
+                    f"Property key '{source_label:s}' in "
+                    + f"database '{data_source[0]:s}' is not a valid label!\n"
+                    + f"Property key '{source_label:s}' is assigned as "
+                    + f"'{valid_label:s}'.")
+            else:
+                self.logger.warning(
+                    f"Unknown property '{source_label:s}' in "
+                    + f"database '{data_source[0]:s}'!\nProperty ignored.")
+
+        # Check if all properties in 'data_properties' are found
+        found_properties = [
+            prop in assigned_properties
+            for prop in data_properties]
+        for ip, prop in enumerate(data_properties):
+            if not found_properties[ip]:
+                self.logger.error(
+                    f"Requested property '{prop}' in "
+                    + "'data_properties' is not found in "
+                    + f"database '{data_source[0]:s}'!")
+        if not all(found_properties):
+            raise ValueError(
+                "Not all properties in 'data_properties' are found "
+                + f"in database '{data_source[0]:s}'!")
+
+        return assigned_properties
+
+    def get_unit_conversion(
+        self,
+        data_properties,
+        data_unit_properties,
+        source_unit_properties,
+    ) -> Dict[str, float]:
+        """
+        Assign source property to data property unit conversion factors.
+
+        Parameters
+        ----------
+        data_properties: List(str)
+            Subset of properties to load
+        data_unit_properties: dict
+            Dictionary from data properties (keys) to corresponding unit as a
+            string (item)
+        source_unit_properties: dict
+            Dictionary from source properties (keys) to corresponding unit as a
+            string (item)
+
+        Returns
+        -------
+        dict(str, str)
+            Assigned source to data property unit conversion factor
+
+        """
+
+        # Property match summary and unit conversion
+        if data_unit_properties is None or source_unit_properties is None:
+
+            # Set default conversion factor dictionary
+            unit_conversion = {}
+            for prop in data_properties.keys():
+                unit_conversion[prop] = 1.0
+
+        else:
+
+            # Check units of positions and properties
+            unit_conversion = {}
+            for prop in data_properties.keys():
+
+                if source_unit_properties.get(prop) is None:
+                    source_unit_property = None
+                else:
+                    source_unit_property = source_unit_properties.get(prop)
+                if data_unit_properties.get(prop) is None:
+                    data_unit_property = None
+                else:
+                    data_unit_property = data_unit_properties.get(prop)
+
+                unit_conversion[prop], _ = (
+                    utils.check_units(
+                        data_unit_property,
+                        source_unit_property)
+                    )
+
+        return unit_conversion
+
+    def print_property_summary(
+        self,
+        data_source,
+        assigned_properties,
+        unit_conversion,
+        data_unit_properties,
+        source_unit_properties,
+    ):
+        """
+        Print property match summary
+
+        Parameters
+        ----------
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file
+        assigned_properties: dict
+            Assigned data property label (key) to source label (item)
+        unit_conversion: dict
+            Assigned source to data property unit conversion factor
+        data_unit_properties: dict
+            Dictionary from data properties (keys) to corresponding unit as a
+            string (item)
+        source_unit_properties: dict
+            Dictionary from source properties (keys) to corresponding unit as a
+            string (item)
+
+        """
+
+        # Prepare header
+        message = (
+            "Property assignment from database "
+            + f"'{data_source[0]:s}'!\n"
+            + f" {'Load':4s} |"
+            + f" {'Property Label':<14s} |"
+            + f" {'Data Unit':<14s} |"
+            + f" {'Source Label':<14s} |"
+            + f" {'Source Unit':<14s} |"
+            + f" {'Conversion Fac.':<14s}\n"
+            + "-"*(7 + 17*5)
+            + "\n")
+
+        # Iterate over properties
+        for data_prop, source_prop in assigned_properties.items():
+
+            # Skip default properties
+            if data_prop in self.default_property_labels:
+                continue
+
+            # Check property labels
+            if source_unit_properties is None:
+                source_unit_property = "None"
+            elif (
+                source_unit_properties.get(data_prop) is None
+                and source_unit_properties.get(source_prop) is None
+            ):
+                source_unit_property = "None"
+            elif source_unit_properties.get(data_prop) is not None:
+                source_unit_property = source_unit_properties.get(data_prop)
+            elif source_unit_properties.get(source_prop) is not None:
+                source_unit_property = source_unit_properties.get(source_prop)
+            else:
+                source_unit_property = "None"
+
+            if (
+                data_unit_properties is None or
+                data_unit_properties.get(data_prop) is None
+            ):
+                data_unit_property = "None"
+            else:
+                data_unit_property = data_unit_properties.get(data_prop)
+
+            if (
+                data_prop in unit_conversion
+                or data_prop in self.default_property_labels
+                or data_prop in ['positions', 'charge']
+            ):
+                load_label = " x  "
+            else:
+                load_label = "    "
+
+            message += (
+                f" {load_label:4s} |"
+                + f" {data_prop:<14s} |"
+                + f" {data_unit_property:<14s} |"
+                + f" {source_prop:<14s} |"
+                + f" {source_unit_property:<14s} |"
+                + f" {unit_conversion[data_prop]:11.9e}\n"
+                )
+
+        # Print property information
+        self.logger.info(message)
+
+        return
 
     def collect_from_source(
         self,
@@ -1420,7 +1304,7 @@ class DataReader():
         atoms_properties['positions'] = (
             conversion['positions']*source['positions'])
         atoms_properties['cell'] = (
-            conversion['positions']*source['cell'])
+            conversion['positions']*self.convert_cell(source['cell']))
         atoms_properties['pbc'] = source['pbc']
         if 'charge' not in source.keys():
             atoms_properties['charge'] = 0.0
@@ -1434,6 +1318,83 @@ class DataReader():
                     conversion[prop]*source[item])
 
         return atoms_properties
+
+    def collect_from_source_list(
+        self,
+        source: Dict[str, List[Any]],
+        conversion: Dict[str, float],
+        load_properties: List[str],
+        property_labels: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """
+        Collect properties from complete data dictionary to property
+        dictionaries and apply unit conversion.
+
+        Parameters
+        ----------
+        source: dict
+            Database source dictionary
+        conversion: dict
+            Unit conversion factors dictionary.
+        load_properties: list(str)
+            Properties to load from source
+        property_labels: dict(str, str), optional, default None
+            List of additional source properties (key) to add from property
+            source label (item). If None, all properties in source are added.
+
+        Returns
+        -------
+        dict(str, any)
+            System property dictionary
+
+        """
+
+        # Initialize data list
+        all_atoms_properties = []
+
+        # Get Number of data entries and max atom number
+        Ndata = source['atoms_number'].shape[0]
+        max_atoms_number = source['atomic_numbers'].shape[1]
+
+        # Iterate over all data entries
+        for idx in range(Ndata):
+
+            # Atoms system data
+            atoms_properties = {}
+
+            # Fundamental properties
+            atoms_properties['atoms_number'] = source['atoms_number'][idx]
+            atoms_properties['atomic_numbers'] = (
+                source['atomic_numbers'][idx])
+            atoms_properties['positions'] = (
+                conversion['positions']*source['positions'][idx])
+            atoms_properties['cell'] = (
+                conversion['positions']*self.convert_cell(source['cell'][idx]))
+            atoms_properties['pbc'] = source['pbc'][idx]
+            if 'charge' not in source.keys():
+                atoms_properties['charge'] = 0.0
+            else:
+                atoms_properties['charge'] = source['charge'][idx]
+
+            # Collect properties
+            for prop, item in source.items():
+                if (
+                    prop in load_properties
+                    and item[idx].shape
+                    and source['atoms_number'][idx] != max_atoms_number
+                    and item[idx].shape[0] == max_atoms_number
+                    and np.all(item[idx][source['atoms_number'][idx]:] == 0.0)
+                ):
+                    atoms_properties[prop] = (
+                        conversion[prop]
+                        * item[idx][:source['atoms_number'][idx]])
+                elif prop in load_properties:
+                    atoms_properties[prop] = conversion[prop]*item[idx]
+
+            # Add atoms system data
+            all_atoms_properties.append(atoms_properties)
+
+        return all_atoms_properties
 
     def collect_from_atoms_source(
         self,
@@ -1479,7 +1440,7 @@ class DataReader():
         atoms_properties['positions'] = (
             conversion['positions']*atoms.get_positions())
         atoms_properties['cell'] = (
-            conversion['positions']*atoms.get_cell()[:])
+            conversion['positions']*self.convert_cell(atoms.get_cell()[:]))
         atoms_properties['pbc'] = atoms.get_pbc()
         if 'charge' in source:
             atoms_properties['charge'] = source['charge']
@@ -1543,7 +1504,7 @@ class DataReader():
         atoms_properties['positions'] = (
             conversion['positions']*atoms.get_positions())
         atoms_properties['cell'] = (
-            conversion['positions']*atoms.get_cell()[:])
+            conversion['positions']*self.convert_cell(atoms.get_cell()[:]))
         atoms_properties['pbc'] = atoms.get_pbc()
         if 'charge' in properties.parameters:
             atoms_properties['charge'] = (
@@ -1561,3 +1522,52 @@ class DataReader():
                     conversion[prop]*properties.results[prop])
 
         return atoms_properties
+
+    def convert_cell(
+        self,
+        cell,
+        shape_out: Tuple[int] = (3, 3),
+    ) -> np.ndarray:
+        """
+        Convert system cell information to 3x3 array
+
+        Parameters
+        ----------
+        cell: list(float)
+            Cell information in various shape
+        shape_out: tuple(int)
+            Returned cell shape
+
+        Returns
+        -------
+        np.ndarray
+            Cell information in requested shape
+
+        """
+
+        # Check input data type
+        if cell is None:
+            return np.zeros(shape_out, dtype=float)
+        else:
+            cell = np.array(cell, dtype=float)
+
+        # Check if requested shape is correct otherwise flatten array for
+        # further checks
+        if cell.shape == shape_out:
+            return cell
+        else:
+            cell = cell.reshape(-1)
+
+        # Check if data shape is flatten
+        shape_prod = np.prod(shape_out)
+        if cell.shape == (shape_prod,):
+            return cell.reshape(shape_out)
+
+        # Check if data is diagonalized
+        if len(shape_out) > 1 and np.diag(cell).shape == shape_out:
+            return np.diag(cell)
+
+        return SyntaxError(f"Invalid cell shape '{cell.shape:}'.")
+
+
+

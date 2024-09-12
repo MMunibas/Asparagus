@@ -8,11 +8,13 @@ import numpy as np
 from typing import Optional, List, Dict, Tuple, Union, Any
 
 import ase
-from ase.calculators.calculator import Calculator, FileIOCalculator, Parameters
+from ase.calculators.calculator import Calculator
 
 from .shell_ase import ShellCalculator, TagReplacement
 
-from .. import utils
+from asparagus import utils
+
+__all__ = ['SlurmCalculator']
 
 
 class SlurmCalculator(ShellCalculator):
@@ -78,10 +80,6 @@ class SlurmCalculator(ShellCalculator):
         Working directory in which to read and write files and
         perform calculations.
 
-    
-    Results
-    -------
-
     """
 
     # Default parameters dictionary for initialization
@@ -120,6 +118,7 @@ class SlurmCalculator(ShellCalculator):
     ):
         """
         Initialize Shell Calculator class.
+
         """
         
         # Valid result file formats

@@ -4,7 +4,7 @@ import torch
 
 from .base import DenseLayer, ResidualLayer
 
-from .. import utils
+from asparagus import utils
 
 __all__ = ['InteractionBlock', 'InteractionLayer', 'OutputBlock']
 
@@ -45,7 +45,7 @@ class InteractionBlock(torch.nn.Module):
         n_residual_features: int,
         activation_fn: Callable,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
     ):
         """
         Initialize PhysNet interaction block.
@@ -99,6 +99,7 @@ class InteractionBlock(torch.nn.Module):
         -------
         torch.Tensor(N_atoms, n_atombasis)
             Modified atom feature vectors
+
         """
 
         # Apply interaction layer
@@ -140,7 +141,7 @@ class InteractionLayer(torch.nn.Module):
         n_residual_interaction: int,
         activation_fn: Callable,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
     ):
 
         super(InteractionLayer, self).__init__()
@@ -307,7 +308,7 @@ class OutputBlock(torch.nn.Module):
         n_residual: int,
         activation_fn: Callable,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
     ):
 
         super(OutputBlock, self).__init__()

@@ -1,18 +1,14 @@
 import numpy as np
-import logging
-from typing import Optional, List, Dict, Tuple, Union, Any
+from typing import Optional, List, Dict, Callable, Tuple, Union, Any
 
 import ase
 import ase.calculators.calculator as ase_calc
-from ase.neighborlist import neighbor_list
 
 import torch
 
-from .. import utils
-from .. import settings
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import module
+from asparagus import utils
+from asparagus import settings
 
 __all__ = ['ASE_Calculator']
 
@@ -46,8 +42,8 @@ class ASE_Calculator(ase_calc.Calculator):
 
     def __init__(
         self,
-        model_calculator: Union[object, List[object]],
-        atoms: Optional[object] = None,
+        model_calculator: Union[Callable, List[Callable]],
+        atoms: Optional[ase.Atoms] = None,
         charge: Optional[float] = None,
         implemented_properties: Optional[List[str]] = None,
         label: Optional[str] = 'asparagus',
@@ -140,7 +136,7 @@ class ASE_Calculator(ase_calc.Calculator):
             cutoff = [model_cutoff]
         else:
             cutoff = [input_cutoff, model_cutoff]
-        self.neighbor_list = utils.TorchNeighborListRangeSeparated(
+        self.neighbor_list = module.TorchNeighborListRangeSeparated(
             cutoff,
             self.model_device,
             self.model_dtype)
@@ -169,8 +165,8 @@ class ASE_Calculator(ase_calc.Calculator):
 
     def set_atoms(
         self, 
-        atoms, 
-        initialize=False,
+        atoms: ase.Atoms, 
+        initialize: Optional[bool] = False,
     ):
         """
         Assign atoms object to calculator and prepare input.
@@ -551,7 +547,7 @@ class ASE_Calculator(ase_calc.Calculator):
         all_results: List[float],
         atoms_batch: Dict[str, torch.Tensor],
         prop: str,
-    ):
+    ) -> List[float]:
         """
         Resolve model prediction of multiple ensembles to a consistent shape.
         

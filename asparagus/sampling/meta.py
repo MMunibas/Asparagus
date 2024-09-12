@@ -12,23 +12,21 @@ from ase.md.langevin import Langevin
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase import units
 
-from .. import settings
-from .. import utils
-from .. import sample
+from asparagus import sampling
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import settings
+from asparagus import utils
 
 __all__ = ['MetaSampler']
 
 
-class MetaSampler(sample.Sampler):
+class MetaSampler(sampling.Sampler):
     """
     Meta(-Dynamic) Sampler class
 
     Parameters
     ----------
-    config: (str, dict, object)
+    config: (str, dict, settings.Configuration)
         Either the path to json file (str), dictionary (dict) or
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
@@ -81,14 +79,14 @@ class MetaSampler(sample.Sampler):
         Temperature for initial atom velocities according to a Maxwell-
         Boltzmann distribution.
 
-    Returns
-    -------
-    object
-        Meta(-Dynamics) Sampler class object
     """
 
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
+
     # Default arguments for sample module
-    sample.Sampler._default_args.update({
+    sampling.Sampler._default_args.update({
         'meta_cv':                      [],
         'meta_gaussian_height':         0.05,
         'meta_gaussian_widths':         0.1,
@@ -106,7 +104,7 @@ class MetaSampler(sample.Sampler):
         })
     
     # Expected data types of input variables
-    sample.Sampler._dtypes_args.update({
+    sampling.Sampler._dtypes_args.update({
         'meta_cv':                      [utils.is_array_like],
         'meta_gaussian_height':         [utils.is_numeric],
         'meta_gaussian_width':          [
@@ -173,8 +171,8 @@ class MetaSampler(sample.Sampler):
         config_update = config.set(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=utils.get_default_args(self, sample),
-            check_dtype=utils.get_dtype_args(self, sample)
+            check_default=utils.get_default_args(self, sampling),
+            check_dtype=utils.get_dtype_args(self, sampling)
         )
 
         # Get number of collective variables
@@ -208,7 +206,7 @@ class MetaSampler(sample.Sampler):
             self.meta_gaussian_widths = [self.meta_gaussian_widths]*Ncv
         elif Ncv > len(self.meta_gaussian_widths):
             raise ValueError(
-                f"Unsufficient number of gaussian width defined "
+                f"Insufficient number of Gaussian width defined "
                 + f"({len(self.meta_gaussian_widths):d}) for the number "
                 + f"of collective variables with {Ncv:d}!")
         
@@ -336,6 +334,8 @@ class MetaSampler(sample.Sampler):
             for thread in threads:
                 thread.join()
 
+        return
+
     def run_system(
         self, 
         sample_systems_queue: queue.Queue,
@@ -432,17 +432,17 @@ class MetaSampler(sample.Sampler):
                     ithread=ithread)
             
             # Print sampling info
-            msg = f"Sampling method '{self.sample_tag:s}' complete for system "
-            msg += f"of index {index:d} from '{source}!'\n"
+            message = (
+                f"Sampling method '{self.sample_tag:s}' complete for system "
+                + f"of index {index:d} from '{source}!'\n")
             if Nsample == 0:
-                msg += f"No samples written to "
+                message += f"No samples written to "
             if Nsample == 1:
-                msg += f"{Nsample:d} sample written to "
+                message += f"{Nsample:d} sample written to "
             else:
-                msg += f"{Nsample:d} samples written to "
-            msg += f"'{self.sample_data_file:s}'.\n"
-            
-            logger.info(f"INFO:\n{msg:s}")
+                message += f"{Nsample:d} samples written to "
+            message += f"'{self.sample_data_file:s}'."
+            self.logger.info(message)
             
         return
             
@@ -466,7 +466,7 @@ class MetaSampler(sample.Sampler):
         trajectory_file: Optional[str] = None,
         Nsamples: Optional[List[int]] = None,
         ithread: Optional[int] = None,
-    ):
+    ) -> int:
         """
         This does a Meta Dynamics simulation using a Meta constraint with a
         Langevin thermostat and verlocity Verlet algorithm for an NVT ensemble.
@@ -517,6 +517,7 @@ class MetaSampler(sample.Sampler):
         ------
         int
             Number of sampled systems to database
+
         """
 
         # Check input parameters
@@ -647,17 +648,22 @@ class MetaConstraint:
         [a,b,c,d] dihedral angle variable between angle a->b->c->d
     widths : array
         Width if Gaussian distribution for cv i
-    heights : array
+    heights : float
         Maximum height of the artificial Gaussian potential
+    logfile: str
+        Log file path
+    logwrite: int
+        Interval of writing cv coordinates to the log file
+
     """
     
     def __init__(
         self, 
-        cv, 
-        widths, 
-        height, 
-        logfile, 
-        logwrite,
+        cv: List[float],
+        widths: List[float],
+        height: float,
+        logfile: str,
+        logwrite: int,
     ):
         """
         Initialize meta-dynamics constraint class
@@ -681,7 +687,10 @@ class MetaConstraint:
         
         self.removed_dof = 0
                 
-    def get_removed_dof(self, atoms):
+    def get_removed_dof(
+        self,
+        atoms: ase.Atoms,
+    ):
         return 0
 
     def todict(self):
@@ -698,7 +707,11 @@ class MetaConstraint:
     def adjust_momenta(self, atoms, momenta):
         pass
     
-    def adjust_forces(self, atoms, forces):
+    def adjust_forces(
+        self,
+        atoms: ase.Atoms,
+        forces: np.ndarray,
+    ):
         """
         Adjust the forces related to artificial Gaussian potential
 
@@ -837,8 +850,13 @@ class MetaConstraint:
         
         return
         
-    def adjust_potential_energy(self, atoms):
-        """Returns the artificial Gaussian potential"""
+    def adjust_potential_energy(
+        self,
+        atoms: ase.Atoms,
+    ):
+        """
+        Returns the artificial Gaussian potential
+        """
         
         # Get collective variable i
         cv = np.zeros(self.Ncv, dtype=float)
@@ -904,7 +922,10 @@ class MetaConstraint:
         
         return potential
     
-    def add_to_cv(self, atoms):
+    def add_to_cv(
+        self,
+        atoms: ase.Atoms
+    ):
         
         # Get collective variable i
         if self.last_cv is None:
@@ -940,11 +961,11 @@ class MetaDynamicLogger:
     Store defined amount of images of a trajectory and save the images 
     within a defined time window around a point when an action happened.
 
-    Parameters:
+    Parameters
     ----------
-
     metadynamic: object
         Metadynamic constraint class
+
     """
     
     def __init__(self, metadynamic, system):

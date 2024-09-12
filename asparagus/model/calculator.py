@@ -1,11 +1,11 @@
 import sys
-from typing import Optional, Union
+from typing import Optional, Union, Any
 
 import torch
 
-from .. import model
-from .. import settings
-from .. import utils
+from asparagus import model
+from asparagus import settings
+from asparagus import utils
 
 __all__ = ['get_model_calculator']
 
@@ -46,6 +46,7 @@ def _get_model_calculator(
     -------
     torch.nn.Module
         Calculator model object for property prediction
+
     """
     
     # Check input parameter
@@ -66,9 +67,9 @@ def get_model_calculator(
     config: object,
     model_calculator: Optional[torch.nn.Module] = None,
     model_type: Optional[str] = None,
-    model_checkpoint: Optional[Union[int, str]] = 'best',
+    model_checkpoint: Optional[Union[int, str]] = None,
     **kwargs,
-) -> (torch.nn.Module, bool):
+) -> (torch.nn.Module, Any):
     """
     Return calculator model class object and restart flag.
 
@@ -81,9 +82,9 @@ def get_model_calculator(
     model_type: str, optional, default None
         Model calculator type to initialize, e.g. 'PhysNet'. The default
         model is defined in settings.default._default_calculator_model.
-    model_checkpoint: (str, int), optional, default 'best'
-        If None, load checkpoint file with best loss function value.
-        If string 'best' or 'last', load respectively the best checkpoint file
+    model_checkpoint: (str, int), optional, default None
+        If None or 'best', load checkpoint file with best loss function value.
+        If string is 'last', load respectively the best checkpoint file
         (as with None) or the with the highest epoch number.
         If integer, load the checkpoint file of the respective epoch number.
     
@@ -92,10 +93,10 @@ def get_model_calculator(
     torch.nn.Module
         Asparagus calculator model object
     Any
-        Torch module checkpoint file
+        Model parameter checkpoint object
 
     """
-    
+
     # Initialize model calculator if not given
     if model_calculator is None:
     
@@ -119,12 +120,17 @@ def get_model_calculator(
             model_calculator.get_info(), 
             config_from=utils.get_function_location())
 
-    # Initialize checkpoint file manager and load best model
+    # Initialize checkpoint file manager and load best or specific model 
+    # parameter checkpoint file
     filemanager = model.FileManager(config, **kwargs)
     
     # Get checkpoint file
-    checkpoint = filemanager.load_checkpoint(model_checkpoint)
+    if model_checkpoint is None and config.get('model_checkpoint') is None:
+        model_checkpoint = 'best'
+    elif model_checkpoint is None:
+        model_checkpoint = config.get('model_checkpoint')
+    checkpoint, checkpoint_file = filemanager.load_checkpoint(
+        model_checkpoint,
+        verbose=True)
 
-    return model_calculator, checkpoint
-    
-    
+    return model_calculator, checkpoint, checkpoint_file

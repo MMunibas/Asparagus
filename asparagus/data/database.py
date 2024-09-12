@@ -1,17 +1,16 @@
 import os
 import logging
-from typing import Optional, Union, List, Dict, Tuple, Callable, Any
+from typing import Optional, Union, List, Tuple, Dict, Callable, Any
 
 from ase.parallel import parallel_function
 
 import torch
 
-from .. import data
-from .. import utils
+from asparagus import data
+from asparagus import utils
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-torch.multiprocessing.set_sharing_strategy('file_system')
+torch.multiprocessing.set_sharing_strategy('file_descriptor')
+#torch.multiprocessing.set_sharing_strategy('file_system')
 
 __all__ = ['DataBase', 'connect', 'get_metadata']
 
@@ -83,29 +82,36 @@ def get_connect(
 
     return
 
+
 def get_metadata(
-    data_file: str,
-    data_file_format: Optional[str] = None,
+    data_file: Tuple[str, str],
 ) -> Dict[str, Any]:
     """
     Read metadata from a database file.
 
     Parameters
     ----------
-    data_file: str
-        Reference Asparagus database file path
-    data_file_format: str, optional, default 'data_file' prefix
-        Reference Asparagus dataset file format
+    data_file: (str, tuple(str)), optional, default ('data.db', 'db.sql')
+        Either a single string of the reference Asparagus database file name
+        or a tuple of the filename first and the file format label second.
 
     Returns
     -------
     dict
         Asparagus dataset metadata
+
     """
 
+    # Assign data file and format
+    if utils.is_string(data_file):
+        data_file_format = data.check_data_format(
+            data_file, is_source_format=False)
+    else:
+        data_file_format = data_file[1]
+        data_file = data_file[0]
+
+    # Read metadata
     if os.path.isfile(data_file):
-        if data_file_format is None:
-            data_file_format = data_file.split('.')[-1]
         with connect(data_file, data_file_format, mode='r') as db:
             metadata = db.get_metadata()
     else:
@@ -157,6 +163,20 @@ class DataBase:
         """
 
         return self._set_metadata(metadata)
+
+    def __len__(self):
+        return self.count()
+
+    def __delitem__(self, rwo_id):
+        self._delete([rwo_id])
+
+    def __getitem__(self, selection):
+        return self.get(selection)
+
+    def __exit__(self, exc_type, exc_value, tb):
+        if exc_type is not None:
+            raise exc_type
+        return
 
     def _set_metadata(self, metadata):
         raise NotImplementedError
@@ -245,12 +265,6 @@ class DataBase:
     def _update(self, row_id, properties):
         return 1
 
-    def __delitem__(self, rwo_id):
-        self._delete([rwo_id])
-
-    def __getitem__(self, selection):
-        return self.get(selection)
-
     def get(self, selection=None, **kwargs):
         """
         Select a single or multiple rows and return it as a dictionary.
@@ -265,7 +279,7 @@ class DataBase:
         dict
             Returns entry of the selection.
         """
-        
+
         if utils.is_integer(selection):
             selection = [selection]
         return self._get(selection, **kwargs)
@@ -281,9 +295,6 @@ class DataBase:
         
     def _count(self, selection, **kwargs):
         raise NotImplementedError
-
-    def __len__(self):
-        return self.count()
 
     def delete(self, row_ids):
         """

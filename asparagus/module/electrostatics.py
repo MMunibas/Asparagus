@@ -3,9 +3,9 @@ from typing import Optional, List, Dict, Tuple, Union, Any
 
 import torch
 
-from .. import layer
-from .. import utils
-from .. import settings
+from asparagus import layer
+from asparagus import utils
+from asparagus import settings
 
 # ======================================
 #  Point Charge Electrostatics
@@ -28,7 +28,8 @@ class PC_shielded_electrostatics(torch.nn.Module):
     dtype: dtype object
         Model variables data type
     unit_properties: dict, optional, default None
-        Dictionary of unit properties.
+        Dictionary with the units of the model properties to initialize correct
+        conversion factors.
     switch_fn: (str, callable), optional, default None
         Switch function for the short range cutoff.
     **kwargs
@@ -41,7 +42,7 @@ class PC_shielded_electrostatics(torch.nn.Module):
         cutoff: float,
         cutoff_short_range: float,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         unit_properties: Optional[Dict[str, str]] = None,
         switch_fn: Optional[Union[str, object]] = 'Poly6',
         **kwargs
@@ -63,7 +64,7 @@ class PC_shielded_electrostatics(torch.nn.Module):
         self.dtype = dtype
         self.device = device
 
-        # Assign switch_fn
+        # Assign switch function
         switch_class = layer.get_cutoff_fn(switch_fn)
         self.switch_fn = switch_class(
             self.cutoff_short_range, device=self.device, dtype=self.dtype)
@@ -87,7 +88,19 @@ class PC_shielded_electrostatics(torch.nn.Module):
         self,
         unit_properties: Dict[str, str],
     ):
+        """
+        Set unit conversion factors for compatibility between requested
+        property units and applied property units (for physical constants)
+        of the module.
         
+        Parameters
+        ----------
+        unit_properties: dict
+            Dictionary with the units of the model properties to initialize 
+            correct conversion factors.
+        
+        """
+
         # Get conversion factors
         if unit_properties is None:
             unit_energy = settings._default_units.get('energy')

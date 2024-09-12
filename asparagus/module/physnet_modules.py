@@ -1,20 +1,18 @@
 #from memory_profiler import profile
 
 import logging
-import numpy as np
 from typing import Optional, Union, List, Dict, Callable, Any
+
+import numpy as np
 
 import torch
 
-from .. import module
-from .. import layer
-from .. import settings
-from .. import utils
+from asparagus import module
+from asparagus import layer
+from asparagus import settings
+from asparagus import utils
 
-from ..layer import physnet_layers
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus.layer import layers_physnet
 
 __all__ = ['Input_PhysNet', 'Graph_PhysNet', 'Output_PhysNet']
 
@@ -72,7 +70,6 @@ class Input_PhysNet(torch.nn.Module):
         'input_rbf_center_end':         None,
         'input_rbf_trainable':          True,
         'input_n_maxatom':              94,
-        #'input_atom_features_range':    np.sqrt(3),
         }
 
     # Expected data types of input variables
@@ -86,7 +83,6 @@ class Input_PhysNet(torch.nn.Module):
         'input_rbf_center_end':         [utils.is_None, utils.is_numeric],
         'input_rbf_trainable':          [utils.is_bool],
         'input_n_maxatom':              [utils.is_integer],
-        #'input_atom_features_range':    [utils.is_numeric],
         }
 
     def __init__(
@@ -103,7 +99,7 @@ class Input_PhysNet(torch.nn.Module):
         input_rbf_trainable: Optional[bool] = None,
         input_n_maxatom: Optional[int] = None,
         device: Optional[str] = None,
-        dtype: Optional[object] = None,
+        dtype: Optional['device'] = None,
         **kwargs
     ):
         """
@@ -334,7 +330,7 @@ class Graph_PhysNet(torch.nn.Module):
         graph_n_residual_features: Optional[int] = None,
         graph_activation_fn: Optional[Union[str, object]] = None,
         device: Optional[str] = None,
-        dtype: Optional[object] = None,
+        dtype: Optional['device'] = None,
         **kwargs
     ):
         """
@@ -383,7 +379,7 @@ class Graph_PhysNet(torch.nn.Module):
 
         # Initialize message passing blocks
         self.interaction_blocks = torch.nn.ModuleList([
-            physnet_layers.InteractionBlock(
+            layers_physnet.InteractionBlock(
                 self.n_atombasis, 
                 self.n_radialbasis, 
                 self.graph_n_residual_interaction,
@@ -485,7 +481,7 @@ class Output_PhysNet(torch.nn.Module):
         to output results.
     output_activation_fn: (str, callable), optional, default 'shifted_softplus'
         Residual layer activation function.
-    output_scaling_parameter: dictionary, optional, default None
+    output_property_scaling: dictionary, optional, default None
         Property average and standard deviation for the use as scaling factor 
         (standard deviation) and shift term (average) parameter pairs
         for each property.
@@ -499,7 +495,7 @@ class Output_PhysNet(torch.nn.Module):
         'output_properties':            None,
         'output_n_residual':            1,
         'output_activation_fn':         'shifted_softplus',
-        'output_scaling_parameter':     None,
+        'output_property_scaling':      None,
         }
 
     # Expected data types of input variables
@@ -507,7 +503,7 @@ class Output_PhysNet(torch.nn.Module):
         'output_properties':            [utils.is_string_array, utils.is_None],
         'output_n_residual':            [utils.is_integer],
         'output_activation_fn':         [utils.is_string, utils.is_callable],
-        'output_scaling_parameter':     [utils.is_dictionary],
+        'output_property_scaling':      [utils.is_dictionary, utils.is_None],
         }
     
     # Property exclusion lists for properties (keys) derived from other 
@@ -518,7 +514,7 @@ class Output_PhysNet(torch.nn.Module):
         'hessian': [],
         'dipole': ['atomic_charges']}
     
-    # Output module specially handled properties
+    # Output module properties that are handled specially
     _property_special = ['energy', 'atomic_energies', 'atomic_charges']
     
     def __init__(
@@ -528,9 +524,10 @@ class Output_PhysNet(torch.nn.Module):
         output_properties: Optional[List[str]] = None,
         output_n_residual: Optional[int] = None,
         output_activation_fn: Optional[Union[str, object]] = None,
-        output_scaling_parameter: Optional[Dict[str, List[float]]] = None,
+        output_property_scaling: Optional[
+            Dict[str, Union[List[float], Dict[int, List[float]]]]] = None,
         device: Optional[str] = None,
-        dtype: Optional[object] = None,
+        dtype: Optional['device'] = None,
         **kwargs
     ):
         """
@@ -631,7 +628,7 @@ class Output_PhysNet(torch.nn.Module):
 
             # PhysNet energy and atom charges output block
             output_block = torch.nn.ModuleList([
-                physnet_layers.OutputBlock(
+                layers_physnet.OutputBlock(
                     n_atombasis,
                     self.output_n_property['atomic_energies_charges'],
                     self.output_n_residual,
@@ -663,7 +660,7 @@ class Output_PhysNet(torch.nn.Module):
 
             # PhysNet energy only output block
             output_block = torch.nn.ModuleList([
-                physnet_layers.OutputBlock(
+                layers_physnet.OutputBlock(
                     n_atombasis,
                     self.output_n_property[prop],
                     self.output_n_residual,
@@ -696,7 +693,7 @@ class Output_PhysNet(torch.nn.Module):
             # Initialize output block
             self.output_n_property[prop] = 1
             output_block = torch.nn.ModuleList([
-                layer.physnet_layers.OutputBlock(
+                layers_physnet.OutputBlock(
                     n_atombasis,
                     self.output_n_property[prop],
                     self.output_n_residual,
@@ -709,9 +706,12 @@ class Output_PhysNet(torch.nn.Module):
             # Assign output block to dictionary
             self.output_property_block[prop] = output_block
 
-        # Initialize property scaling dictionary and atomic energy shift
-        self.set_property_scaling(self.output_scaling_parameter)
-        
+        # Initialize property and atomic properties scaling dictionary
+        self.output_scaling = torch.nn.ParameterDict()
+
+        # Assign property and atomic properties scaling parameters
+        self.set_property_scaling(self.output_property_scaling)
+
         return
 
     def __str__(self):
@@ -731,102 +731,129 @@ class Output_PhysNet(torch.nn.Module):
 
     def set_property_scaling(
         self,
-        scaling_parameter: Dict[str, List[float]],
+        scaling_parameters:
+            Dict[str, Union[List[float], Dict[int, List[float]]]],
+        trainable: Optional[bool] = True,
+        set_shift_term: Optional[bool] = True,
+        set_scaling_factor: Optional[bool] = True,
     ):
         """
-        Update output property scaling factor and shift term dictionary.
-        
+        Update output atomic property scaling factor and shift terms.
+
         Parameters
         ----------
-        scaling_parameter: dict(str, torch.Tensor(2))
-            Property average and standard deviation for the use as
-            scaling factor (standard deviation) and shift term (average) 
-            parameter pairs (item) for each property (key).
+        scaling_parameters: dict(str, (list(float), dict(int, float))
+            Dictionary of shift term and scaling factor for a model property
+            ({'property': [shift, scaling]}) or shift term and scaling factor
+            of a model property for each atom type
+            ({'atomic property': {'atomic number': [shift, scaling]}}).
+        trainable: bool, optional, default True
+            If True the scaling factor and shift term parameters are trainable.
+        set_shift_term: bool, optional, default True
+            If True, set or update the shift term. Else, keep previous
+            value.
+        set_scaling_factor: bool, optional, default True
+            If True, set or update the scaling factor. Else, keep previous
+            value.
 
         """
 
         # Set scaling factor and shifts for output properties
-        output_scaling = {}
         for prop in self.output_properties:
 
-            # If property scaling input is missing, initialize default
+            # Initialize or get output property scaling parameter list
+            if self.output_scaling.get(prop) is None:
+                if 'atomic' in prop:
+                    prop_scaling = np.array(
+                        [[0.0, 1.0] for _ in range(self.n_maxatom + 1)],
+                        dtype=float)
+                else:
+                    prop_scaling = np.array([0.0, 1.0], dtype=float)
+            else:
+                prop_scaling = (
+                    self.output_scaling[prop].detach().cpu().numpy())
+
+            # Assign scaling factor and shift
             if (
-                scaling_parameter is None
-                or scaling_parameter.get(prop) is None
+                scaling_parameters is not None
+                and scaling_parameters.get(prop) is not None
             ):
-            
-                output_scaling[prop] = torch.nn.Parameter(
-                    torch.tensor(
-                        [[1.0, 0.0] for _ in range(self.n_maxatom + 1)],
-                        device=self.device, 
-                        dtype=self.dtype)
-                    )
 
+                if utils.is_dictionary(scaling_parameters.get(prop)):
+
+                    # Iterate over atom type specific scaling factor and shifts
+                    for ai, pars in scaling_parameters.get(prop).items():
+                    
+                        if set_shift_term:
+                            prop_scaling[ai, 0] = pars[0]
+                        if set_scaling_factor:
+                            prop_scaling[ai, 1] = pars[1]
+
+                else:
+
+                    pars = scaling_parameters.get(prop)
+                    if set_shift_term:
+                        prop_scaling[0] = pars[0]
+                    if set_scaling_factor:
+                        prop_scaling[1] = pars[1]
+
+            # Add list to property scaling dictionary
+            prop_scaling = torch.tensor(
+                prop_scaling,
+                device=self.device,
+                dtype=self.dtype)
+            if trainable:
+                if self.output_scaling.get(prop) is None:
+                    self.output_scaling[prop] = (
+                        torch.nn.Parameter(prop_scaling))
+                else:
+                    with torch.no_grad():
+                        self.output_scaling[prop][:] = prop_scaling
             else:
-                
-                # Assign scaling factor and shift
-                (shift, scale) = scaling_parameter.get(prop)
-                output_scaling[prop] = torch.nn.Parameter(
-                    torch.tensor(
-                        [[scale, shift] for _ in range(self.n_maxatom + 1)],
-                        device=self.device, 
-                        dtype=self.dtype)
-                    )
-
-        # Convert model scaling to torch dictionary
-        self.output_scaling = torch.nn.ParameterDict(output_scaling)
+                if self.output_scaling.get(prop) is None:
+                    self.output_scaling[prop] = (
+                        self.register_buffer(
+                            f"output_scaling:{prop:s}",
+                            prop_scaling)
+                        )
+                else:
+                    self.output_scaling[prop][:] = prop_scaling
 
         return
 
-    def set_atomic_energies_shift(
+    def get_property_scaling(
         self,
-        atomic_energies_shifts: Dict[Union[int, str], float],
-    ):
+    ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
         """
-        Set atom type related atomic energies shift terms
-        
-        Parameters
-        ----------
-        atomic_energies_shifts: dict(str, torch.Tensor(1))
-            Atom type related atomic energies shift for core electron energy
-            contribution.
+        Get atomic property scaling factor and shift terms.
+
+        Returns
+        -------
+        dict(str, (list(float), dict(int, float))
+            Dictionary of shift term and scaling factor for a model property
+            ({'property': [shift, scaling]}) or shift term and scaling factor
+            of a model property for each atom type
+            ({'atomic property': {'atomic number': [shift, scaling]}}).
 
         """
 
-        # Check atomic energies shift input
-        if atomic_energies_shifts is None:
-            return
+        # Get scaling factor and shifts for output properties
+        scaling_parameters = {}
+        for prop in self.output_properties:
 
-        # Set atomic energies
-        for atom_type, shift in atomic_energies_shifts.items():
-            
-            # Check atom type and energy shift definition
-            if utils.is_string(atom_type):
-                atomic_number = utils.data.atomic_numbers.get(
-                    atom_type.lower())
-                if atomic_number is None:
-                    raise SyntaxError(
-                        f"Atom type symbol '{atom_type:s}' is not known "
-                        + "(comparison is not case sensitive)!")
-            elif utils.is_numeric(atom_type):
-                atomic_number = int(atom_type)
+            # Get output property scaling
+            prop_scaling = (
+                self.output_scaling[prop].detach().cpu().numpy())
+
+            # Check for atom or system resolved scaling
+            if prop_scaling.ndim == 1:
+                scaling_parameters[prop] = prop_scaling
             else:
-                raise SyntaxError(
-                    f"Atom type symbol data type '{type(atom_type):s}' "
-                    + "is not valid! Define either as atomic number (int) or "
-                    + "atom symbol (str).")
-            
-            if not utils.is_numeric(shift):
-                raise SyntaxError(
-                    f"Atom type energy shift type '{type(shift):s}' "
-                    + "is not valid and must be numeric!")
-            
-            # Set atomic energy shift
-            with torch.no_grad():
-                self.output_scaling['atomic_energies'][atomic_number][1] = (
-                    shift)
+                scaling_parameters[prop] = {}
+                for ai, pars in enumerate(prop_scaling):
+                    scaling_parameters[prop][ai] = pars
 
-        return
+        return scaling_parameters
 
     def forward(
         self,
@@ -918,9 +945,12 @@ class Output_PhysNet(torch.nn.Module):
                     output_prediction['atomic_energies_charges'][:, 0],
                     output_prediction['atomic_energies_charges'][:, 1])
 
-        # Apply property scaling
+        # Apply property and atomic properties scaling
         for prop, scaling in self.output_scaling.items():
-            (scale, shift) = scaling[atomic_numbers].T
+            if scaling.dim() == 1:
+                (shift, scale) = scaling
+            else:
+                (shift, scale) = scaling[atomic_numbers].T
             output_prediction[prop] = (
                 output_prediction[prop]*scale + shift)
 

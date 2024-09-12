@@ -1,37 +1,38 @@
 import os
 import json
 import logging
-from typing import Optional, List, Dict, Tuple, Union, Callable, Iterator, Any
+from typing import Optional, Union, List, Dict, Iterator, Any
 
-from .. import utils
-from .. import settings
+from asparagus import utils
+from asparagus import settings
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+__all__ = ['get_config', 'Configuration']
 
 # ======================================
 # Configuration Functions
 # ======================================
 
+
 def get_config(
-    config: Optional[Union[str, dict, object]] = None,
+    config: Optional[
+        Union[str, Dict[str, Any], 'Configuration']] = None,
     config_file: Optional[str] = None,
-    config_from: Optional[Union[str, object]] = None,
+    config_from: Optional[Union[str, 'Configuration']] = None,
     **kwargs,
-) -> Callable:
+) -> 'Configuration':
     """
     Initialize Configuration class object. If 'config' input is already
     a class object, return itself.
 
     Parameters
     ----------
-    config: (str, dict, object), optional, default None
+    config: (str, dict, Configuration), optional, default None
         Either the path to json file (str), dictionary (dict) or
         configuration object of the same class (object) containing
         global model parameters
     config_file: str, optional, default see settings.default['config_file']
         Store global parameter configuration in json file of given path.
-    config_from: (object, str), optional, default None
+    config_from: (str, Configuration), optional, default None
         Location, defined as class instance or string, from where the new
         configuration parameter dictionary comes from.
     kwargs: dict, optional, default {}
@@ -40,7 +41,7 @@ def get_config(
 
     Returns
     -------
-    Callable
+    Configuration
         Configuration parameter object
 
     """
@@ -50,7 +51,7 @@ def get_config(
 
         # If config file is defined - update config file path
         config.set_config_file = (config_file)
-        
+
         # Update configuration with keyword arguments
         config.update(
             kwargs,
@@ -59,19 +60,16 @@ def get_config(
         return config
 
     # Otherwise initialize Configuration class object
-    else:
-
-        return Configuration(
-            config=config,
-            config_file=config_file,
-            config_from=config_from,
-            **kwargs)
-
-    return
+    return Configuration(
+        config=config,
+        config_file=config_file,
+        config_from=config_from,
+        **kwargs)
 
 # ======================================
 # Configuration Class
 # ======================================
+
 
 class Configuration():
     """
@@ -85,24 +83,24 @@ class Configuration():
         global model parameters
     config_file: str, optional, default see settings.default['config_file']
         Store global parameter configuration in json file of given path.
-    config_from: (object, str), optional, default None
+    config_from: (str, Configuration), optional, default None
         Location, defined as class instance or string, from where the new
         configuration parameter dictionary comes from.
     kwargs: dict, optional, default {}
         Keyword arguments for configuration parameter which are added to
         'config' or overwrite 'config' content.
 
-    Returns
-    -------
-    Callable
-        Configuration parameter object
     """
+
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
 
     def __init__(
         self,
         config: Optional[Union[str, dict]] = None,
         config_file: Optional[str] = None,
-        config_from: Optional[Union[str, object]] = None,
+        config_from: Optional[Union[str, 'Configuration']] = None,
         **kwargs,
     ):
         """
@@ -145,7 +143,7 @@ class Configuration():
                 raise SyntaxError(
                     "Config input 'config' is neither a dictionary nor a "
                     + "string of a  valid file path!")
-        # Case 4: Both are defined - Update config dict from config file with 
+        # Case 4: Both are defined - Update config dict from config file with
         # config input
         else:
             # Read config dict from file path and assign as self.config_dict
@@ -167,9 +165,9 @@ class Configuration():
                 raise SyntaxError(
                     "Config input 'config' is neither a dictionary nor a "
                     + "string of a  valid file path!")
-        # In all cases, config_dict and config_file are class variables and 
+        # In all cases, config_dict and config_file are class variables and
         # defined as dictionary and string.
-        
+
         # Set config file path to dictionary
         self.set_config_file(self.config_file)
 
@@ -184,7 +182,7 @@ class Configuration():
                 kwargs,
                 config_from=config_from,
                 )
-        
+
         # Save current configuration dictionary to file
         self.dump()
 
@@ -192,43 +190,44 @@ class Configuration():
         self.default_args = settings._default_args
         self.dtypes_args = settings._dtypes_args
 
-    def __str__(self):
+    def __str__(self) -> str:
         msg = f"Config file in '{self.config_file:s}':\n"
         for arg, item in self.config_dict.items():
             msg += f"  '{arg:s}': {str(item):s}\n"
-        return msg 
+        return msg
 
-    def __getitem__(self, args):
+    def __getitem__(self, args: str) -> Any:
         return self.config_dict.get(args)
 
-    def __setitem__(self, arg, item):
+    def __setitem__(self, arg: str, item: Any):
         self.config_dict[arg] = item
         self.dump()
+        return
 
-    def __contains__(self, arg):
+    def __contains__(self, arg: str) -> bool:
         return arg in self.config_dict.keys()
 
-    def __call__(self, args):
+    def __call__(self, args: str) -> Any:
         return self.config_dict.get(args)
 
-    def items(self):
+    def items(self) -> (str, Any):
         for key, item in self.config_dict.items():
             yield key, item
 
-    def get(self, args):
+    def get(self, args: Union[str, List[str]]) -> Union[Any, List[Any]]:
         if utils.is_array_like(args):
             return [self.config_dict.get(arg) for arg in args]
         else:
             return self.config_dict.get(args)
 
-    def keys(self):
+    def keys(self) -> List[str]:
         return self.config_dict.keys()
 
     def set_config_file(
         self,
         config_file: str,
     ):
-        
+
         # Check input
         if utils.is_string(config_file):
             self.config_file = config_file
@@ -236,25 +235,25 @@ class Configuration():
             raise SyntaxError(
                 "Config input 'config_file' is not a string of "
                 + "a valid file path!")
-        
+
         # Set config file path to dictionary
         if self.config_dict.get('config_file') is None:
             self.config_dict['config_file'] = self.config_file
-            logger.info(
-                "INFO:\nConfiguration file path set to "
-                + f"'{self.config_file:s}'!\n")
+            self.logger.info(
+                "Configuration file path set to "
+                + f"'{self.config_file:s}'!")
         else:
             if self.config_dict.get('config_file') != self.config_file:
-                logger.info(
-                    "INFO:\nConfiguration file path will be changed from "
+                self.logger.info(
+                    "Configuration file path will be changed from "
                     + f"'{self.config_dict.get('config_file'):s}' to "
-                    + f"'{self.config_file:s}'!\n")
+                    + f"'{self.config_file:s}'!")
                 self.config_dict['config_file'] = self.config_file
-        
+
         return
-    
+
     def read(
-        self, 
+        self,
         config_file: str,
     ) -> Dict[str, Any]:
 
@@ -265,7 +264,7 @@ class Configuration():
         else:
             config_dict = {}
 
-        # Check for convertible parameter keys and convert 
+        # Check for convertible parameter keys and convert
         for key, item in config_dict.items():
             if self.is_convertible(key):
                 config_dict[key] = self.convert(key, item, 'read')
@@ -318,7 +317,7 @@ class Configuration():
 
         # Return if update dictionary is empty
         if not len(config_new):
-            logger.info("INFO:\nEmpty update configuration dictionary!\n")
+            self.logger.info("Empty update configuration dictionary!")
             return
 
         # Show update information
@@ -330,7 +329,7 @@ class Configuration():
             msg += "  (overwrite conflicts)\n"
         else:
             msg += "  (ignore conflicts)\n"
-        
+
         # Iterate over new configuration dictionary
         n_all, n_add, n_equal, n_overwrite = 0, 0, 0, 0
         for key, item in config_new.items():
@@ -346,7 +345,7 @@ class Configuration():
 
             # For conflicts, check for changed parameter
             if conflict:
-                equal = str(item) == str( self.config_dict[key])
+                equal = str(item) == str(self.config_dict[key])
                 if equal:
                     n_equal += 1
 
@@ -380,11 +379,11 @@ class Configuration():
 
         # Add numbers
         msg += (
-            f"{n_all:d} new parameter, {n_add:d} added, "
-            + f"{n_equal:d} equal, {n_overwrite:d} overwritten\n")
+            f"{n_all:d} new parameter: {n_add:d} added, "
+            + f"{n_equal:d} equal, {n_overwrite:d} overwritten")
         # Show additional information output
         if verbose:
-            logger.info("INFO:\n" + msg)
+            self.logger.info(msg)
 
         # Store changes in file
         self.dump()
@@ -393,7 +392,7 @@ class Configuration():
 
     def dump(
         self,
-        config_file: Optional[str] = None
+        config_file: Optional[str] = None,
     ):
         """
         Save configuration dictionary to json file
@@ -432,11 +431,11 @@ class Configuration():
 
         # Iterate over configuration parameters
         for key, item in config_source.items():
-        
+
             # Skip callable class objects
             if utils.is_callable(item):
                 continue
-            
+
             # Convert numeric values to integer or float
             if utils.is_integer(item):
                 config_dump[key] = int(item)
@@ -474,6 +473,7 @@ class Configuration():
             Default argument parameter dictionary.
         check_dtype: dict, optional, default None
             Default argument data type dictionary.
+
         """
 
         for arg, item in self.config_dict.items():
@@ -491,7 +491,7 @@ class Configuration():
 
         # Save successfully checked configuration
         self.dump()
-        
+
         return
 
     def set(
@@ -501,29 +501,30 @@ class Configuration():
         argsskip: Optional[List[str]] = None,
         check_default: Optional[Dict] = None,
         check_dtype: Optional[Dict] = None,
-    )  -> Dict[str, Any]:
+    ) -> Dict[str, Any]:
         """
-        Iterate over arg, item pair, eventually check for default and dtype, 
+        Iterate over arg, item pair, eventually check for default and dtype,
         and set as class variable of instance
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         instance: object, optional, default None
             Class instance to set arg, item pair as class variable. If None,
             skip.
         argitems: iterator, optional, default None
             Iterator for arg, item pairs. If None, skip.
         argskipt: list(str), optional, default None
-            List of arguments to skip. 
+            List of arguments to skip.
         check_default: dict, optional, default None
             Default argument parameter dictionary.
         check_dtype: dict, optional, default None
             Default argument data type dictionary.
-        
-        Return:
+
+        Returns
         -------
         dict[str, any]
             Updated config dictionary
+
         """
 
         # Return empty dictionary if no arg, item pair iterator is defined
@@ -531,16 +532,16 @@ class Configuration():
             return {}
         else:
             config_dict_update = {}
-        
+
         # Check arguments to skip
         default_argsskip = [
-            'self', 'config', 'config_file', 'kwargs', '__class__']
+            'self', 'config', 'config_file', 'logger', 'kwargs', '__class__']
         if argsskip is None:
             argsskip = default_argsskip
         else:
             argsskip = default_argsskip + list(argsskip)
         argsskip.append('default_args')
-        
+
         # Iterate over arg, item pairs
         for arg, item in argitems.items():
 
@@ -551,7 +552,7 @@ class Configuration():
             # If item is None, take from class config
             if item is None:
                 item = self.get(arg)
-            
+
             # Check if input parameter is None, if so take default value
             if check_default is not None and item is None:
                 if arg in check_default:
@@ -561,14 +562,14 @@ class Configuration():
             if check_dtype is not None and arg in check_dtype:
                 _ = utils.check_input_dtype(
                     arg, item, check_dtype, raise_error=True)
-            
+
             # Append arg, item pair to update dictionary
             config_dict_update[arg] = item
 
             # Set item as class parameter arg to instance
             if instance is not None:
                 setattr(instance, arg, item)
-        
+
         return config_dict_update
 
     def get_file_path(self):
@@ -580,38 +581,48 @@ class Configuration():
     def conversion_dict(self):
         """
         Generate conversion dictionary.
-        
         """
-        
+
         self.convertible_dict = {
             'dtype': self.convert_dtype
             }
-        
+
         return
-    
-    def is_convertible(self, key):
+
+    def is_convertible(self, key: str) -> bool:
         """
-        Check if parameter 'key' is covert in the convertible dictionary.
+        Check if parameter 'key' is in the convertible dictionary.
 
         Parameters
         ----------
         key: str
             Parameter name
 
+        Returns
+        -------
+        bool
+            Flag if item is convertible and included in the dictionary of
+            converted items.
+
         """
-        
+
         # Check if convertible dictionary is already initialized
         if not hasattr(self, 'convertible_dict'):
             self.conversion_dict()
 
         # Look for parameter in conversion dictionary
         return key in self.convertible_dict
-    
-    def convert(self, key, arg, operation):
+
+    def convert(
+        self,
+        key: str,
+        arg: Any,
+        operation: str,
+    ) -> Any:
         """
         Convert argument 'arg' of parameter 'key' between json compatible
         format and internal type.
-        
+
         Parameters
         ----------
         key: str
@@ -621,35 +632,50 @@ class Configuration():
         operation: str
             Convert direction such as 'dump' (internal -> json) or 'read'
             (json -> internal).
-        
+
+        Returns
+        -------
+        Any
+            Converted item into a json dumpable format.
+
         """
-        
+
         # Check if convertible dictionary is already initialized
         if hasattr(self, 'convertible_dict'):
             self.conversion_dict()
 
         # Provide conversion result
         return self.convertible_dict[key](arg, operation)
-    
-    def convert_dtype(self, arg, operation):
+
+    def convert_dtype(
+        self,
+        arg: Any,
+        operation: str
+    ):
         """
         Convert data type to data label
+
+        Parameters
+        ----------
+        arg: Any
+            Parameter value of dtype
+        operation: str
+            Convert direction such as 'dump' (internal -> json) or 'read'
+            (json -> internal).
+
+        Returns
+        -------
+        Any
+            Either converted dtype string into dtype object ('read') or vice
+            versa ('dump').
 
         """
         if operation == 'dump':
             for dlabel, dtype in settings._dtype_library.items():
                 if arg is dtype:
                     return dlabel
-            return None
         elif operation == 'read':
             for dlabel, dtype in settings._dtype_library.items():
                 if arg == dlabel:
                     return dtype
-            return None
-        else:
-            return None
-        
-        
-        
-        
-        
+        return None

@@ -1,5 +1,3 @@
-import ase
-
 from ase.data import (
     chemical_symbols, atomic_names, atomic_masses, atomic_numbers
 )

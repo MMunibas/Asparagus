@@ -42,6 +42,7 @@ def get_graph_module(
     -------
     torch.nn.Module
         Graph model object to encode atomistic structural information
+
     """
 
     # Check input parameter

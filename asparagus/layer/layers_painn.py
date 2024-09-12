@@ -4,7 +4,7 @@ import torch
 
 from .base import DenseLayer
 
-from .. import utils
+from asparagus import utils
 
 __all__ = [
     'PaiNNInteraction', 'PaiNNMixing', 
@@ -32,7 +32,7 @@ class PaiNNInteraction(torch.nn.Module):
         n_atombasis: int,
         activation_fn: Callable,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
     ):
         """
         Initialize PaiNN interaction block.
@@ -129,7 +129,7 @@ class PaiNNMixing(torch.nn.Module):
         n_atombasis: int,
         activation_fn: Callable,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         stability_constant: Optional[float] = 1.e-8,
     ):
         """
@@ -249,7 +249,7 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         hidden_activation_fn: Union[Callable, torch.nn.Module],
         bias: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
     ):
@@ -403,7 +403,7 @@ class PaiNNOutput_scalar(torch.nn.Module):
         n_atombasis: int,
         n_property: int,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         n_layer: Optional[int] = None,
         n_neurons: Optional[Union[int, List[int]]] = None,
         activation_fn: Optional[Callable] = None,
@@ -566,7 +566,7 @@ class PaiNNOutput_tensor(torch.nn.Module):
         n_atombasis: int,
         n_property: int,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         n_layer: Optional[int] = None,
         n_neurons: Optional[Union[int, List[int]]] = None,
         hidden_n_neurons: Optional[Union[int, List[int]]] = None,

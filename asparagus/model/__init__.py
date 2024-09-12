@@ -1,7 +1,7 @@
-"""
-This directory contains calculator models.
+#"""
+#This directory contains calculator models.
 
-"""
+#"""
 
 from .calculator import (
     get_model_calculator
@@ -9,4 +9,8 @@ from .calculator import (
 
 from .filemanager import (
     FileManager
+)
+
+from .basemodel import (
+    BaseModel
 )

@@ -4,18 +4,26 @@ import os
 import json
 import subprocess
 import numpy as np
-from typing import Optional, List, Dict, Tuple, Union, Any
+from typing import Optional, List, Dict, Tuple, Callable, Union, Any
 
 import ase
 from ase.calculators.calculator import Calculator, FileIOCalculator, Parameters
 
-from .. import utils
+from asparagus import utils
+
+__all__ = ['ShellCalculator', 'TagReplacement']
 
 
 class TagReplacement:
     """
     Class for pre-defined functions that return input strings with
     respect to the respective atoms object.
+
+    Parameters
+    ----------
+    calculator: ase.calculators.calculator.Calculator
+        ASE compatible calculator class object
+
     """
     
     def __init__(
@@ -25,6 +33,7 @@ class TagReplacement:
     ):
         """
         Initialize class object.
+
         """
 
         # Assign calculator class
@@ -45,10 +54,22 @@ class TagReplacement:
     
     def __getitem__(
         self,
-        item,
-    ):
+        item: str,
+    ) -> Callable:
         """
         Get replacement function from function dictionary.
+        
+        Parameters
+        ----------
+        item: str
+            Dummy label 'item' which becomes replaced by the output of the
+            returned replacement function.
+
+        Returns
+        -------
+        callable
+            Replacement function for the dummy label 'item'.
+
         """
         return self.functions.get(item)
 
@@ -56,9 +77,22 @@ class TagReplacement:
         self,
         atoms: ase.Atoms,
         parameters: Optional[Dict[str, Any]] = {},
-    ):
+    ) -> str:
         """
         Return lines of atoms element symbols and its Cartesian coordinates
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            Reference ASE Atoms object to read positions from.
+        parameters: dict, optional, default {}
+            Additional system parameters
+
+        Returns
+        -------
+        str
+            Cartesian coordinated of the atoms in xyz format
+
         """
         
         out = ""
@@ -75,10 +109,24 @@ class TagReplacement:
         self,
         atoms: ase.Atoms,
         parameters: Optional[Dict[str, Any]] = {},
-    ):
+    ) -> str:
         """
         Return system charge as string of an integer.
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            Reference ASE Atoms object to read positions from.
+        parameters: dict, optional, default {}
+            Additional system parameters
+
+        Returns
+        -------
+        str
+            System charge
+
         """
+
         if 'charge' in parameters:
             out = f"{parameters['charge']:d}"
         elif 'charge' in self.calculator.parameters:
@@ -92,10 +140,25 @@ class TagReplacement:
         self,
         atoms: ase.Atoms,
         parameters: Optional[Dict[str, Any]] = {},
-    ):
+    ) -> str:
         """
         Return system multiplicity as string of an integer.
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            Reference ASE Atoms object
+        parameters: dict, optional, default {}
+            Additional system parameters
+
+        Returns
+        -------
+        str
+            System spin multiplicity 2*S + 1 with S as sum of unpaired spin
+            quantum numbers 1/2
+
         """
+
         if 'multiplicity' in parameters:
             out = f"{parameters['multiplicity']:d}"
         elif 'multiplicity' in self.calculator.parameters:
@@ -109,11 +172,26 @@ class TagReplacement:
         self,
         atoms: ase.Atoms,
         parameters: Optional[Dict[str, Any]] = {},
-    ):
+    ) -> str:
         """
         Return system multiplicity in form of 2*S = 2*(n*1/2) equal the number
         of unpaired spins n as string of an integer.
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            Reference ASE Atoms object
+        parameters: dict, optional, default {}
+            Additional system parameters
+
+        Returns
+        -------
+        str
+            System number of unpaired spins or sum of unpaired spin
+            quantum numbers 1/2 but times 2 (2*S)
+
         """
+
         if 'multiplicity' in parameters:
             out = f"{parameters['multiplicity'] - 1:d}"
         elif 'multiplicity' in self.calculator.parameters:
@@ -127,16 +205,29 @@ class TagReplacement:
         self,
         atoms: ase.Atoms,
         parameters: Optional[Dict[str, Any]] = {},
-    ):
+    ) -> str:
         """
-        Return system charge as string of an integer.
+        Return calculator working directory.
+
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            Reference ASE Atoms object
+        parameters: dict, optional, default {}
+            Additional system parameters
+
+        Returns
+        -------
+        str
+            Working directory of the calculator
+
         """
         if 'directory' in parameters:
             out = f"{parameters['directory']:s}"
         elif 'directory' in self.calculator:
             out = f"{self.calculator.directory:s}"
         else:
-            out = "0"
+            out = "."
 
         return out
     
@@ -200,10 +291,6 @@ class ShellCalculator(FileIOCalculator):
     directory: str or PurePath
         Working directory in which to read and write files and
         perform calculations.
-
-    
-    Results
-    -------
 
     """
 
@@ -295,6 +382,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Check and set calculator parameters.
+
         """
         
         # Check template files and executable file
@@ -351,6 +439,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Check template files and executable file.
+
         """
         
         # Check if template file exists
@@ -427,6 +516,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Check result files and properties.
+
         """
 
         # Check result properties
@@ -463,6 +553,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Check system properties
+
         """
         
         # Check charge
@@ -498,6 +589,7 @@ class ShellCalculator(FileIOCalculator):
         system_changes: list(str), optional, default None
             Detailed list of changed system parameters with regard to 
             previously computed system.
+
         """
         
         # Execute parent class 'write_input' function that checks and
@@ -551,6 +643,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Prepare and write shell input files
+
         """
     
         # Iterate over template files
@@ -562,7 +655,7 @@ class ShellCalculator(FileIOCalculator):
             # Read template file
             with open(file_i, 'r') as f:
                 flines = f.read()
-            
+
             # Replace tags
             for tag, item in file_replace.items():
                 # Check replacement
@@ -599,6 +692,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Execute calculation and read results
+
         """
         
         # Prepare calculation by execution parent class function
@@ -642,6 +736,7 @@ class ShellCalculator(FileIOCalculator):
     ):
         """
         Read results from the defined result file
+
         """
         
         # Read results from file

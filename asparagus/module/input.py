@@ -48,6 +48,7 @@ def get_input_module(
     -------
     torch.nn.Module
         Input model object to encode atomistic structural information
+
     """
 
     # Check input parameter

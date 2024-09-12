@@ -1,18 +1,20 @@
 import os
-import numpy as np
 import logging
-from typing import Optional, List, Dict, Tuple, Union, Any
+from typing import Optional, List, Dict, Callable, Tuple, Union, Any
+
+import numpy as np
 
 import ase
 
-from .. import utils
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import utils
 
 __all__ = [
-    'ase_calculator_units', 'get_ase_calculator', 'get_ase_properties']
+    'ase_calculator_units', 'get_ase_calculator', 'get_ase_properties',
+    'is_ase_calculator_threadsafe']
 
+# Initialize logger
+name = f"{__name__:s}"
+logger = utils.set_logger(logging.getLogger(name))
 
 #======================================
 # ASE Calculator Units
@@ -32,53 +34,67 @@ ase_calculator_units = {
 # ASE Calculator Provision
 #======================================
 
-def get_xtb(**kwargs):
+def get_xtb(**kwargs) -> "ASE.Calculator":
     from xtb.ase.calculator import XTB
     return XTB, {}
 
-def get_orca(**kwargs):
-    # Check ASE version
-    version = ase.__version__
-    # For ASE<3.23.0, use modified ORCA calculator
-    #if (
-        #int(version.split('.')[-3]) < 3
-        #or (
-            #int(version.split('.')[-3]) == 3
-            #and int(version.split('.')[-2]) <= 22
-        #)
-    #):
-    from .orca_ase import ORCA
-    return ORCA, {}
-    #else:
-        #from ase.calculators.orca import ORCA
-        #mkwargs = {}
-        ## Check for engrad
-        #if (
-            #kwargs.get('orcasimpleinput') is not None
-            #and not 'engrad'.lower() in kwargs.get('orcasimpleinput').lower()
-        #):
-            #mkwargs['orcasimpleinput'] = (
-                #kwargs.get('orcasimpleinput') + ' engrad')
-        ## Check for ORCA profile
-        #if kwargs.get('profile') is None:
-            #orca_command = os.environ.get('ORCA_COMMAND')
-            #if orca_command is None:
-                #return ORCA, {}
-            #else:
-                #from ase.calculators.orca import OrcaProfile
-                #mkwargs['profile'] = OrcaProfile(command=orca_command)
-        #elif utils.is_string(kwargs.get('profile')):
-            #from ase.calculators.orca import OrcaProfile
-            #mkwargs['profile'] = OrcaProfile(command=kwargs.get('profile'))
-        #else:
-            #mkwargs['profile'] = kwargs.get('profile')
-        #return ORCA, mkwargs
 
-def get_shell(**kwargs):
+def get_orca_threadsafe() -> bool:
+    ase_version = ase.__version__
+    return (
+        int(ase_version.split('.')[-3]) < 3
+        or (
+            int(ase_version.split('.')[-3]) == 3 
+            and int(ase_version.split('.')[-2]) <= 22
+        )
+    )
+
+
+def get_orca(**kwargs) -> "ASE.Calculator":
+    
+    # For ASE<=3.22.1, use modified ORCA calculator
+    if get_orca_threadsafe():
+            
+        from .orca_ase import ORCA
+        return ORCA, {}
+
+    # Otherwise, use ORCA calculator (not thread safe anymore)
+    else:
+        
+        from ase.calculators.orca import ORCA
+        mkwargs = {}
+        
+        # Check for engrad
+        if (
+            kwargs.get('orcasimpleinput') is not None
+            and not 'engrad'.lower() in kwargs.get('orcasimpleinput').lower()
+        ):
+            mkwargs['orcasimpleinput'] = (
+                kwargs.get('orcasimpleinput') + ' engrad')
+        
+        # Check for ORCA profile
+        if kwargs.get('profile') is None:
+            orca_command = os.environ.get('ORCA_COMMAND')
+            if orca_command is None:
+                return ORCA, {}
+            else:
+                from ase.calculators.orca import OrcaProfile
+                mkwargs['profile'] = OrcaProfile(command=orca_command)
+        elif utils.is_string(kwargs.get('profile')):
+            from ase.calculators.orca import OrcaProfile
+            mkwargs['profile'] = OrcaProfile(command=kwargs.get('profile'))
+        else:
+            mkwargs['profile'] = kwargs.get('profile')
+        
+        return ORCA, mkwargs
+
+
+def get_shell(**kwargs) -> "ASE.Calculator":
     from .shell_ase import ShellCalculator
     return ShellCalculator, {}
 
-def get_slurm(**kwargs):
+
+def get_slurm(**kwargs) -> "ASE.Calculator":
     from .slurm_ase import SlurmCalculator
     return SlurmCalculator, {}
 
@@ -87,6 +103,7 @@ def get_slurm(**kwargs):
 # ASE Calculator Assignment
 #======================================
 
+# ASE calculator grep functions
 ase_calculator_avaiable = {
     'XTB'.lower(): get_xtb,
     'ORCA'.lower(): get_orca,
@@ -95,16 +112,16 @@ ase_calculator_avaiable = {
     }
 
 def get_ase_calculator(
-    calculator,
-    calculator_args,
-    ithread=None,
-):
+    calculator: Union[str, Callable],
+    calculator_args: Dict[str, Any],
+    ithread: Optional[int] = None,
+) -> ("ASE.Calculator", str):
     """
     ASE Calculator interface
 
     Parameters
     ----------
-    calculator: (str, object)
+    calculator: (str, Callable)
         Calculator label of an ASE calculator to initialize or an
         ASE calculator object directly returned.
     calculator_args: dict
@@ -115,8 +132,11 @@ def get_ase_calculator(
 
     Returns
     -------
-    callable object
+    ASE.Calculator object
         ASE Calculator object to compute atomic systems
+    str
+        ASE calculator label tag
+
     """
 
     # Initialize calculator name parameter
@@ -125,7 +145,9 @@ def get_ase_calculator(
     # In case of calculator label, initialize ASE calculator
     if utils.is_string(calculator):
 
-        # Check avaiability
+        # 
+
+        # Check availability
         if calculator.lower() not in ase_calculator_avaiable:
             raise ValueError(
                 f"ASE calculator '{calculator}' is not avaiable!\n"
@@ -162,14 +184,49 @@ def get_ase_calculator(
     return calculator, calculator_tag
 
 
+# ASE calculator thread safe state
+ase_calculator_threadsafe = {
+    'XTB'.lower(): False,
+    'ORCA'.lower(): get_orca_threadsafe(),
+    'Shell'.lower(): True,
+    'Slurm'.lower(): True,
+    }
+
+
+def is_ase_calculator_threadsafe(
+    calculator_tag: str,
+) -> bool:
+    """
+    ASE Calculator interface
+
+    Parameters
+    ----------
+    calculator_tag: str
+        ASE calculator label tag
+
+    Returns
+    -------
+    bool
+        Status if ASE calculator is thread safe or not
+
+    """
+
+    # Get and check thread safe status
+    threadsafe = ase_calculator_threadsafe.get(calculator_tag.lower())
+    if threadsafe is None:
+        threadsafe = False
+
+    return threadsafe
+
+
 # ======================================
 # ASE Calculator Properties
 # ======================================
 
 def get_ase_properties(
-    system,
-    calc_properties,
-):
+    system: ase.Atoms,
+    calc_properties: List[str],
+) -> Dict[str, Any]:
     """
     ASE Calculator interface
 
@@ -186,6 +243,7 @@ def get_ase_properties(
         Property dictionary containing:
         atoms number, atomic numbers, positions, cell size, periodic boundary
         conditions, total charge and computed properties.
+
     """
 
     # Initialize property dictionary

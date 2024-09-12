@@ -1,9 +1,9 @@
 import numpy as np
 import torch
 
-#======================================
-# General Settings
-#======================================
+# ======================================
+#  General Settings
+# ======================================
 
 # Default calculator model
 _default_calculator_model = 'PhysNet'
@@ -15,7 +15,7 @@ _default_device = 'cpu'
 _default_dtype = torch.float64
 
 # ======================================
-# Default Input
+#  Default Input
 # ======================================
 
 # Default arguments for input variables

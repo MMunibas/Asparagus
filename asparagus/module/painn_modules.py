@@ -1,18 +1,17 @@
+
 import logging
-import numpy as np
 from typing import Optional, Union, List, Dict, Callable, Any
+
+import numpy as np
 
 import torch
 
-from .. import module
-from .. import layer
-from .. import settings
-from .. import utils
+from asparagus import module
+from asparagus import layer
+from asparagus import settings
+from asparagus import utils
 
-from ..layer import painn_layers
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus.layer import layers_painn
 
 __all__ = ['Input_PaiNN', 'Graph_PaiNN', 'Output_PaiNN']
 
@@ -95,7 +94,7 @@ class Input_PaiNN(torch.nn.Module):
         input_n_maxatom: Optional[int] = None,
         input_atom_features_range: Optional[float] = None,
         device: Optional[str] = None,
-        dtype: Optional[object] = None,
+        dtype: Optional['dtype'] = None,
         **kwargs
     ):
         """
@@ -322,7 +321,7 @@ class Graph_PaiNN(torch.nn.Module):
         graph_activation_fn: Optional[Union[str, object]] = None,
         graph_stability_constant: Optional[float] = None,
         device: Optional[str] = None,
-        dtype: Optional[object] = None,
+        dtype: Optional['dtype'] = None,
         **kwargs
     ):
         """
@@ -380,7 +379,7 @@ class Graph_PaiNN(torch.nn.Module):
         
         # Initialize message passing blocks
         self.interaction_block = torch.nn.ModuleList([
-            painn_layers.PaiNNInteraction(
+            layers_painn.PaiNNInteraction(
                 self.n_atombasis, 
                 self.activation_fn,
                 self.device,
@@ -388,7 +387,7 @@ class Graph_PaiNN(torch.nn.Module):
             for _ in range(self.graph_n_blocks)
             ])
         self.mixing_block = torch.nn.ModuleList([
-            painn_layers.PaiNNMixing(
+            layers_painn.PaiNNMixing(
                 self.n_atombasis, 
                 self.activation_fn,
                 self.device,
@@ -566,7 +565,7 @@ class Output_PaiNN(torch.nn.Module):
     output_n_residual: int, optional, default 1
         Number of residual layers for transformation from atomic feature vector
         to output results.
-    output_scaling_parameter: dictionary, optional, default None
+    output_property_scaling: dictionary, optional, default None
         Property average and standard deviation for the use as scaling factor 
         (standard deviation) and shift term (average) parameter pairs
         for each property.
@@ -580,7 +579,7 @@ class Output_PaiNN(torch.nn.Module):
         'output_properties':            None,
         'output_properties_options':    {},
         'output_n_residual':            1,
-        'output_scaling_parameter':     None,
+        'output_property_scaling':      None,
         }
 
     # Expected data types of input variables
@@ -588,7 +587,7 @@ class Output_PaiNN(torch.nn.Module):
         'output_properties':            [utils.is_string_array, utils.is_None],
         'output_properties_options':    [utils.is_dictionary],
         'output_n_residual':            [utils.is_integer],
-        'output_scaling_parameter':     [utils.is_dictionary],
+        'output_property_scaling':      [utils.is_dictionary, utils.is_None],
         }
     
     # Output module specially handled properties
@@ -660,9 +659,10 @@ class Output_PaiNN(torch.nn.Module):
         config_file: Optional[str] = None,
         output_properties: Optional[List[str]] = None,
         output_properties_options: Optional[Dict[str, Any]] = None,
-        output_scaling_parameter: Optional[Dict[str, List[float]]] = None,
+        output_property_scaling: Optional[
+            Dict[str, Union[List[float], Dict[int, List[float]]]]] = None,
         device: Optional[str] = None,
-        dtype: Optional[object] = None,
+        dtype: Optional['dtype'] = None,
         **kwargs
     ):
         """
@@ -837,7 +837,7 @@ class Output_PaiNN(torch.nn.Module):
 
             # Initialize scalar output block
             self.output_property_scalar_block[prop] = (
-                painn_layers.PaiNNOutput_scalar(
+                layers_painn.PaiNNOutput_scalar(
                     self.n_atombasis,
                     options.get('n_property'),
                     self.device,
@@ -879,7 +879,7 @@ class Output_PaiNN(torch.nn.Module):
 
             # Initialize scalar output block
             self.output_property_tensor_block[prop_tag] = (
-                painn_layers.PaiNNOutput_tensor(
+                layers_painn.PaiNNOutput_tensor(
                     self.n_atombasis,
                     options.get('n_property'),
                     self.device,
@@ -896,108 +896,12 @@ class Output_PaiNN(torch.nn.Module):
                     bias_init_last=options.get('bias_init_last'),
                     )
                 )
-        
-        # Initialize property scaling dictionary and atomic energy shift
-        self.set_property_scaling(self.output_scaling_parameter)
 
-        return
+        # Initialize property and atomic properties scaling dictionary
+        self.output_scaling = torch.nn.ParameterDict()
 
-    def set_property_scaling(
-        self,
-        scaling_parameter: Dict[str, List[float]],
-    ):
-        """
-        Update output property scaling factor and shift term dictionary.
-        
-        Parameters
-        ----------
-        scaling_parameter: dict(str, torch.Tensor(2))
-            Property average and standard deviation for the use as
-            scaling factor (standard deviation) and shift term (average) 
-            parameter pairs (item) for each property (key).
-
-        """
-
-        # Set scaling factor and shifts for output properties
-        output_scaling = {}
-        for prop in self.output_properties:
-            
-            # If property scaling input is missing, initialize default
-            if (
-                scaling_parameter is None
-                or scaling_parameter.get(prop) is None
-            ):
-            
-                output_scaling[prop] = torch.nn.Parameter(
-                    torch.tensor(
-                        [[1.0, 0.0] for _ in range(self.n_maxatom + 1)],
-                        device=self.device, 
-                        dtype=self.dtype)
-                    )
-
-            else:
-                
-                # Assign scaling factor and shift
-                (shift, scale) = scaling_parameter.get(prop)
-                output_scaling[prop] = torch.nn.Parameter(
-                    torch.tensor(
-                        [[scale, shift] for _ in range(self.n_maxatom + 1)],
-                        device=self.device, 
-                        dtype=self.dtype)
-                    )
-
-        # Convert model scaling to torch dictionary
-        self.output_scaling = torch.nn.ParameterDict(output_scaling)
-
-        return
-    
-    def set_atomic_energies_shift(
-        self,
-        atomic_energies_shifts: Dict[Union[int, str], float],
-    ):
-        """
-        Set atom type related atomic energies shift terms
-        
-        Parameters
-        ----------
-        atomic_energies_shifts: dict(str, torch.Tensor(1))
-            Atom type related atomic energies shift for core electron energy
-            contribution.
-
-        """
-        
-        # Check atomic energies shift input
-        if atomic_energies_shifts is None:
-            return
-        
-        # Set atomic energies
-        for atom_type, shift in atomic_energies_shifts.items():
-            
-            # Check atom type and energy shift definition
-            if utils.is_string(atom_type):
-                atomic_number = utils.data.atomic_numbers.get(
-                    atom_type.lower())
-                if atomic_number is None:
-                    raise SyntaxError(
-                        f"Atom type symbol '{atom_type:s}' is not known "
-                        + "(comparison is not case sensitive)!")
-            elif utils.is_numeric(atom_type):
-                atomic_number = int(atom_type)
-            else:
-                raise SyntaxError(
-                    f"Atom type symbol data type '{type(atom_type):s}' "
-                    + "is not valid! Define either as atomic number (int) or "
-                    + "atom symbol (str).")
-            
-            if not utils.is_numeric(shift):
-                raise SyntaxError(
-                    f"Atom type energy shift type '{type(shift):s}' "
-                    + "is not valid and must be numeric!")
-            
-            # Set atomic energy shift
-            with torch.no_grad():
-                self.output_scaling['atomic_energies'][atomic_number][1] = (
-                    shift)
+        # Assign property and atomic properties scaling parameters
+        self.set_property_scaling(self.output_property_scaling)
 
         return
 
@@ -1014,7 +918,137 @@ class Output_PaiNN(torch.nn.Module):
             'output_properties': self.output_properties,
             'output_properties_options': self.output_properties_options,
             }
-    
+
+    def set_property_scaling(
+        self,
+        scaling_parameters: Dict[str, List[float]],
+        trainable: Optional[bool] = True,
+        set_shift_term: Optional[bool] = True,
+        set_scaling_factor: Optional[bool] = True,
+    ):
+        """
+        Update output atomic property scaling factor and shift terms.
+
+        Parameters
+        ----------
+        scaling_parameters: dict(str, (list(float), dict(int, float))
+            Dictionary of shift term and scaling factor for a model property
+            ({'property': [shift, scaling]}) or shift term and scaling factor
+            of a model property for each atom type
+            ({'atomic property': {'atomic number': [shift, scaling]}}).
+        trainable: bool, optional, default True
+            If True the scaling factor and shift term parameters are trainable.
+        set_shift_term: bool, optional, default True
+            If True, set or update the shift term. Else, keep previous
+            value.
+        set_scaling_factor: bool, optional, default True
+            If True, set or update the scaling factor. Else, keep previous
+            value.
+
+        """
+
+        # Set scaling factor and shifts for output properties
+        for prop in self.output_properties:
+
+            # Initialize or get output property scaling parameter list
+            if self.output_scaling.get(prop) is None:
+                if 'atomic' in prop:
+                    prop_scaling = np.array(
+                        [[0.0, 1.0] for _ in range(self.n_maxatom + 1)],
+                        dtype=float)
+                else:
+                    prop_scaling = np.array([0.0, 1.0], dtype=float)
+            else:
+                prop_scaling = (
+                    self.output_scaling[prop].detach().cpu().numpy())
+
+            # Assign scaling factor and shift
+            if (
+                scaling_parameters is not None
+                and scaling_parameters.get(prop) is not None
+            ):
+
+                if utils.is_dictionary(scaling_parameters.get(prop)):
+
+                    # Re-initialize output property scaling at atom resolved
+                    # list
+                    prop_scaling = np.array(
+                        [[0.0, 1.0] for _ in range(self.n_maxatom + 1)],
+                        dtype=float)
+
+                    # Iterate over atom type specific scaling factor and shifts
+                    for ai, pars in scaling_parameters.get(prop).items():
+
+                        if set_shift_term:
+                            prop_scaling[ai, 0] = pars[0]
+                        if set_scaling_factor:
+                            prop_scaling[ai, 1] = pars[1]
+
+                else:
+
+                    pars = scaling_parameters.get(prop)
+                    if set_shift_term:
+                        prop_scaling[0] = pars[0]
+                    if set_scaling_factor:
+                        prop_scaling[1] = pars[1]
+
+            # Add list to property scaling dictionary
+            if trainable:
+                self.output_scaling[prop] = (
+                    torch.nn.Parameter(
+                        torch.tensor(
+                            prop_scaling,
+                            device=self.device,
+                            dtype=self.dtype)
+                        )
+                    )
+            else:
+                self.output_scaling[prop] = (
+                    self.register_buffer(
+                        f"output_scaling:{prop:s}",
+                        torch.tensor(
+                            prop_scaling,
+                            device=self.device,
+                            dtype=self.dtype)
+                        )
+                    )
+
+        return
+
+    def get_property_scaling(
+        self,
+    ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
+        """
+        Get atomic property scaling factor and shift terms.
+
+        Returns
+        -------
+        dict(str, (list(float), dict(int, float))
+            Dictionary of shift term and scaling factor for a model property
+            ({'property': [shift, scaling]}) or shift term and scaling factor
+            of a model property for each atom type
+            ({'atomic property': {'atomic number': [shift, scaling]}}).
+
+        """
+
+        # Get scaling factor and shifts for output properties
+        scaling_parameters = {}
+        for prop in self.output_properties:
+
+            # Get output property scaling
+            prop_scaling = (
+                self.output_scaling[prop].detach().cpu().numpy())
+
+            # Check for atom or system resolved scaling
+            if prop_scaling.ndim == 1:
+                scaling_parameters[prop] = prop_scaling
+            else:
+                scaling_parameters[prop] = {}
+                for ai, pars in enumerate(prop_scaling):
+                    scaling_parameters[prop][ai] = pars
+
+        return scaling_parameters
+
     def forward(
         self,
         sfeatures: torch.Tensor,
@@ -1096,14 +1130,19 @@ class Output_PaiNN(torch.nn.Module):
                 output_prediction[vprop] = (
                     output_prediction[vprop].reshape(-1, 3))
 
-        # Apply property scaling
+        # Apply property and atomic properties scaling
         for prop, scaling in self.output_scaling.items():
-            (scale, shift) = scaling[atomic_numbers].T
-            compatible_shape = (
-                [atomic_numbers.shape[0]]
-                + (len(output_prediction[prop].shape) - 1)*[1])
+            if scaling.dim() == 1:
+                (shift, scale) = scaling
+            else:
+                (shift, scale) = scaling[atomic_numbers].T
+                if output_prediction[prop].dim() > 1:
+                    compatible_shape = (
+                        [atomic_numbers.shape[0]]
+                        + (output_prediction[prop].dim() - 1)*[1])
+                    shift = shift.reshape(compatible_shape)
+                    scale = scale.reshape(compatible_shape)
             output_prediction[prop] = (
-                output_prediction[prop]*scale.reshape(compatible_shape)
-                + shift.reshape(compatible_shape))
+                output_prediction[prop]*scale + shift)
 
         return output_prediction

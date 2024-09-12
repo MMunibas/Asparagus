@@ -42,7 +42,7 @@ class DenseLayer(torch.nn.Linear):
         activation_fn: Union[Callable, torch.nn.Module],
         bias: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
         
@@ -118,7 +118,7 @@ class ResidualLayer(torch.nn.Module):
         activation_fn: Union[Callable, torch.nn.Module],
         bias: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
         weight_1_init: Optional[Callable] = torch.nn.init.orthogonal_,
         weight_2_init: Optional[Callable] = torch.nn.init.zeros_,
     ):
@@ -150,7 +150,6 @@ class ResidualLayer(torch.nn.Module):
             device,
             dtype,
             weight_init=weight_2_init)
-            
 
         return
 

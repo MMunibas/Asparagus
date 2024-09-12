@@ -3,7 +3,7 @@ from typing import Optional, List, Dict, Tuple, Union, Any, Callable
 
 import torch
 
-from .. import utils
+from asparagus import utils
 
 __all__ = ['get_radial_fn', 'GaussianRBF', 'GaussianRBF_PhysNet']
 
@@ -40,7 +40,7 @@ class GaussianRBF(torch.nn.Module):
         rbf_center_end: float,
         rbf_trainable: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
     ):
         """
         Initialize Gaussian Radial Basis Function.
@@ -112,7 +112,7 @@ class GaussianRBF_PhysNet(torch.nn.Module):
         rbf_center_end: float,
         rbf_trainable: bool,
         device: str,
-        dtype: object,
+        dtype: 'dtype',
     ):
         """
         Initialize original PhysNet type Gaussian Radial Basis Function.
@@ -194,12 +194,17 @@ def get_radial_fn(
 
     """
 
-    # Check for default option
+    # If not specified, set default option
+    if name is None:
+        name = 'default'
+
+    # Get radial basis function
     if utils.is_callable(name):
+
         return name
 
-    # Get radial function
     elif utils.is_string(name):
+
         if name.lower() in [key.lower() for key in functions_avaiable.keys()]:
             return functions_avaiable[name.lower()]
         else:
@@ -209,6 +214,7 @@ def get_radial_fn(
                 str(functions_avaiable.keys()))
 
     else:
+
         raise ValueError(
             f"Radial basis function input of type '{type(name)}' " +
             "is not valid! Input 'name' has to be an object or 'str' from;\n" +

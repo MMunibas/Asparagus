@@ -11,15 +11,12 @@ import ase
 from ase import optimize
 from ase.parallel import world
 
-from .. import sample
+from asparagus import sampling
 
-from .. import data
-from .. import settings
-from .. import utils
-from .. import interface
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import data
+from asparagus import settings
+from asparagus import utils
+from asparagus import interface
 
 __all__ = ['Sampler']
 
@@ -34,7 +31,7 @@ class Sampler:
 
     Parameters
     ----------
-    config: (str, dict, object)
+    config: (str, dict, settings.Configuration)
         Either the path to json file (str), dictionary (dict) or
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
@@ -43,9 +40,6 @@ class Sampler:
         Database file name to store a selected set of systems with
         computed reference data. If None, data file name is the respective
         sample method tag.
-    sample_data_file_format: str, optional, default None
-        Database file format. If None, data file prefix is taken as file
-        format tag.
     sample_directory: str, optional, default None
         Working directory where to store eventually temporary ASE
         calculator files, ASE trajectory files and/or model calculator
@@ -98,17 +92,16 @@ class Sampler:
         Sampling method tag of the specific sampling methods for
         log and ASE trajectory files or the data file name if not defined.
 
-    Returns
-    -------
-    callable object
-        Sampler class object
     """
+
+    # Initialize logger
+    name = f"{__name__:s} - {__qualname__:s}"
+    logger = utils.set_logger(logging.getLogger(name))
 
     # Default arguments for sample module
     _default_args = {
         'sample_directory':             None,
         'sample_data_file':             None,
-        'sample_data_file_format':      None,
         'sample_systems_queue':         None,
         'sample_systems':               None,
         'sample_systems_format':        None,
@@ -127,27 +120,24 @@ class Sampler:
     # Expected data types of input variables
     _dtypes_args = {
         'sample_directory':             [utils.is_string, utils.is_None],
-        'sample_data_file':             [utils.is_string, utils.is_None],
-        'sample_data_file_format':      [utils.is_string, utils.is_None],
-        'sample_systems':               [utils.is_None,
-                                         utils.is_string,
-                                         utils.is_string_array,
-                                         utils.is_ase_atoms,
-                                         utils.is_ase_atoms_array],
-        'sample_systems_format':        [utils.is_None,
-                                         utils.is_string, 
-                                         utils.is_string_array],
-        'sample_systems_indices':       [utils.is_integer, 
-                                         utils.is_integer_array],
-        'sample_calculator':            [utils.is_string, 
-                                         utils.is_object],
+        'sample_data_file':             [
+            utils.is_string, utils.is_string_array_inhomogeneous,
+            utils.is_None],
+        'sample_systems':               [
+            utils.is_None, utils.is_string, utils.is_string_array,
+            utils.is_ase_atoms, utils.is_ase_atoms_array],
+        'sample_systems_format':        [
+            utils.is_None, utils.is_string, utils.is_string_array],
+        'sample_systems_indices':       [
+            utils.is_integer, utils.is_integer_array],
+        'sample_calculator':            [utils.is_string, utils.is_object],
         'sample_calculator_args':       [utils.is_dictionary],
         'sample_save_trajectory':       [utils.is_bool],
         'sample_num_threads':           [utils.is_integer],
-        'sample_properties':            [utils.is_string, 
-                                         utils.is_string_array],
-        'sample_systems_optimize':      [utils.is_bool, 
-                                         utils.is_boolean_array],
+        'sample_properties':            [
+            utils.is_string, utils.is_string_array],
+        'sample_systems_optimize':      [
+            utils.is_bool, utils.is_boolean_array],
         'sample_systems_optimize_fmax': [utils.is_numeric],
         'sample_data_overwrite':        [utils.is_bool],
         'sample_tag':                   [utils.is_string],
@@ -155,10 +145,9 @@ class Sampler:
 
     def __init__(
         self,
-        config: Optional[Union[str, dict, object]] = None,
+        config: Optional[Union[str, dict, settings.Configuration]] = None,
         config_file: Optional[str] = None, 
         sample_data_file: Optional[str] = None,
-        sample_data_file_format: Optional[str] = None,
         sample_directory: Optional[str] = None,
         sample_systems_queue: Optional[queue.Queue] = None,
         sample_systems: Optional[Union[str, List[str], object]] = None,
@@ -192,8 +181,8 @@ class Sampler:
         config_update = config.set(
             instance=self,
             argitems=utils.get_input_args(),
-            check_default=utils.get_default_args(self, sample),
-            check_dtype=utils.get_dtype_args(self, sample)
+            check_default=utils.get_default_args(self, sampling),
+            check_dtype=utils.get_dtype_args(self, sampling)
         )
 
         # Set global configuration as class parameter
@@ -201,8 +190,8 @@ class Sampler:
 
         # Check system input
         if self.sample_systems is None and self.sample_systems_queue is None:
-            logger.warning(
-                "WARNING:\nNo input in 'sample_systems' is given!\n"
+            self.logger.warning(
+                "No input in 'sample_systems' is given!\n"
                 + "Please provide either a chemical structure file or "
                 + "an ASE Atoms object as initial sample structure.")
             self.sample_systems = []
@@ -231,7 +220,6 @@ class Sampler:
                 "Sample data file 'sample_data_file' must be a string "
                 + "of a valid file path but is of type "
                 + f"'{type(self.sample_data_file)}'.")
-        self.sample_data_file_format = sample_data_file_format
 
         # Define sample log file path and trajectory file
         self.sample_log_file = os.path.join(
@@ -271,6 +259,23 @@ class Sampler:
                 + "larger or equal 1, but "
                 + f"'{self.sample_num_threads:d}' is given!")
 
+        # Check if sample calculator is thread safe
+        if self.sample_num_threads > 1:
+            message = (
+                f"Sample calculator {self.sample_calculator_tag:s} is "
+                + "selected for multi-threading sampling with "
+                + f"{self.sample_num_threads:d} threads.")
+            if interface.is_ase_calculator_threadsafe(
+                self.sample_calculator_tag
+            ):
+                self.logger.info(message)
+            else:
+                message += (
+                    "\nBut the selected calculator is NOT thread safe!"
+                    "\nNumber of parallel threads is set back to just 1.")
+                self.logger.warning(message)
+                self.sample_num_threads = 1
+
         #############################
         # # # Prepare Optimizer # # #
         #############################
@@ -287,8 +292,7 @@ class Sampler:
 
         self.sample_dataset = data.DataSet(
             self.sample_data_file,
-            data_file_format=self.sample_data_file_format,
-            data_load_properties=self.sample_properties,
+            data_properties=self.sample_properties,
             data_unit_properties=self.sample_unit_properties,
             data_overwrite=self.sample_data_overwrite)
 
@@ -418,8 +422,8 @@ class Sampler:
                     system = ase.Atoms(
                         data_i['atomic_numbers'],
                         positions=data_i['positions'],
-                        pbc=data_i['pbc'],
-                        cell=data_i['cell'])
+                        pbc=data_i['pbc'].numpy().reshape(-1),
+                        cell=data_i['cell'].numpy().reshape(-1))
                     if 'charge' in data_i:
                         system.info['charge'] = int(
                             data_i['charge'].numpy()[0])
@@ -482,6 +486,7 @@ class Sampler:
         ithread: int, optional, default None
             Thread number to avoid conflict between files written by the
             calculator.
+
         """
 
         # Check calculator input
@@ -631,12 +636,13 @@ class Sampler:
             })
 
         # Print sampling overview
-        msg = f"Perform sampling method '{self.sample_tag:s}' on systems:\n"
+        message = (
+            f"Perform sampling method '{self.sample_tag:s}' on systems:\n")
         for isys, system in enumerate(sample_systems):
             if utils.is_ase_atoms(system):
                 system = system.get_chemical_formula()
-            msg += f" {isys + 1:3d}. '{system:s}'\n"
-        logger.info(f"INFO:\n{msg:s}")
+            message += f" {isys + 1:3d}. '{system:s}'\n"
+        self.logger.info(message)
 
         ##########################
         # # # Start Sampling # # #
@@ -649,6 +655,8 @@ class Sampler:
 
         # Increment sample counter
         self.sample_counter += 1
+
+        return
 
     def run_systems(
         self,
@@ -778,17 +786,17 @@ class Sampler:
                     system, self.sample_trajectory_file.format(isample))
 
         # Print sampling info
-        msg = f"Sampling method '{self.sample_tag:s}' complete for system "
-        msg += f"from '{source}!'\n"
+        message = (
+            f"Sampling method '{self.sample_tag:s}' complete for system from "
+            + f"'{source}!'\n")
         if Nsample == 0:
-            msg += f"No samples written to "
+            message += f"No samples written to "
         if Nsample == 1:
-            msg += f"{Nsample:d} sample written to "
+            message += f"{Nsample:d} sample written to "
         else:
-            msg += f"{Nsample:d} samples written to "
-        msg += f"'{self.sample_data_file:s}'.\n"
-        
-        logger.info(f"INFO:\n{msg:s}")
+            message += f"{Nsample:d} samples written to "
+        message += f"'{self.sample_data_file:s}'."
+        self.logger.info(message)
 
         return
 
@@ -912,23 +920,25 @@ class Sampler:
                 
                 except ase.calculators.calculator.CalculationFailed:
 
-                    msg = "ERROR:\nSingle point calculation of the system "
-                    msg += f"from '{source}' of index {index:d} "
-                    msg += "is not converged "
-                    msg += "during structure optimization for sampling method "
-                    msg += f"'{self.sample_tag:s}' "
-                    msg += f"(see log file '{ase_optimizer_log_file:s}')!\n"
+                    message = (
+                        "Single point calculation of the system "
+                        + f"from '{source}' of index {index:d} "
+                        + "is not converged "
+                        + "during structure optimization for sampling method "
+                        + f"'{self.sample_tag:s}' "
+                        + f"(see log file '{ase_optimizer_log_file:s}')!")
                     if sample_optimzed_queue is not None:
-                        msg += "System will be skipped for further sampling.\n"
-                    logger.error(msg)
+                        message += (
+                            "\nSystem will be skipped for further sampling.")
+                    self.logger.error(message)
                     
                 else:
 
-                    msg = "INFO:\nOptimization of system "
-                    msg += f"from '{source}' of index {index:d} "
-                    msg += f"is converged "
-                    msg += f"(see log file '{ase_optimizer_log_file:s}').\n"
-                    logger.info(msg)
+                    message = (
+                        "Optimization of system "
+                        + f"from '{source}' of index {index:d} is converged "
+                        + f"(see log file '{ase_optimizer_log_file:s}').")
+                    self.logger.info(message)
 
                 # Add optimized ASE atoms object to the queue if defined
                 if sample_optimzed_queue is not None:
@@ -939,7 +949,7 @@ class Sampler:
     def keep_going(
         self,
         ithread
-    ):
+    ) -> bool:
         """
         Return thread continuation flag
         
@@ -947,21 +957,25 @@ class Sampler:
         ----------
         ithread: int
             Thread number.
+
         """
+
         if ithread is None:
             return self.thread_keep_going[0]
         if hasattr(self, 'thread_keep_going'):
             return self.thread_keep_going[ithread]
+
         return False
 
-    def get_properties(self, system):
+    def get_properties(self, system) -> List[str]:
         """
         Collect system properties and calculator results
+
         """
 
         return interface.get_ase_properties(system, self.sample_properties)
 
-    def save_properties(self, system, Nsample):
+    def save_properties(self, system, Nsample) -> int:
         """
         Save system properties
         """
