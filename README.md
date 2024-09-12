@@ -2,7 +2,7 @@
 
 **Authors**: K. Toepfer, L.I. Vazquez-Salazar
 
-!(https://github.com/LIVazquezS/Asparagus/blob/master/logo.png?raw=true)
+<img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
 ## What is this?
  - A refined implementation of PhysNet NN (and other atomistic NN to come) in PyTorch. 
@@ -43,9 +43,9 @@ working will be added to the *PYTHONPATH*, so you can import the modules from an
 
 Install via pip:
 ``` 
-pip install -e .
+python -m pip install .
 ```
-Alternatively, install via setup.py:
+Alternatively, but deprecated, install via setup.py:
 ``` 
 python setup.py install
 ```
@@ -66,7 +66,7 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 
 ## What needs to be added?
 
-- [x] Add more NN architectures (Low priority)
+- [ ] Add more NN architectures (Low priority)
 - [x] Read parameters from older PhysNet Versions (i.e. TF1 and TF2) (Luis)
 - [ ] Add sampling methods:
     - [x] MD with XTB

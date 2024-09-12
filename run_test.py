@@ -11,12 +11,16 @@ import numpy as np
 
 
 flag_dictionary_initialization = True
+
 flag_database_sql = True
 flag_database_npz = True
 flag_database_hdf5 = False
+
+flag_datareader = True
+
 flag_sampler_all = True
 flag_sampler_shell = True
-flag_sampler_slurm = False
+flag_sampler_slurm = True
 
 flag_model_physnet = True
 flag_train_physnet_sql = True
@@ -26,11 +30,13 @@ flag_ase_physnet = True
 flag_model_painn = True
 flag_train_painn = True
 
+flag_transfer_learning = True
+
 flag_train_cuda = False
 
-#==============================================================================
-# Test Asparagus Main Class Initialization
-#==============================================================================
+# ==============================================================================
+#  Test Asparagus Main Class Initialization
+# ==============================================================================
 
 config_file = 'test/init.json'
 config = {
@@ -38,7 +44,7 @@ config = {
 device = 'cpu'
 dtype = torch.float32
 
-# Dictionary initialization
+# Config dictionary initialization
 if flag_dictionary_initialization:
 
     model = asparagus.Asparagus(config)
@@ -54,9 +60,9 @@ if flag_dictionary_initialization:
         model_device=device,
         model_dtype=dtype)
 
-#==============================================================================
-# Test Asparagus DataContainer Class Initialization
-#==============================================================================
+# ==============================================================================
+#  Test Asparagus DataContainer Class Initialization
+# ==============================================================================
 
 config_file = 'test/data.json'
 config = {
@@ -65,17 +71,27 @@ config = {
 # SQL
 if flag_database_sql:
 
+    if os.path.exists(config_file):
+        os.remove(config_file)
+
     # Open DataBase file
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='data/nms_nh3.db',
-        data_file_format='sql',
+        data_file='test/test.db',
+        data_source=[
+            'data/nms_nh3.db',
+            'data/h2co_B3LYP_cc-pVDZ_4001.npz',
+            ('data/h2co_B3LYP_cc-pVDZ_4001.npz', 'npz'),
+            'data/meta_nh3.traj',
+            ('data/meta_nh3.traj', 'traj'),
+            ],
         )
+    model.set_data_container()
 
     # Create new DataBase file
     model.set_data_container(
         config=config_file,
-        data_file='test/nms_nh3_test.db',
+        data_file='test/test.db',
         data_source='data/nms_nh3.db',
         data_overwrite=True,
     )
@@ -83,10 +99,46 @@ if flag_database_sql:
     # Add same source to DataBase file, should be skipped
     model.set_data_container(
         config=config_file,
-        data_file='test/nms_nh3_test.db',
+        data_file='test/test.db',
         data_source='data/nms_nh3.db',
         data_overwrite=False,
     )
+
+    # Load new DataBase with different source property units
+    model.set_data_container(
+        config=config_file,
+        data_file='test/test.db',
+        data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
+        data_source_unit_properties={
+            'positions': 'Bohr',
+            'energy': 'kcal/mol',
+            'forces': 'kcal/mol/Bohr',
+            'dipole': 'e*Bohr',
+            },
+        data_overwrite=True,
+    )
+    os.remove(config_file)
+    
+    # Load new DataBase with different source property units
+    model.set_data_container(
+        config=config_file,
+        data_file='test/test.db',
+        data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
+        data_unit_properties={
+            'positions': 'Ang',
+            'energy': 'kcal/mol',
+            'forces': 'kcal/mol/Ang',
+            'dipole': 'e*Ang',
+            },
+        data_source_unit_properties={
+            'positions': 'Bohr',
+            'energy': 'kcal/mol',
+            'forces': 'kcal/mol/Bohr',
+            'dipole': 'e*Bohr',
+            },
+        data_overwrite=True,
+    )
+    os.remove(config_file)
 
     # Create new DataBase file with itself as source, should return error
     try:
@@ -103,10 +155,15 @@ if flag_database_sql:
     model = asparagus.Asparagus(
         config=config_file,
         data_file='test/nms_nh3_test.db',
-        data_file_format='sql',
         data_source='data/nms_nh3.db',
         )
     data = model.get_data_container()
+    
+    # Test property scaling calculation
+    data.get_property_scaling(
+        property_atom_scaled={'energy': 'atomic_energies'})
+    data.get_property_scaling()
+
     print("\nDatabase path: ", model.get_data_container(), "\n")
     print("\nDatabase entry '0': ", data[0]['energy'])
     print("\nDatabase Train entry '1': ", data.get_train(1)['atoms_number'])
@@ -128,6 +185,11 @@ if flag_database_sql:
     print("\nDatabase Train entry '1': ", data.get_train(1)['atomic_numbers'])
     print("\nDatabase Valid entry '2': ", data.get_valid(2)['charge'])
     print("\nDatabase Test entry  '3': ", data.get_test(3)['pbc'])
+
+    # Test property scaling calculation
+    data.get_property_scaling(
+        property_atom_scaled={'energy': 'atomic_energies'})
+    data.get_property_scaling()
 
     # Load multiple source files files
     model.set_data_container(
@@ -158,7 +220,7 @@ if flag_database_sql:
         config=config_file,
         data_file='test/meta_nh3_test_unit.db',
         data_source='data/meta_nh3.traj',
-        data_load_properties=['energy', 'forces'],
+        data_properties=['energy', 'forces'],
         data_unit_properties={
             'positions': 'Bohr',
             'energy': 'kcal/mol',
@@ -178,7 +240,7 @@ if flag_database_sql:
         config=config_file,
         data_file='test/meta_nh3_test_unit.db',
         data_source='data/meta_nh3.traj',
-        data_load_properties=['energy', 'forces'],
+        data_properties=['energy', 'forces'],
         data_unit_properties={
             'positions': 'Bohr',
             'energy': 'kcal/mol',
@@ -197,9 +259,7 @@ if flag_database_npz:
     model = asparagus.Asparagus(
         config=config_file,
         data_file='test/nms_nh3_test.db.npz',
-        data_file_format='npz',
         data_source='data/nms_nh3.db',
-        data_source_format='db',
         data_overwrite=True,
         )
 
@@ -207,9 +267,7 @@ if flag_database_npz:
     data = model.get_data_container(
         config=config_file,
         data_file='test/nms_nh3_test.db.npz',
-        data_file_format='npz',
         data_source='data/nms_nh3.db',
-        data_source_format='db',
         data_overwrite=False,
     )
     print("\nDatabase path: ", data, "\n")
@@ -219,11 +277,49 @@ if flag_database_npz:
     print("\nDatabase Valid entry '2': ", data.get_valid(2)['pbc'])
     print("\nDatabase Test entry  '3': ", data.get_test(3)['positions'])
     print("\nDatabase Test entry  '3': ", data.get_test(4)['forces'])
-    
+
     # Test training initialization
     model.train(
         trainer_max_epochs=0,
         model_directory='test/test_model')
+
+    # Open DataBase file
+    model = asparagus.Asparagus(
+        config=config_file,
+        data_file='test/test.db.npz',
+        data_source=[
+            'data/nms_nh3.db',
+            'data/h2co_B3LYP_cc-pVDZ_4001.npz',
+            ('data/h2co_B3LYP_cc-pVDZ_4001.npz', 'npz'),
+            'data/meta_nh3.traj',
+            ('data/meta_nh3.traj', 'traj'),
+            ],
+        data_overwrite=True,
+        )
+    model.set_data_container()
+    data = model.get_data_container()
+    metadata = data.get_metadata()
+
+    # Test property scaling calculation
+    data.get_property_scaling(data_label='test')
+
+    # Load with different property units
+    model.set_data_container(
+        config=config_file,
+        data_file='test/test.db.npz',
+        data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
+        data_properties=['energy', 'forces'],
+        data_unit_properties={
+            'positions': 'Bohr',
+            'energy': 'kcal/mol',
+            'forces': 'kcal/mol/Bohr'},
+        data_source_unit_properties={
+            'positions': 'Ang',
+            'energy': 'eV',
+            'forces': 'kcal/mol/Ang'},
+        data_overwrite=True,
+    )
+    os.remove(config_file)
 
 # HDF5
 if flag_database_hdf5:
@@ -238,11 +334,40 @@ if flag_database_hdf5:
         data_overwrite=True,
     )
     data = model.get_data_container()
-    
+
     # Test training initialization
     model.train(
         trainer_max_epochs=0,
         model_directory='test/test_model')
+
+#==============================================================================
+# Test Asparagus DataReader
+#==============================================================================
+
+# Check DataReader functions for consistency
+if flag_datareader:
+
+    config_file = 'test/read.json'
+
+    # Read from Asparagus data file
+    model = asparagus.Asparagus(
+        config=config_file,
+        data_file='test/test.db',
+        data_source='data/nms_nh3.db',
+        data_overwrite=True,
+        )
+    data = model.get_data_container()
+    print("\nDatabase entry '0': ", data.get(2)['cell'])
+
+    # Read from npz data file
+    model = asparagus.Asparagus(
+        config=config_file,
+        data_file='test/test.db',
+        data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
+        data_overwrite=True,
+        )
+    data = model.get_data_container()
+    print("\nDatabase entry '0': ", data.get(2)['cell'])
 
 #==============================================================================
 # Test Asparagus Sampler Methods
@@ -253,7 +378,7 @@ if flag_database_hdf5:
 # or Vibrations, but simple Calculator call works
 if flag_sampler_all:
     
-    from asparagus.sample import Sampler
+    from asparagus.sampling import Sampler
     
     # Load single system from xyz file and compute properties using XTB default 
     # calculator
@@ -319,7 +444,7 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sample import MCSampler
+    from asparagus.sampling import MCSampler
 
     # Sample a single system loaded from a xyz file using the Monte-Carlo
     # sampling method with the XTB calculator
@@ -366,7 +491,7 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sample import MDSampler
+    from asparagus.sampling import MDSampler
 
     # Sample a single system loaded from a xyz file using the Molecular 
     # Dynamics sampling method with the XTB calculator
@@ -420,7 +545,7 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sample import MetaSampler
+    from asparagus.sampling import MetaSampler
     
     # Sample a single system loaded from a xyz file using the Meta Dynamics
     # sampling method with the XTB calculator
@@ -514,7 +639,7 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sample import NormalModeScanner
+    from asparagus.sampling import NormalModeScanner
     
     # Sample a single system loaded from a xyz file using the Normal Mode
     # Scanner sampling method with the XTB calculator
@@ -568,7 +693,7 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sample import NormalModeSampler
+    from asparagus.sampling import NormalModeSampler
     
     # Sample a single system loaded from a xyz file using the Normal Mode
     # Sampler sampling method with the XTB calculator
@@ -621,7 +746,7 @@ if flag_sampler_all:
 # Shell Calculator
 if flag_sampler_shell:
     
-    from asparagus.sample import Sampler
+    from asparagus.sampling import Sampler
     
     # Calculate properties of a sample system with multiple conformations
     # using the Shell calculator with template files for an ORCA calculation.
@@ -634,16 +759,16 @@ if flag_sampler_shell:
         sample_calculator='shell',
         sample_calculator_args = {
             'files': [
-                'data/template/shell/run_orca.sh',
-                'data/template/shell/run_orca.inp',
-                'data/template/shell/run_orca.py',
+                'asparagus/templates/shell/run_orca.sh',
+                'asparagus/templates/shell/run_orca.inp',
+                'asparagus/templates/shell/run_orca.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
                 '%charge%': '$charge',
                 '%multiplicity%': '$multiplicity',
                 },
-            'execute_file': 'run_orca.sh',  # or 'data/template/run_orca.sh'
+            'execute_file': 'run_orca.sh',
             'charge': 0,
             'multiplicity': 1,
             'directory': 'test/shell',
@@ -664,16 +789,16 @@ if flag_sampler_shell:
         sample_calculator='shell',
         sample_calculator_args = {
             'files': [
-                'data/template/shell/run_orca.sh',
-                'data/template/shell/run_orca.inp',
-                'data/template/shell/run_orca.py',
+                'asparagus/templates/shell/run_orca.sh',
+                'asparagus/templates/shell/run_orca.inp',
+                'asparagus/templates/shell/run_orca.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
                 '%charge%': '$charge',
                 '%multiplicity%': '$multiplicity',
                 },
-            'execute_file': 'data/template/shell/run_orca.sh',
+            'execute_file': 'asparagus/templates/shell/run_orca.sh',
             'charge': 0,
             'multiplicity': 1,
             'directory': 'test/shell',
@@ -687,7 +812,7 @@ if flag_sampler_shell:
 # Slurm Calculator
 if flag_sampler_slurm:
 
-    from asparagus.sample import Sampler
+    from asparagus.sampling import Sampler
     
     # Calculate properties of a sample system with multiple conformations
     # using the Slurm calculator with template files for a MOLPRO calculation.
@@ -700,9 +825,9 @@ if flag_sampler_slurm:
         sample_calculator='slurm',
         sample_calculator_args = {
             'files': [
-                'data/template/slurm/run_molpro.sh',
-                'data/template/slurm/run_molpro.inp',
-                'data/template/slurm/run_molpro.py',
+                'asparagus/templates/slurm/run_molpro.sh',
+                'asparagus/templates/slurm/run_molpro.inp',
+                'asparagus/templates/slurm/run_molpro.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
@@ -780,9 +905,9 @@ if flag_sampler_slurm:
         sample_calculator='slurm',
         sample_calculator_args = {
             'files': [
-                'data/template/slurm/run_molpro.sh',
-                'data/template/slurm/run_molpro.inp',
-                'data/template/slurm/run_molpro.py',
+                'asparagus/templates/slurm/run_molpro.sh',
+                'asparagus/templates/slurm/run_molpro.inp',
+                'asparagus/templates/slurm/run_molpro.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
@@ -814,9 +939,9 @@ if flag_sampler_slurm:
         sample_calculator='slurm',
         sample_calculator_args = {
             'files': [
-                'data/template/slurm/run_molpro.sh',
-                'data/template/slurm/run_molpro.inp',
-                'data/template/slurm/run_molpro.py',
+                'asparagus/templates/slurm/run_molpro.sh',
+                'asparagus/templates/slurm/run_molpro.inp',
+                'asparagus/templates/slurm/run_molpro.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
@@ -859,7 +984,12 @@ if flag_train_physnet_sql:
     model = asparagus.Asparagus(
         config=config_file1,
         config_file=config_file2,
-        data_file='data/nms_nh3.db',
+        data_file='test/test.db',
+        data_source=[
+            'data/nms_nh3.db',
+            'data/h2co_B3LYP_cc-pVDZ_4001.npz'
+            ],
+        data_overwrite=True,
         model_directory='test/physnet_sql',
         model_num_threads=2,
         trainer_max_epochs=10,
@@ -875,16 +1005,25 @@ if flag_train_physnet_npz:
     model = asparagus.Asparagus(
         config=config_file1,
         config_file=config_file2,
-        data_file='test/nms_nh3.db.npz',
-        data_source='data/nms_nh3.db',
-        data_source_format='db',
+        data_file='test/test.db.npz',
+        data_source=[
+            'data/nms_nh3.db',
+            'data/h2co_B3LYP_cc-pVDZ_4001.npz'
+            ],
+        data_overwrite=True,
+        data_num_train=0.2,
+        data_num_valid=0.05,
+        data_num_test=0.05,
         model_directory='test/physnet_npz',
         model_num_threads=2,
         trainer_max_epochs=10,
         trainer_debug_mode=False,
         )
     trainer = model.get_trainer()
-    model.train()
+    trainer.run()
+    model.train(
+        trainer_max_epochs=15,
+        reset_energy_shift=True)
     model.test(test_directory='test/physnet_npz')
 
 # Test ASE calculator
@@ -902,23 +1041,34 @@ if flag_ase_physnet:
     data = model.get_data_container()
     Ndata = len(data)
     results_energy = np.zeros([Ndata, 2], dtype=float)
+    
+    # Get data atomic energies shifts
+    metadata = data.get_metadata()
+    atomic_energies_shift = metadata['data_atomic_energies_scaling']
+
+    # Iterate over data
     for idata, data_i in enumerate(data):
     
         # Set system from data container
+        system_atoms = data_i['atomic_numbers'].numpy()
         system = Atoms(
-            data_i['atomic_numbers'],
+            system_atoms,
             positions=data_i['positions'])
         system_energy = data_i['energy'].numpy()
         system_forces = data_i['forces'].numpy()
         system_dipole = data_i['dipole'].numpy()
         
+        # Apply data atomic energies shift
+        for ai in system_atoms:
+            system_energy -= atomic_energies_shift[str(ai)][0]
+
         # Compute model properties
         model_energy = calc.get_potential_energy(system)
         model_forces = calc.get_forces(system)
         model_dipole = calc.get_dipole_moment(system)
         
         # Compare results
-        if False:
+        if True:
             print(
                 "Reference and model energy (error): "
                 + f"{system_energy:.4f} eV, {model_energy:.4f} eV "
@@ -938,6 +1088,9 @@ if flag_ase_physnet:
         # Append to result list
         results_energy[idata, 0] = system_energy
         results_energy[idata, 1] = model_energy
+        
+        if idata > 10:
+            break
 
     # Show RMSE
     rmse_energy = np.sqrt(
@@ -973,6 +1126,40 @@ if flag_train_painn:
     trainer = model.get_trainer()
     model.train()
     model.test(test_directory='test/painn')
+
+#==============================================================================
+# Test Transfer Learning
+#==============================================================================
+
+# Initialize PhysNet model, start training once, start training again but from
+# best checkpoint file of first training.
+if flag_transfer_learning:
+    
+    # Base Model
+    config_file1 = 'test/trans_learn1.json'
+    model = asparagus.Asparagus(
+        config=config_file1,
+        data_file='data/nms_nh3.db',
+        model_directory='test/trans_learn/model_base',
+        trainer_max_epochs=10,
+        )
+    model.train()
+    model.test(test_directory='test/trans_learn/model_base')
+    
+    config_file2 = 'test/trans_learn2.json'
+    model = asparagus.Asparagus(
+        config=config_file1,
+        config_file=config_file2,
+        data_file='data/nms_nh3.db',
+        model_directory='test/trans_learn/model_trans_learn',
+        #model_checkpoint='test/trans_learn/model_base/best/best_model.pt',
+        trainer_max_epochs=10,
+        )
+    model.train(
+        model_checkpoint='test/trans_learn/model_base/best/best_model.pt',
+        reset=True,
+        reset_energy_shift=True)
+    model.test(test_directory='test/trans_learn/model_trans_learn')
 
 #==============================================================================
 # Test Asparagus Model Calculator - PhysNet in Cuda

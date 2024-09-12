@@ -36,7 +36,6 @@ from pycharmm.lib import charmm as libcharmm
 import pycharmm.lib as lib
 
 # Asparagus
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
 from asparagus import Asparagus
 
 # Step 0: Load parameter files

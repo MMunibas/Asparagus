@@ -1,7 +1,4 @@
 
-import sys
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
-
 from asparagus.sample import MetaSampler
 
 # Initialize meta dynamics sampler for an ammonia molecule

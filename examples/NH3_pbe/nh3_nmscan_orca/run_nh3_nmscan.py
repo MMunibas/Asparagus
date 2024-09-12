@@ -1,7 +1,4 @@
 
-import sys
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
-
 from asparagus.sample import NormalModeScanner
 
 # Initialize normal mode scanner sampler for an equilibrated ammonia molecule

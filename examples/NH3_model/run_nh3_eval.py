@@ -11,9 +11,6 @@ from ase.visualize import view
 import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea
 
-import sys
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
-
 from asparagus import Asparagus
 from asparagus.interface.orca_ase import ORCA_Dipole
 

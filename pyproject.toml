@@ -8,17 +8,20 @@ authors = [{name = "K. Toepfer", email = "kai.toepfer@unibas.ch"},
            {name = "L.I.Vazquez-Salazar",email = "luisitza.vazquezsalazar@unibas.ch"},
            {name =" M.Meuwly",email = "m.meuwly@unibas.ch"}]
 dynamic = ["version", "description"]
-dependencies = ['ase',
+dependencies = [
+        'ase',
         'numpy',
-        'tensorboard',
-        'torch>=1.10<2.0',
+        'scipy',
+        'ctype',
+        'torch>2.0',
+        'torchvision',
+        'torchaudio',
         'torch-ema>=0.3',
-        'xtb',
-        'h5py',
+        'tensorboard',
         'pandas',
+        'h5py',
         'matplotlib',
         'seaborn',
-        'scipy',
         'pytest']
 [project.urls]
 homepage = "http://github.com/LIVazquez/Asparagus"

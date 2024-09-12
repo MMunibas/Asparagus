@@ -11,5 +11,10 @@ basis=aug-cc-pvdz
 {hf,
  wf,charge=%charge%,spin=%spin2%;
 }
-mp2
+
+! MP2 calculation
+{ mp2,
+}
+
+! MP2 gradients calculation
 forces

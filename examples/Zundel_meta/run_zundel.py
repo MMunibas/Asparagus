@@ -1,10 +1,8 @@
-import sys
-sys.path.insert(0, '/home/toepfer/Documents/Project_PhysNet3/Asparagus')
 
 from asparagus import Asparagus
 
 # Sampling
-if False:
+if True:
 
     from asparagus.sample import NormalModeSampler
 
@@ -30,7 +28,7 @@ if False:
     )
     sampler.run(nms_frequency_range=[('>||', 100.0)])
 
-if False:
+if True:
     
     from asparagus.sample import MetaSampler
     
