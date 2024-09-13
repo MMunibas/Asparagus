@@ -20,7 +20,7 @@ from .repulsion import (
 )
 
 from .electrostatics import (
-    PC_shielded_electrostatics
+    PC_shielded_electrostatics, PC_damped_electrostatics
 )
 
 from .dispersion import (

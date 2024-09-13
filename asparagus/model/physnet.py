@@ -267,12 +267,13 @@ class Model_PhysNet(model.BaseModel):
         # Assign electrostatic interaction module
         if self.model_electrostatic:
             # Get electrostatic point charge model calculator
-            self.electrostatic_module = module.PC_shielded_electrostatics(
+            self.electrostatic_module = module.PC_damped_electrostatics(
                 self.model_cutoff,
                 config.get('input_radial_cutoff'),
                 self.device,
                 self.dtype,
                 unit_properties=self.model_unit_properties,
+                truncation='force',
                 **kwargs)
 
         # Assign dispersion interaction module

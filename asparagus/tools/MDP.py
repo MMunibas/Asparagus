@@ -26,11 +26,9 @@ logger = logging.getLogger(__name__)
 __all__ = ['MDP']
 
 class MDP:
-
-    '''
-
-    This class calculates the Minimum Dynamic Path (MDP) [J. Chem. Phys. 150, 074107 (2019)]
-    for a given molecule starting from the Transition state.
+    """
+    This class calculates the Minimum Dynamic Path (MDP) [J. Chem. Phys. 150,
+    074107 (2019)] for a given molecule starting from the Transition state.
 
     Parameters:
     -----------
@@ -54,9 +52,8 @@ class MDP:
         Output file name for the trajectory
     output_file: opt(str)
         Output file name for the log file of energies
-
-
-    '''
+    
+    """
 
     def __init__(self,atoms=None,
                  model_calculator=None,
@@ -141,7 +138,7 @@ class MDP:
 
         """
         if forward is not None:
-            warnings.WarningMessage('The forward parameter is rewroted to %s' % forward)
+            warnings.WarningMessage('The forward parameter is rewritten to %s' % forward)
             self.forward = forward
 
         initial_system = self.atoms.copy()
