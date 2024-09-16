@@ -298,8 +298,6 @@ class DataBase_SQLite3(data.DataBase):
         self,
         commit_frequency: Optional[int] = 5000,
     ):
-        if self.data_file == 'data.db':
-            exit()
         try:
             con = self.connection or self._connect()
             yield con
