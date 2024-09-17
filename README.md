@@ -5,21 +5,19 @@
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
 ## What is this?
- - A refined implementation of PhysNet NN (and other atomistic NN to come) in PyTorch. 
+ - A refined implementation of PhysNet and PainNN (and more atomistic NN to come) in PyTorch. 
  - A Suit for the automatic construction of Potential Energy Surface (PES) from sampling to production.
 
 ## How to use? 
 
 - Clone the repository
 - Requirements:
-  - Python <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.8 (I recommend to use 3.8.12, **DO NOT** use 3.9)
+  - Python <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.8
   - PyTorch <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 1.10
+  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.21
   - Torch-ema <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 0.3
   - TensorBoardX <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 2.4
-  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.21
-  - xtb
-  - pandas
-  - scipy
+  - numpy, scipy, pandas, ...
   
 ### Setting up the environment
 
