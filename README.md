@@ -77,8 +77,8 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
     - [x] Metadynamics Sampling 
 - [ ] Electronic structure calculations:
    - [x] ASE calculator (As good as it can be)
-   - [ ] Automatic generation of input files for commonly used codes (e.g. Gaussian, Orca, MOLPRO, etc.)
-   - [ ] Automatic extraction of information from output files
+   - [x] Automatic generation of input files for commonly used codes (e.g. Gaussian, Orca, MOLPRO, etc.)
+   - [x] Automatic extraction of information from output files
 - Trainer class:
   - [ ] Training of model ensemble 
 - Tester class: 
