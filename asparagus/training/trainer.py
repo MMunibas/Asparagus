@@ -607,6 +607,15 @@ class Trainer:
         if trainer_epoch_start > self.trainer_max_epochs:
             return
 
+        # Initial evaluation of the test set if requested
+        if self.trainer_evaluate_testset:
+            self.tester.test(
+                self.model_calculator,
+                test_directory=self.filemanager.best_dir,
+                test_plot_correlation=True,
+                test_plot_histogram=True,
+                test_plot_residual=True)
+
         # Loop over epochs
         for epoch in torch.arange(
             trainer_epoch_start, self.trainer_max_epochs + 1

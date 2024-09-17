@@ -150,7 +150,7 @@ class Input_PaiNN(torch.nn.Module):
             self.input_n_maxatom + 1,
             self.input_n_atombasis,
             padding_idx=0,
-            max_norm=1.0,
+            max_norm=self.input_n_atombasis,
             device=self.device, 
             dtype=self.dtype)
 

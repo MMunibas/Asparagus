@@ -1260,7 +1260,7 @@ class DataContainer():
         (get_dataset and get_dataloader).
         """
         if hasattr(self, 'all_datasets'):
-            return list(self.all_datasets.keys())
+            return ['train', 'valid', 'test']
         else:
             raise AttributeError(
                 "Dataset and subsets were not initialized yet.")

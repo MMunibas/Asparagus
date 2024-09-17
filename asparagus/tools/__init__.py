@@ -13,4 +13,4 @@ Implemented:
 
 #from .MDP import MDP
 
-#from .DMC import DMC
+from .DMC import DMC

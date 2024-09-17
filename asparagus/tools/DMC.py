@@ -1,196 +1,487 @@
-# Adaptation of diffusion Monte Carlo code from https://github.com/MMunibas/dmc_gpu_PhysNet/tree/main
+# Adaptation of diffusion Monte Carlo code from 
+# https://github.com/MMunibas/dmc_gpu_PhysNet/tree/main
 import os
-import logging
-from typing import Optional, List, Dict, Tuple, Union, Any
-import warnings
-
-#Time importations
 import time
 from datetime import datetime
+from typing import Optional, List, Dict, Callable, Tuple, Union, Any
 
-#Basic importations
 import numpy as np
+
 import torch
 
-#ASE importations
 import ase
-from ase.io import read, write
+from ase import io
+from ase.optimize import BFGS
 
-#Internal importations
-from .. import model
-from .. import settings
-from .. import utils
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from asparagus import Asparagus
+from asparagus import interface
+from asparagus import utils
 
 __all__ = ['DMC','Logger_DMC']
 
 class DMC:
     """
+    This code adapt the diffusion Monte Carlo code from 
+    https://github.com/MMunibas/dmc_gpu_PhysNet/tree/main to the asparagus 
+    framework.
 
-    This code adapt the diffusion Monte Carlo code from https://github.com/MMunibas/dmc_gpu_PhysNet/tree/main
-    to the asparagus framework.
-
-    **NOTE**: As a difference with the original implementation, this code reads the initial coordinates and the
-    equilibrium coordinates from the atoms object in ASE.
+    As a difference with the original implementation, this code reads
+    the initial coordinates and the equilibrium coordinates from the atoms
+    object in ASE.
 
     **Original Message**
-    DMC code for the calculation of zero-point energies using PhysNet based PESs on GPUs/CPUs. The calculation
-    is performed in Cartesian coordinates.
-    See e.g. American Journal of Physics 64, 633 (1996); https://doi.org/10.1119/1.18168 for DMC implementation
-    and https://scholarblogs.emory.edu/bowman/diffusion-monte-carlo/ for Fortran 90 implementation.
+    DMC code for the calculation of zero-point energies using PhysNet based 
+    PESs on GPUs/CPUs. The calculation is performed in Cartesian coordinates.
+    See e.g. American Journal of Physics 64, 633 (1996);
+    https://doi.org/10.1119/1.18168 for DMC implementation and 
+    https://scholarblogs.emory.edu/bowman/diffusion-monte-carlo/ for Fortran 90 
+    implementation.
 
     Parameters
     ----------
-    natoms: int
-        Number of atoms of the system
-    nwalker: int
+    atoms: (str, ase.Atoms)
+        File path to a structure file or an ase.Atoms object of the system
+    model_calculator: (str, Callable)
+        Either a file path to an Asparagus config file ('.json') or an
+        Asparagus main class instance or initialized calculator.
+    charge: float, optional, default None
+        Total charge of the system. If the charge is required for the
+        calculator initialization but 'None', a charge of 0 is assumed.
+    optimize: bool, optional, default True
+        Perform a structure optimization to determine the minimum potential.
+    nwalker: int, optional, default 100
         Number of walkers for the DMC
-    stepsize: float
+    nsteps: int, optional, default 1000
+        Number of steps for each of the DMC walkers
+    eqsteps: int, optional, default 100
+        Number of initial equilibration steps for the DMC walkers
+    stepsize: float, optional, default 0.1
         Step size for the DMC in imaginary time
-    nsteps: int
-        Number of steps for the DMC
-    eqsteps: int
-        Number of equilibration steps for the DMC
-    alpha: float
-        Alpha parameter for the DMC: Feed-back parameter, usually proportional to 1/stepsize
-    max_batch: int
+    alpha: float, optional, default 1.0
+        Alpha parameter for the DMC feed-back parameter, usually proportional
+        to 1/stepsize
+    max_batch: int, optional, default 6000
         Size of the batch
-    initial_coord: str or array
-        Initial coordinates for the DMC
-    atoms: str or ase.Atoms
-        Atoms object
-    total_charge: int
-        Total charge of the system
-    config: dct
-        Parameters for the model
-    config_file: str
-        Configuration file for asparagus
-    model_checkpoint: int
-        Checkpoint for the model
-    implemented_properties: list
-        List of implemented properties
-    filename: str
-        Name of the file where the results are going to be saved. **NOTE**: The code create 4 files with the same name
-        but different extensions: .pot, .log, .xyz and .xyz. The first two are the files where the potential energy
-        and the log of the simulation are saved. The last two are the files where the last 10 steps of the simulation
-        and the defective geometries are saved respectively.
-
-
+    seed: (int, float), optional, default: np.random.randint(1E6)
+        Specify random seed
+    initial_positions: (str, list(float), ase.Atoms), optional, default None
+        Initial coordinates for the DMC system as a list of the correct 
+        shape in Angstrom, a file path to the respective ASE Atoms file or
+        even an ASE Atoms object at initial coordinates itself.
+        If None, 'atoms' positions are taken as initial coordinates.
+    filename: str, optional, default 'dmc'
+        Name tag of the output file where results are going to be stored. 
+        The DMC code create 4 files with the same name but different 
+        extensions: '.pot', '.log' and '.xyz'. 
+        '.pot': Potential energies of the DMC runs.
+        '.log': Log information of the runs.
+        '.xyz': Two '.xyz' files are generated where the last 10 steps of the
+            simulation and the defective geometries are saved respectively.
 
     """
-    def __init__(self,natoms,
-                 atoms=None,
-                 model_calculator=None,
-                 total_charge=None,
-                 nwalker=100,
-                 stepsize=0.1,
-                 nsteps=1000,
-                 eqsteps=100,
-                 alpha=1,
-                 max_batch=6000,
-                 initial_coord=None,
-                 filename=None,**kwargs):
 
-        # Number of atoms
-        self.natoms = natoms
+    def __init__(self,
+        atoms: Union[str, ase.Atoms],
+        model_calculator: Union[str, Callable] = None,
+        charge: Optional[float] = None,
+        optimize: Optional[bool] = True,
+        nwalker: Optional[int] = 100,
+        nsteps: Optional[int] = 1000,
+        eqsteps: Optional[int] = 100,
+        stepsize: Optional[float] = 0.1,
+        alpha: Optional[float] = 1.0,
+        max_batch: Optional[int] = 6000,
+        seed: Optional[int] = np.random.randint(1E6),
+        initial_positions: Optional[Union[str, List[float], ase.Atoms]] = None,
+        filename: Optional[str] = None,
+        **kwargs
+    ):
+
+        # Check atoms input
+        if utils.is_string(atoms):
+            self.atoms = io.read(atoms)
+        elif utils.is_ase_atoms(atoms):
+            self.atoms = atoms
+        else:
+            raise ValueError(
+                f"Invalid 'atoms' input of type '{type(atoms)}'.\n"
+                + "Required is either a path to a structure file "
+                + "(e.g. '.xyz') or an ASE Atoms object.")
+
+        # Check model calculator input
+        if model_calculator is None:
+            raise ValueError(
+                "A model calculator must be assigned!\nEither as a file path"
+                + "to an Asparagus config file, as a Asparagus instance or an "
+                + "Aspargus calculator itself.")
+        if utils.is_string(model_calculator):
+            model = Asparagus(config=model_calculator)
+            self.model_calculator = model.get_model_calculator()
+            self.model_unit_properties = model.model_unit_properties
+        else:
+            if hasattr(model_calculator, 'get_model_calculator'):
+                self.model_calculator = model_calculator.get_model_calculator()
+                self.model_unit_properties = (
+                    self.model_calculator.model_unit_properties)
+            elif hasattr(model_calculator, 'model_unit_properties'):
+                self.model_calculator = model_calculator
+                self.model_unit_properties = (
+                    model_calculator.model_unit_properties)
+            else:
+                raise ValueError(
+                    f"The model calculator is of unknown type!\n")
+        
+        # Read device and dtype information
+        self.device = self.model_calculator.device
+        self.dtype = self.model_calculator.dtype
+
+        #self.mcalc = torch.compile(model_calculator.get_model_calculator())
+        #self.mcalc = model_calculator.get_model_calculator()
+
+        # Check system charge
+        if charge is None:
+            try:
+                atomic_charges = atoms.get_charges()
+            except RuntimeError:
+                atomic_charges = atoms.get_initial_charges()
+            self.charge = np.sum(atomic_charges)
+        elif utils.is_numeric(charge):
+            self.charge = charge
+        else:
+            raise ValueError(
+                f"Invalid 'charge' input of type '{type(charge)}'.\n"
+                + "Required is either a numeric system charge input or no "
+                + "input (None) to assign a charge from the ASE Atoms object.")
+
+        # Check optimization flag
+        self.optimize = bool(optimize)
+
+        # Check DMC input
         # Number of walkers for the DMC
-        self.nwalker = nwalker
-        # Step size for the DMC in imaginary time
-        self.stepsize = stepsize
+        if utils.is_numeric(nwalker):
+            self.nwalker = int(nwalker)
+        else:
+            raise ValueError(
+                f"Invalid 'nwalker' input of type '{type(nwalker)}'.\n"
+                + "Required is a numeric input!")
         # Number of steps for the DMC
-        self.nsteps = nsteps
+        if utils.is_numeric(nsteps):
+            self.nsteps = int(nsteps)
+        else:
+            raise ValueError(
+                f"Invalid 'nsteps' input of type '{type(nsteps)}'.\n"
+                + "Required is a numeric input!")
         # Number of equilibration steps for the DMC
-        self.eqsteps = eqsteps
-        # Alpha parameter for the DMC: Feed-back parameter, usually propotional to 1/stepsize"
-        self.alpha = alpha
-        # Initial coordinates for the DMC
-        self.initial_coord = initial_coord
-        # Charge of the atoms
-        if total_charge is None:
-            self.total_charge = 0
+        if utils.is_numeric(eqsteps):
+            self.eqsteps = eqsteps
         else:
-            self.total_charge = total_charge
-
-        #Unit conversion (Maybe move to the settings file?)
-        self.emass = 1822.88848
-
-        # Atoms object
-        self.atoms = atoms
-        if self.atoms is type(str):
-            self.atoms = read(self.atoms)
-
-        if self.atoms is None:
-            raise ValueError('A geometry is required')
-
-        # Get the ASE calculator
-        self.ase_calculator = model_calculator.get_ase_calculator()
-
-        # Check the implemented properties
-        self.implemented_properties = self.ase_calculator.implemented_properties
-
-        # Check implemented properties
-        if 'energy' not in self.implemented_properties:
-            raise ValueError('The energy is not implemented in the model calculator')
-
-        # Seed is defined according to the time
-        self.seed = np.random.seed(int(time.time()))
-
-        # Informtation about the system
-
-        self.natm = len(self.atoms)
-
-        self.mass = np.sqrt(self.atoms.get_masses()*self.emass)
-        self.nucl_charge = self.atoms.get_atomic_numbers()
-
-        self.coord_min = self.atoms.get_positions()
-
-        #Size of the batch
-        self.max_batch = max_batch
-
-        #Here we define the initial coordinates
-        if self.initial_coord is None:
-            atoms2 = self.atoms.copy()
-            #Here we add a random displacement to the initial coordinates, I hardcoded the seed from the original code
-            atoms2.rattle(stdev=0.1,seed=1453)
-            self.initial_coord = atoms2.get_positions()
-        elif type(self.initial_coord) is str:
-            atoms2 = read(self.initial_coord)
-            self.initial_coord = atoms2.get_positions()
+            raise ValueError(
+                f"Invalid 'eqsteps' input of type '{type(eqsteps)}'.\n"
+                + "Required is a numeric input!")
+        # Step size for the DMC in imaginary time
+        if utils.is_numeric(stepsize):
+            self.stepsize = stepsize
         else:
-            self.initial_coord = self.initial_coord
+            raise ValueError(
+                f"Invalid 'stepsize' input of type '{type(stepsize)}'.\n"
+                + "Required is a numeric input!")
+        # Alpha parameter for the DMC
+        if utils.is_numeric(alpha):
+            self.alpha = alpha
+        else:
+            raise ValueError(
+                f"Invalid 'alpha' input of type '{type(alpha)}'.\n"
+                + "Required is a numeric input!")
+        # Alpha parameter for the DMC
+        if utils.is_numeric(alpha):
+            self.alpha = alpha
+        else:
+            raise ValueError(
+                f"Invalid 'alpha' input of type '{type(alpha)}'.\n"
+                + "Required is a numeric input!")
+        # Size of the batch
+        if utils.is_numeric(max_batch):
+            self.max_batch = int(max_batch)
+        else:
+            raise ValueError(
+                f"Invalid 'max_batch' input of type '{type(max_batch)}'.\n"
+                + "Required is a numeric input!")
+        # Random seed
+        self.seed = seed
 
+        # Check initial coordinates for the DMC runs
+        if initial_positions is None:
+            self.atoms_initial = self.atoms.copy()
+        elif utils.is_string(initial_positions):
+            self.atoms_initial = io.read(initial_positions)
+        elif utils.is_numeric_array(initial_positions):
+            if initial_positions.shape == (len(self.atoms), 3,):
+                initial_positions = np.array(
+                    initial_positions, dtype=float)
+                self.atoms_initial = self.atoms.copy()
+                self.atoms_initial.set_positions(initial_positions)
+            else:
+                raise ValueError(
+                    "Invalid 'initial_positions' input shape "
+                    + f"{initial_positions.shape:} but {(len(atoms), 3,):} is"
+                    + "expected!")
+        elif utils.is_ase_atoms(initial_positions):
+            self.atoms_initial = initial_positions
+        else:
+            raise ValueError(
+                "Invalid 'initial_positions' input of type "
+                + f"'{type(initial_positions)}'!")
+
+        # Check model properties and get unit conversion from model units to
+        # atomic units.
+        self.prepare_dmc()
+        
+        # Check output file name tag
         if filename is None:
             self.filename = "dmc"
-        else:
+        elif utils.is_string(filename):
             self.filename = filename
+        else:
+            raise ValueError(
+                f"Invalid 'filename' input of type '{type(filename)}'!\n"
+                + "Required is a string for a filename tag.")
+
+        # Initialize DMC logger
         self.logger = Logger_DMC(self.filename)
 
-    def init_dmc(self, v0, vmin):
+        return
+
+    def prepare_dmc(
+        self,
+    ):
+        """
+        Finalize the DMC preparation
 
         """
-        Initialize the DMC simulation. It creates the psips and psips_f arrays, which are the coordinates of the walkers
+
+        # Check implemented properties
+        if 'energy' not in self.model_calculator.model_properties:
+            raise ValueError(
+                "The model property 'energy ' is not predicted but required!")
+
+        # ASE to model position and charge conversion
+        self.ase_conversion = {}
+        self.ase_conversion['positions'], _ = utils.check_units(
+            None, self.model_unit_properties.get('positions'))
+        self.ase_conversion['charge'], _ = utils.check_units(
+            None, self.model_unit_properties.get('charge'))
+
+        # Initialize conversion dictionary
+        self.dmc_conversion = {}
+        
+        # Get positions and energy conversion factors from model to atomic
+        # units
+        self.dmc_conversion['positions'], _ = utils.check_units(
+            self.model_unit_properties.get('positions'), 'Bohr')
+        self.dmc_conversion['energy'], _ = utils.check_units(
+            self.model_unit_properties.get('energy'), 'Hartree')
+
+        # Get mass conversion factor from u to atomic units (electron mass)
+        self.dmc_conversion['mass'] = 1822.88848
+
+        # Prepare DMC related system information
+        self.natoms = len(self.atoms)
+        self.atomic_numbers = self.atoms.get_atomic_numbers()
+        self.atomic_symbols = self.atoms.get_chemical_symbols()
+        self.atomic_masses = (
+            self.atoms.get_masses()*self.dmc_conversion['mass'])
+
+        #self.mass = np.sqrt(self.atoms.get_masses()*self.emass)
+        #self.nucl_charge = self.atoms.get_atomic_numbers()
+        #self.au2ang = 0.5291772083
+        #self.coord_min = self.atoms.get_positions()/self.au2ang
+
+        return
+
+    def run(
+        self,
+        optimize: Optional[bool] = None,
+        optimize_method: Optional[Callable] = BFGS,
+        optimize_fmax: Optional[float] = 0.01,
+    ):
+        """
+        Run the diffusion Monte-Carlo simulation.
 
         Parameters
         ----------
-        v0: float
+        optimize: bool, optional, default None
+            Perform a structure optimization to determine the minimum 
+            potential. If None, initial option is taken.
+        optimize_method: ase.optimizer, optional, default BFGS
+            ASE optimizer to use for the structure optimization.
+        optmize_fmax: float, optional, default 0.01
+            Maximum force component value used as convergence threshold for
+            the optimization.
+
+        """
+
+        # Write log file header
+        self.logger.log_begin(
+            self.nwalker,
+            self.nsteps,
+            self.eqsteps,
+            self.stepsize,
+            self.alpha)
+
+        # If requested, perform structure optimization
+        if optimize is None:
+            optimize = self.optimize
+        if optimize:
+            self.atoms = self.optimize_atoms(
+                self.atoms,
+                self.charge,
+                optimize_method,
+                optimize_fmax)
+
+        # Create initial system batch information
+        batch_initial = self.model_calculator.create_batch(
+            self.atoms_initial,
+            charge=self.charge,
+            conversion=self.ase_conversion)
+        batch_minimum = self.model_calculator.create_batch(
+            self.atoms,
+            charge=self.charge,
+            conversion=self.ase_conversion)
+
+        # First evaluation of the potential energy
+        results_initial = self.model_calculator(
+            batch_initial,
+            no_derivation=True)
+        results_minimum = self.model_calculator(
+            batch_minimum,
+            no_derivation=True)
+        energy_initial = (
+            results_initial['energy'].cpu().detach().numpy()
+            * self.dmc_conversion['energy'])
+        energy_minimum = (
+            results_minimum['energy'].cpu().detach().numpy()
+            * self.dmc_conversion['energy'])
+
+        #Initialize the DMC
+        psips, psips_f, v_ave, v_ref = self.init_walker(
+            energy_initial, energy_minimum)
+        exit()
+        # Main loop of the DMC
+        v_tot = 0.0
+        for i in range(self.nsteps):
+            start_time = time.time()
+            psips[:psips_f[0], :, :] = self.walk(psips[:psips_f[0], :, :])
+            psips, psips_f, v_ref = self.branch(
+                self.initial_coord,
+                self.atomic_masses,
+                self.atomic_symbols,
+                vmin,
+                psips,
+                psips_f,
+                v_ref,
+                v_tot)
+            self.logger.write_pot(psips_f[0], v_ref, step=i + 1,initial=False)
+
+            if i > self.eqsteps:
+                v_ave += v_ref
+
+            if i > self.nsteps - 10:  # record the last 10 steps of the DMC simulation for visual inspection.
+                self.logger.write_last(psips_f, psips, self.natoms, self.atomic_symbols)
+            if i % 10 == 0:
+                print("step:  ", i, "time/step:  ", time.time() - start_time, "nalive:   ", psips_f[0])      
+        v_ave = v_ave / (self.nsteps - self.eqsteps)
+        
+
+        self.logger.write_log(v_ave)
+
+        # terminate code and close log/pot files
+        self.logger.log_end()
+        self.logger.close_files()
+
+        return
+
+    def optimize_atoms(
+        self,
+        atoms: ase.Atoms,
+        charge: float,
+        optimize_method: Callable,
+        optimize_fmax: float,
+    ) -> ase.Atoms:
+        """
+        Perform a structure optimization of the atoms object using the
+        model calculator
+        
+        Parameters
+        ----------
+        atoms: ase.Atoms
+            ASE Atoms object to optimize
+        charge: float
+            System charge
+        optimize_method: ase.optimizer
+            ASE optimizer to use for the structure optimization.
+        optimize_fmax: float
+            Maximum force component value used as convergence threshold for
+            the optimization.
+
+        Returns
+        -------
+        ase.Atoms
+            Optimized ASE atoms object
+
+        """
+
+        # Check for forces in model properties
+        if not 'forces' in self.model_calculator.model_properties:
+            self.logger.log_write(
+                "Requested structure optimization are not possible!\n"
+                + "The model calculator does not predict forces.\n")
+            return atoms
+
+        # Prepare ASE calculator of the model calculator
+        ase_calculator = interface.ASE_Calculator(
+            self.model_calculator,
+            atoms=atoms,
+            charge=charge)
+
+        # Assign ASE calculator
+        atoms.calc = ase_calculator
+        
+        # Initialize optimizer
+        dyn = optimize_method(atoms)
+        
+        # Perform structure optimization
+        dyn.run(fmax=optimize_fmax)
+
+        return atoms
+
+    def init_walker(
+        self,
+        energy_initial: float,
+        energy_minimum: float,
+    ):
+        """
+        Initialize DMC simulation variables such as the atoms positions for
+        each walker (psi_positions) and the status of the walker (psi_status).
+
+        Parameters
+        ----------
+        energy_initial: float
             initial energy
-        vmin:
+        energy_minimum:
             minimum energy
 
         Returns
         -------
 
         """
-        #Not sure this function is going to work,
+        # Not sure this function is going to work,
         # There are some variables that are not defined in the original code. LIVS 14/12/2023
 
         #define stepsize
-        self.deltax = np.sqrt(self.stepsize)/self.mass
+        self.deltax = np.sqrt(self.stepsize/self.atomic_masses)
 
         # define psips and psips_f
-        dim = self.natm * 3
+        dim = self.natoms * 3
         psips_f = np.zeros([3 * self.nwalker + 1], dtype=int)
         psips = np.zeros([3 * self.nwalker, dim, 2], dtype=float)
 
@@ -201,13 +492,13 @@ class DMC:
 
         # psips keeps track of atomic positions of all walkers
         # is initialized to some molecular geometry defined in the input xyz file
-        psips[:, :, 0] = self.initial_coord[:]
+        psips[:, :, 0] = self.initial_coord.reshape(-1)
 
         # reference energy (which is updated throughout the DMC simulation) is initialized to energy of v0, referenced to energy
         # of minimum geometry
-        v_ref = v0
+        v_ref = energy_initial
         v_ave = 0
-        v_ref = v_ref - vmin
+        v_ref = v_ref - energy_minimum
         self.logger.write_pot(psips_f[0], v_ref, initial=True)
 
         return psips, psips_f, v_ave, v_ref
@@ -228,7 +519,7 @@ class DMC:
         dim = len(psips[0, :, 0])
         for i in range(dim):
             x = np.random.normal(size=(len(psips[:, 0, 0])))
-            psips[:, i, 1] = psips[:, i, 0] + x * self.deltax[np.ceil((i + 1) / 3.0) - 1]
+            psips[:, i, 1] = psips[:, i, 0] + x * self.deltax[int(np.ceil((i + 1) / 3.0)) - 1]
             # print(psips[:,i-1,1])
 
         return psips
@@ -261,8 +552,9 @@ class DMC:
 
         nalive = psips_f[0]
 
-        psips[:, :, 1], psips_f, v_tot, nalive = self.gbranch(refx, mass, symb, vmin, psips[:, :, 1], psips_f, v_ref, v_tot,
-                                                         nalive)
+        psips[:, :, 1], psips_f, v_tot, nalive = self.gbranch(
+            refx, mass, symb, vmin, psips[:, :, 1],
+            psips_f, v_ref, v_tot, nalive)
 
         # after doing the statistics in gbranch remove all dead replicas.
         count_alive = 0
@@ -316,6 +608,7 @@ class DMC:
         birth_flag = 0
         error_checker = 0
         # print(psips.shape) #-> (3*nwalker, 3*natm)
+
 
         #RE-DEFINE THIS
         v_psip = self.get_batch_energy(psips[:nalive, :], nalive)  # predict energy of all alive walkers.
@@ -396,38 +689,6 @@ class DMC:
         #error_checker = 0
         return psips, psips_f, v_tot, nalive
 
-    def create_batch(self,coor, batch_size,max_size=False):
-        """
-        It creates the batch to be passed to the model.
-
-        Parameters
-        ----------
-        coor : array of shape (natoms,3)
-        batch_size: int
-        max_size: bool
-            If True, it creates a batch with the specified batch size. If False, it creates a batch with the size
-            of the max_batch.
-
-        Returns
-        -------
-
-        """
-        batch = {}
-        batch['atoms_number'] = self.natm
-        batch['coordinates'] = torch.Tensor(coor)
-        batch['atomic_numbers'] = torch.Tensor(self.nucl_charge)
-        if not max_size:
-            batch['idx_i'] = torch.Tensor(idx_ilarge[:(self.natm * (self.natm - 1)) * batch_size])
-            batch['idx_j'] = torch.Tensor(idx_jlarge[:(self.natm * (self.natm - 1)) * batch_size])
-            batch['batch_seg'] = torch.Tensor(batch_seglarge[:self.natm * batch_size])
-        else:
-            batch['idx_i'] = torch.Tensor(idx_ilarge[:(self.natm * (self.natm - 1)) * self.max_batch])
-            batch['idx_j'] = torch.Tensor(idx_jlarge[:(self.natm * (self.natm - 1)) * self.max_batch])
-            batch['batch_seg'] = torch.Tensor(batch_seglarge[:self.natm * self.max_batch])
-
-        return batch
-
-
     def get_batch_energy(self,coor, batch_size):
         """
         Function to predict energies given the coordinates of the molecule. Depending on the max_batch and nwalkers,
@@ -443,9 +704,11 @@ class DMC:
         if batch_size <= self.max_batch:  # predict everything at once
 
             #Create the batch
-            batch = self.create_batch(coor,batch_size,max_size=True)
-            results = self.ase_calculator(batch)
-            e = results['energy'].detach().numpy()
+            batch = self.create_batch(
+                coor.reshape(-1,3)*self.au2ang,batch_size,max_size=False)
+            results = self.mcalc(batch)
+
+            e = results['energy'].cpu().detach().numpy()
 
         else:
             e = np.array([])
@@ -453,9 +716,13 @@ class DMC:
             for i in range(int(batch_size/ self.max_batch) - 1):
                 counter += 1
                 # print(i*max_batch, (i+1)*max_batch)
-                batch = self.create_batch(coor[i * self.max_batch:(i + 1) * self.max_batch, :],self.max_batch)
-                results = self.ase_calculator(batch)
-                etmp = results['energy'].detach().numpy()
+                batch = self.create_batch(
+                    coor[i*self.max_batch:(i + 1)*self.max_batch, :].reshape(
+                        -1,3)
+                    * self.au2ang,
+                    self.max_batch)
+                results = self.mcalc(batch)
+                etmp = results['energy'].cpu().detach().numpy()
                 e = np.append(e, etmp)
 
             # calculate missing geom according to batch_size - counter * max_batch
@@ -465,120 +732,62 @@ class DMC:
                 print("someting went wrong with the loop in get_batch_energy")
                 quit()
 
-            batch = self.create_batch(coor[-remaining:, :],remaining,max_size=False)
-            results = self.ase_calculator(batch)
-            etmp = results['energy'].detach().numpy()
+            batch = self.create_batch(
+                coor[-remaining:, :].reshape(-1,3)*self.au2ang,
+                remaining, max_size=False)
+            results = self.mcalc(batch)
+            etmp = results['energy'].cpu().detach().numpy()
             e = np.append(e, etmp)
 
         # print("time:  ", time.time() - start_time)
         return e * 0.0367493
 
-    def look_up_table(self,):
-        '''
-        Create "look up table" for the needed inputs. This is needed because the
-        batch size is not always constant (walkers die).
-        '''
-
-        N = len(self.nucl_charge)
-        i_ = []
-        j_ = []
-        for i in range(N):
-            for j in range(N):
-                if i != j:
-                    i_.append(i)
-                    j_.append(j)
-        global idx_ilarge
-        idx_ilarge = []
-        global idx_jlarge
-        idx_jlarge = []
-        global batch_seglarge
-        batch_seglarge = []
-        for batch in range(self.max_batch*2):  # largest batchsize
-            idx_ilarge += [i + N * batch for i in i_]
-            idx_jlarge += [j + N * batch for j in j_]
-            batch_seglarge += [batch] * N
-        return
-
-    def run(self):
-        '''
-        Run the difussion montecarlo simulation.
-
-        Returns
-        -------
-
-        '''
-
-        #Some basic variables
-        symb = self.nucl_charge
-        self.look_up_table()
-        # Basic evaluation of the potential energy
-        batch_v0 = self.create_batch(self.initial_coord,1)
-        batch_vmin = self.create_batch(self.coord_min,1)
-        calc_v0 = self.ase_calculator(batch_v0)
-        calc_vmin = self.ase_calculator(batch_vmin)
-
-        v0 = calc_v0['energy'].detach().numpy()
-        vmin = calc_vmin['energy'].detach().numpy()
-
-        self.logger.log_begin(self.nwalker, self.nsteps, self.eqsteps, self.stepsize, self.alpha)
-
-        #Initialize the DMC
-        psips, psips_f, v_ave, v_ref = self.init_dmc(v0, vmin)
-
-        v_tot = 0.0
-        # Main loop of the DMC
-        for i in range(self.nsteps):
-            start_time = time.time()
-            psips[:psips_f[0], :, :] = self.walk(psips[:psips_f[0], :, :])
-            psips, psips_f, v_ref = self.branch(self.initial_coord, self.mass, symb, vmin, psips, psips_f, v_ref,v_tot)
-            self.logger.write_pot(psips_f[0], v_ref, step=i + 1,initial=False)
-
-            if i > self.eqsteps:
-                v_ave += v_ref
-
-            if i > self.nsteps - 10:  # record the last 10 steps of the DMC simulation for visual inspection.
-                self.logger.write_last(psips_f, psips, self.natm, symb)
-            if i % 10 == 0:
-                print("step:  ", i, "time/step:  ", time.time() - start_time, "nalive:   ", psips_f[0])
-        v_ave = v_ave / (self.nsteps - self.eqsteps)
-
-        self.logger.write_log(v_ave)
-
-        # terminate code and close log/pot files
-        self.logger.log_end()
-        self.logger.close_files()
-
 
 class Logger_DMC:
-
     """
     Class to write the log files of the DMC simulation.
 
     Parameters
     ----------
-
-    filename: str
-        The name of the file where the results are going to be saved. **NOTE**: The code create 4 files with the same name
-        but different extensions: .pot, .log, .xyz and .xyz. The first two are the files where the potential energy
-        and the log of the simulation are saved. The last two are the files where the last 10 steps of the simulation
-        and the defective geometries are saved respectively.
+    filename: str, optional, default 'dmc'
+        Name tag of the output file where results are going to be stored. 
+        The DMC code create 4 files with the same name but different 
+        extensions: '.pot', '.log' and '.xyz'. 
+        '.pot': Potential energies of the DMC runs.
+        '.log': Log information of the runs.
+        '.xyz': Two '.xyz' files are generated where the last 10 steps of the
+            simulation and the defective geometries are saved respectively.
 
     """
 
-    def __init__(self,filename):
+    def __init__(
+        self,
+        filename: str,
+    ):
 
+        # File name tag
         self.filename = filename
-        self.potfile = open(self.filename + ".pot",'w')
-        self.logfile = open(self.filename + ".log",'w')
-        self.errorfile = open("defective" + self.filename + ".xyz",'w')
-        self.lastfile = open("configs" + self.filename + ".xyz",'w')
-
+        
+        # Logger files
+        self.potfile = open(self.filename + ".pot", 'w')
+        self.logfile = open(self.filename + ".log", 'w')
+        self.errorfile = open("defective_" + self.filename + ".xyz", 'w')
+        self.lastfile = open("configs_" + self.filename + ".xyz", 'w')
 
         # Units conversion
-        self.auang = 0.5291772083
-        self.aucm = 219474.6313710
+        self.au2ang = 0.5291772083
+        self.au2cm = 219474.6313710
 
-    def log_begin(self,nwalker,nstep,eqstep,stepsize,alpha):
+        return
+
+    def log_begin(
+        self,
+        nwalker: int,
+        nstep: int,
+        eqstep: int,
+        stepsize: float,
+        alpha: float,
+    ):
         """
         Subroutine to write header of log file
         logging all job details and the initial parameters of the DMC simulation
@@ -587,148 +796,203 @@ class Logger_DMC:
         ----------
         nwalker: int
             Number of walkers for the DMC
-        nstep: int
-            Number of steps for the DMC
-        eqstep: int
-            Number of equilibration steps for the DMC
+        nsteps: int
+            Number of steps for each of the DMC walkers
+        eqsteps: int
+            Number of initial equilibration steps for the DMC walkers
         stepsize: float
             Step size for the DMC in imaginary time
         alpha: float
-            Alpha parameter for the DMC: Feed-back parameter, usually propotional to 1/stepsize
+            Alpha parameter for the DMC feed-back parameter, usually 
+            proportional to 1/stepsize
 
         """
 
-        self.logfile.write("                  DMC for " + self.filename + "\n\n")
-        self.logfile.write("DMC Simulation started at " + str(datetime.now()) + "\n")
-        self.logfile.write("Number of random walkers: " + str(nwalker) + "\n")
+        # Write log file header
+        message = (
+            "     DMC for " + self.filename + "\n\n"
+            + f"DMC Simulation started at {str(datetime.now()):s}\n"
+            + f"Number of random walkers: {nwalker:d}\n"
+            + f"Number of total steps: {nstep:d}\n"
+            + f"Number of steps before averaging: {eqstep:d}\n"
+            + f"Stepsize: {stepsize:.6e}\n"
+            + f"Alpha: {alpha:.6e}\n\n")
+        self.logfile.write(message)
 
-        self.logfile.write("Number of total steps: " + str(nstep) + "\n")
-        self.logfile.write("Number of steps before averaging: " + str(eqstep) + "\n")
-        self.logfile.write("Stepsize: " + str(stepsize) + "\n")
-        self.logfile.write("Alpha: " + str(alpha) + "\n\n")
+        return
 
     def log_end(self):
         """
         Function to write footer of logfile
-        """
-        self.logfile.write("DMC Simulation terminated at " + str(datetime.now()) + "\n")
-        self.logfile.write("DMC calculation terminated successfully\n")
 
-    def write_error(self,refx,mass,symb,errq,v,idx):
         """
-        Subroutine to write xyz file of defective configurations
+        
+        # Write log file footer
+        message = (
+            f"DMC Simulation terminated at {str(datetime.now()):s}\n"
+            + "DMC calculation terminated successfully\n")
+        self.logfile.write(message)
+
+        return
+
+    def log_write(
+        self,
+        message: str
+    ):
+        """
+        Function to write custom message to log file
+
+        """
+        self.logfile.write(message)
+        return
+
+    def write_error(
+        self,
+        refx: np.ndarray,
+        mass: np.ndarray,
+        symb: np.ndarray,
+        errq: np.ndarray,
+        v: np.ndarray,
+        idx: np.ndarray,
+    ):
+        """
+        Subroutine to write '.xyz' file of defective configurations
 
         Parameters
         ----------
-
-        refx: array
-            reference positions of atoms
-        mass: array
-            atomic masses
-        symb: array
-            atomic symbols
-        errq: array
-            error in positions
-        v: array
-            potential energy
-        idx: array
-            index of defective configurations
+        refx: np.ndarray
+            Reference positions of atoms
+        mass: np.ndarray
+            Atomic masses
+        symb: np.ndarray
+            Atomic symbols
+        errq: np.ndarray
+            Error in positions
+        v: np.ndarray
+            Potential energy
+        idx: np.ndarray
+            Index of defective configurations
 
         """
 
-        if len(idx[0]) == 1:
-            natm = int(len(refx) / 3)
-            errx = errq[0] * self.auang
-            errx = errx.reshape(natm, 3)
-            self.errorfile.write(str(int(natm)) + "\n")
-            self.errorfile.write(str(v[idx[0]] * self.aucm) + "\n")
-            for i in range(int(natm)):
-                self.errorfile.write(
-                    str(symb[i]) + "  " + str(errx[i, 0]) + "  " + str(errx[i, 1]) + "  " + str(errx[i, 2]) + "\n")
+        # Data preparation
+        natoms = len(refx)
+        errx = errq[0]*self.au2ang
+        errx = errx.reshape(len(idx[0]), natoms, 3)
+        
+        # Iteration over defective configurations
+        message = ""
+        for ix, xi in enumerate(errx):
+            message += (
+                f"{natoms:d}\n"
+                + f"{v[idx[0][ix]]*self.au2cm:.6e}\n")
+            for ia in range(natoms):
+                message += (
+                    f"{symb[ia]:s}  "
+                    + f"{errx[ix, ia, 0]:.8f}  "
+                    + f"{errx[ix, ia, 1]:.8f}  "
+                    + f"{errx[ix, ia, 2]:.8f}\n")
+        
+        # Write defective configurations
+        self.errorfile.write(message)
 
-        else:
-            natm = int(len(refx) / 3)
-            errx = errq[0] * self.auang
-            errx = errx.reshape(len(idx[0]), natm, 3)
+        return
 
-            for j in range(len(errx)):
-                self.errorfile.write(str(int(natm)) + "\n")
-                self.errorfile.write(str(v[idx[0][j]] * self.aucm) + "\n")
-                for i in range(int(natm)):
-                    self.errorfile.write(str(symb[i]) + "  " + str(errx[j, i, 0]) + "  " + str(errx[j, i, 1]) + "  " + str(
-                        errx[j, i, 2]) + "\n")
-
-    def write_last(self,psips_f,psips,natm,symb):
+    def write_last(
+        self,
+        psips_f: np.ndarray,
+        psips: np.ndarray,
+        natoms: int,
+        symb: np.ndarray,
+    ):
         """
         Subroutine to write xyz file of last 10 steps of DMC simulation
 
         Parameters
         ----------
-        psips_f: array
-            flag to know which walkers are alive
-        psips: array
-            coordinates of the walkers
+        psips_f: np.ndarray
+            Flag to know which walkers are alive
+        psips: np.ndarray
+            Coordinates of the walkers
         natm: int
-            number of atoms
-        symb:
-            atomic symbols
-
-        Returns
-        -------
+            Number of atoms
+        symb: np.ndarray
+            Atomic symbols
 
         """
 
-        for j in range(psips_f[0]):
-            self.lastfile.write(str(natm) + "\n\n")
-            for l in range(int(natm)):
-                l = l + 1
-                self.lastfile.write(str(symb[l - 1]) + "  " + str(psips[j, 3 * l - 3, 0] * self.auang) + "  " + str(
-                    psips[j, 3 * l - 2, 0] * self.auang) + "  " + str(psips[j, 3 * l - 1, 0] * self.auang) + "\n")
+        # Iteration over walkers
+        message = ""
+        for iw, status in enumerate(psips_f[0]):
+            message += (
+                f"{natoms:d}\n"
+                + "\n")
+            for ia, si in enumerate(symb):
+                message += (
+                    f"{si:s}  "
+                    + f"{psips[iw, 3*(ia - 1) - 3, 0]:.8f}  "
+                    + f"{psips[iw, 3*(ia - 1) - 2, 0]:.8f}  "
+                    + f"{psips[iw, 3*(ia - 1) - 1, 0]:.8f}\n"
+                    )
 
-    def write_pot(self,psips_f,v_ref,step=None,initial=False):
+        # Write last configurations
+        self.lastfile.write(message)
+
+        return
+
+    def write_pot(
+        self,
+        psips_f,
+        v_ref: float,
+        step=None,
+        initial=False,
+    ):
         """
-        subroutine to write potential file
+        Write potential file
 
         Parameters
         ----------
-        psips_f
-        v_ref
+        psips_f: np.ndarray
+            Flag to know which walkers are alive
+        v_ref: float
+            Potential energy
 
         Returns
         -------
 
         """
         if initial:
-           self.potfile.write("0  " + str(psips_f) + "  " + str(v_ref) + "  " + str(v_ref * self.aucm) + "\n")
+           self.potfile.write("0  " + str(psips_f) + "  " + str(v_ref) + "  " + str(v_ref * self.au2cm) + "\n")
         else:
-           self.potfile.write(str(step) + "  " + str(psips_f) + "  " + str(v_ref) + "  " + str(v_ref * self.aucm) + "\n")
+           self.potfile.write(str(step) + "  " + str(psips_f) + "  " + str(v_ref) + "  " + str(v_ref * self.au2cm) + "\n")
 
+        return
 
     def write_log(self,v_ave):
         """
-        subroutine to write average log file
+        Write average to log file
 
         Parameters
         ----------
         v_ave: float
-        Average energy of the trajectory
-
-        Returns
-        -------
+            Average energy of the trajectory
 
         """
-        self.logfile.write("AVERAGE ENERGY OF TRAJ   " + "   " + str(v_ave) + " hartree   " + str(v_ave * self.aucm) + " cm**-1\n")
+        
+        self.logfile.write(
+            "Average energy of trajectory:  "
+            + f"{v_ave:.6e} Hartree,  "
+            + f"{v_ave*self.au2cm:.6e} cm**-1\n")
+
+        return
 
     def close_files(self):
         """
-        Subroutine to close all files
-
-
-        -------
+        Close all files
 
         """
+
         self.potfile.close()
         self.logfile.close()
         self.errorfile.close()
         self.lastfile.close()
-

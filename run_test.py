@@ -85,6 +85,10 @@ if flag_database_sql:
             'data/meta_nh3.traj',
             ('data/meta_nh3.traj', 'traj'),
             ],
+        data_num_train=3000,
+        data_num_valid=500,
+        data_num_test=None,
+        data_seed=1001,
         )
     model.set_data_container()
 

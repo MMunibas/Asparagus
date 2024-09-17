@@ -214,7 +214,7 @@ class DataLoader(torch.utils.data.DataLoader):
             [b['atomic_numbers'] for b in batch], 0).to(
                 device=self.device, dtype=torch.int64)
 
-        # Periodic boundary conditions
+        # Atom positions
         coll_batch['positions'] = torch.cat(
             [b['positions'] for b in batch], 0).to(
                 device=self.device, dtype=self.dtype)

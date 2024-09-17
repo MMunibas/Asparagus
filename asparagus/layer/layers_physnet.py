@@ -161,7 +161,7 @@ class InteractionLayer(torch.nn.Module):
             False,
             device,
             dtype,
-            weight_init=torch.nn.init.zeros_)
+            weight_init=torch.nn.init.xavier_normal_)
             
 
         # Dense layer for atomic feature vector for atom i
@@ -337,7 +337,7 @@ class OutputBlock(torch.nn.Module):
             False,
             device,
             dtype,
-            weight_init=torch.nn.init.zeros_)
+            weight_init=torch.nn.init.xavier_normal_)
 
         return
 

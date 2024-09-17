@@ -6,6 +6,8 @@ import numpy as np
 
 import torch
 
+import ase
+
 from asparagus import data
 from asparagus import utils
 from asparagus import settings
@@ -384,7 +386,7 @@ class DataSet():
 
     def add_atoms(
         self,
-        atoms: object,
+        atoms: ase.Atoms,
         properties: Dict[str, Any],
     ):
         """

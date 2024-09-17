@@ -90,13 +90,15 @@ class Asparagus():
         """
         Return item(s) from configuration dictionary
         """
-        return self.config.get(args)
+        config = settings.get_config(self.config)
+        return config.get(args)
 
     def get(self, args: str) -> Any:
         """
         Return item(s) from configuration dictionary
         """
-        return self.config.get(args)
+        config = settings.get_config(self.config)
+        return config.get(args)
 
     def set_data_container(
         self,

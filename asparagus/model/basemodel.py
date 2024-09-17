@@ -567,42 +567,131 @@ class BaseModel(torch.nn.Module):
 
         """
 
-        # Initialize atoms batch
-        atoms_batch = {}
-
-        # Number of atoms
-        Natoms = len(atoms)
-        atoms_batch['atoms_number'] = torch.tensor(
-            [Natoms], dtype=torch.int64, device=self.device)
-
-        # Atomic number
-        atoms_batch['atomic_numbers'] = torch.tensor(
-            atoms.get_atomic_numbers(), dtype=torch.int64, device=self.device)
-
-        # Atom positions
-        atoms_batch['positions'] = torch.zeros(
-            [Natoms, 3], dtype=self.dtype, device=self.device)
-
-        # Atom periodic boundary conditions
-        atoms_batch['pbc'] = torch.tensor(
-            atoms.get_pbc(), dtype=torch.bool, device=self.device)
-
-        # Atom cell information
-        atoms_batch['cell'] = torch.tensor(
-            atoms.get_cell()[:], dtype=self.dtype, device=self.device)
-
-        # Atom segment indices, just one atom segment allowed
-        atoms_batch['sys_i'] = torch.zeros(
-            Natoms, dtype=torch.int64, device=self.device)
-
-        # Total atomic system charge
-        atoms_batch['charge'] = torch.tensor(
-            [charge], dtype=self.dtype, device=self.device)
-
-        neighbor_list = module.TorchNeighborListRangeSeparated(
-            self.model_cutoff,
-            self.device,
-            self.dtype)
-        atoms_batch = neighbor_list(atoms_batch)
+        # Create atoms batch dictionary
+        atoms_batch = self.create_batch(
+            atoms,
+            charge=charge)
 
         return self.forward(atoms_batch)
+
+    def create_batch(
+        self,
+        atoms: Union[ase.Atoms, List[ase.Atoms]],
+        charge: Optional[Union[float, List[float]]] = None,
+        conversion: Optional[Dict[str, float]] = {},
+        repeat: Optional[int] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Create a systems batch dictionary as input for the model calculator.
+        
+        Parameters
+        ----------
+        atoms: (ase.Atoms, list(ase.Atoms))
+            ASE Atoms object or list of ASE Atoms object to prepare batch
+            dictionary.
+        charge: (float list(float)), optional, default 0.0
+            Total system charge or list of total system charge.
+            If None, charge is estimated from the ASE Atoms objects, mostly
+            set as zero.
+        conversion: dict(str, float), optional, default {}
+            ASE Atoms conversion dictionary from ASE units to model units.
+        repeat: int, optional, default None
+            Number of repeats written to the batch. If None or 1, only the
+            information of the ASE Atoms or list of ASE Atoms is written.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            System(s) batch dictionary used as model calculator input
+
+        """
+
+        # Check atoms input
+        if utils.is_ase_atoms(atoms):
+            atoms = [atoms]
+        elif not utils.is_ase_atoms_array(atoms):
+            raise ValueError(
+                "Input 'atoms' is not an ASE Atoms object or list of ASE "
+                + "atoms objects!")
+
+        # Initialize atoms batch
+        batch = {}
+
+        # Number of atoms
+        batch['atoms_number'] = torch.tensor(
+            [len(atms) for atms in atoms],
+            device=self.device, dtype=torch.int64)
+
+        # System segment index of atom i
+        batch['sys_i'] = torch.repeat_interleave(
+            torch.arange(len(atoms), device=self.device, dtype=torch.int64),
+            repeats=batch['atoms_number'], dim=0).to(
+                device=self.device, dtype=torch.int64)
+
+        # Atomic numbers properties
+        batch['atomic_numbers'] = torch.cat(
+            [
+                torch.tensor(atms.get_atomic_numbers(), dtype=torch.int64)
+                for atms in atoms
+            ], 0).to(
+                device=self.device, dtype=torch.int64)
+
+        # Atom positions
+        if conversion.get('positions') is None:
+            fconv = 1.0
+        else:
+            fconv = conversion['positions']
+        batch['positions'] = torch.cat(
+            [
+                torch.tensor(atms.get_positions()*fconv, dtype=self.dtype)
+                for atms in atoms
+            ], 0).to(
+                device=self.device, dtype=self.dtype)
+
+        # Atom periodic boundary conditions
+        batch['pbc'] = torch.tensor(
+            [atms.get_pbc() for atms in atoms],
+            dtype=torch.bool, device=self.device)
+
+        # Atom cell information
+        if conversion.get('positions') is None:
+            fconv = 1.0
+        else:
+            fconv = conversion['positions']
+        batch['cell'] = torch.tensor(
+            [atms.get_cell()[:] for atms in atoms],
+            dtype=self.dtype, device=self.device)
+
+        # Total atomic system charge
+        if conversion.get('charge') is None:
+            fconv = 1.0
+        else:
+            fconv = conversion['charge']
+        if charge is None:
+            try:
+                charge = [np.sum(atms.get_charges())*fconv for atms in atoms]
+            except RuntimeError:
+                charge = [
+                    np.sum(atms.get_initial_charges())*fconv
+                    for atms in atoms]
+        elif utils.is_numeric(charge):
+            charge = [charge*fconv]*len(atoms)
+        elif utils.is_numeric_array(charge):
+            charge = np.array(charge)*fconv
+        else:
+            charge = [0.0]*len(atoms)
+        batch['charge'] = torch.tensor(
+            charge, dtype=self.dtype, device=self.device)
+
+        # Compute atom pair indices
+        if not hasattr(self, 'neighbor_list'):
+            self.neighbor_list = module.TorchNeighborListRangeSeparated(
+                self.model_cutoff,
+                self.device,
+                self.dtype)
+        batch = self.neighbor_list(batch)
+
+        if repeat:
+            raise NotImplementedError()
+
+        return batch
