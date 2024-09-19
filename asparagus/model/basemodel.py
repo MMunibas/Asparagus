@@ -579,7 +579,6 @@ class BaseModel(torch.nn.Module):
         atoms: Union[ase.Atoms, List[ase.Atoms]],
         charge: Optional[Union[float, List[float]]] = None,
         conversion: Optional[Dict[str, float]] = {},
-        repeat: Optional[int] = None,
     ) -> Dict[str, torch.Tensor]:
         """
         Create a systems batch dictionary as input for the model calculator.
@@ -595,9 +594,6 @@ class BaseModel(torch.nn.Module):
             set as zero.
         conversion: dict(str, float), optional, default {}
             ASE Atoms conversion dictionary from ASE units to model units.
-        repeat: int, optional, default None
-            Number of repeats written to the batch. If None or 1, only the
-            information of the ASE Atoms or list of ASE Atoms is written.
 
         Returns
         -------
@@ -659,7 +655,7 @@ class BaseModel(torch.nn.Module):
         else:
             fconv = conversion['positions']
         batch['cell'] = torch.tensor(
-            [atms.get_cell()[:] for atms in atoms],
+            [atms.get_cell()[:]*fconv for atms in atoms],
             dtype=self.dtype, device=self.device)
 
         # Total atomic system charge
@@ -691,7 +687,163 @@ class BaseModel(torch.nn.Module):
                 self.dtype)
         batch = self.neighbor_list(batch)
 
-        if repeat:
-            raise NotImplementedError()
+        return batch
+
+    def create_batch_copies(
+        self,
+        atoms: ase.Atoms,
+        ncopies: Optional[int] = None,
+        positions: Optional[List[float]] = None,
+        cell: Optional[List[float]] = None,
+        charge: Optional[float] = None,
+        conversion: Optional[Dict[str, float]] = {},
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Create a systems batch dictionary as input for the model calculator.
+
+        Parameters
+        ----------
+        atoms: (ase.Atoms)
+            ASE Atoms object to prepare multiple copies in a batch dictionary.
+        ncopies: int, optional, default None
+            Number of copies of the ASE atoms system in the batch.
+            If None, number of copies are taken from 'positions' or 'cell'
+            input, otherwise is 1.
+        positions: list(float), optional, default None
+            Array of shape ('Ncopies', 'Natoms', 3) where 'Ncopies' is the
+            number of copies of the ASE Atoms system in the batch and 'Natoms'
+            is the number of atoms.
+            If None, the positions of the ASE Atoms object is taken.
+        cell: list(float), optional, default None
+            Array of ASE Atoms cell parameter of shape ('Ncopies', 3).
+            If None, the cell parameters from the ASE Atoms object is taken.
+        charge: float, optional, default 0.0
+            Total system charge of the ASE atoms object.
+            If None, charge is estimated from the ASE Atoms objects, mostly
+            set as zero.
+        conversion: dict(str, float), optional, default {}
+            ASE Atoms conversion dictionary from ASE units to model units.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            System(s) batch dictionary used as model calculator input
+
+        """
+
+        # Get number of copies
+        if ncopies is None and positions is None and cell is None:
+            ncopies = 1
+        elif ncopies is None and positions is not None:
+            ncopies = len(positions)
+        elif ncopies is None and cell is not None:
+            ncopies = len(cell)
+
+        # Check positions and cell input
+        if positions is not None and ncopies != len(positions):
+            raise SyntaxError(
+                f"Number of copies ({ncopies:d}) and positions "
+                + f"({len(positions):d}) does not match!")
+        if cell is not None and ncopies != len(cell):
+            raise SyntaxError(
+                f"Number of copies ({ncopies:d}) and cells "
+                + f"({len(cell):d}) does not match!")
+
+        # Initialize atoms batch
+        batch = {}
+
+        # Number of atoms
+        batch['atoms_number'] = torch.tensor(
+            [len(atoms)]*ncopies, device=self.device, dtype=torch.int64)
+
+        # System segment index of atom i
+        batch['sys_i'] = torch.repeat_interleave(
+            torch.arange(ncopies, device=self.device, dtype=torch.int64),
+            repeats=len(atoms), dim=0).to(
+                device=self.device, dtype=torch.int64)
+
+        # Atomic numbers properties
+        batch['atomic_numbers'] = torch.cat(
+            [
+                torch.tensor(atoms.get_atomic_numbers(), dtype=torch.int64)
+                for _ in range(ncopies)
+            ], 0).to(
+                device=self.device, dtype=torch.int64)
+
+        # Atom positions
+        if conversion.get('positions') is None:
+            fconv = 1.0
+        else:
+            fconv = conversion['positions']
+        if positions is None:
+            batch['positions'] = torch.cat(
+                [
+                    torch.tensor(atoms.get_positions()*fconv, dtype=self.dtype)
+                    for _ in range(ncopies)
+                ], 0).to(
+                    device=self.device, dtype=self.dtype)
+        else:
+            batch['positions'] = torch.cat(
+                [
+                    torch.tensor(positions_i, dtype=self.dtype)*fconv
+                    for positions_i in positions
+                ], 0).to(
+                    device=self.device, dtype=self.dtype)
+
+        # Atom periodic boundary conditions
+        batch['pbc'] = torch.tensor(
+            [atoms.get_pbc() for _ in range(ncopies)],
+            dtype=torch.bool, device=self.device)
+
+        # Atom cell information
+        if conversion.get('positions') is None:
+            fconv = 1.0
+        else:
+            fconv = conversion['positions']
+        if cell is None:
+            batch['cell'] = torch.tensor(
+                [atoms.get_cell()[:]*fconv for _ in range(ncopies)],
+                dtype=self.dtype, device=self.device)
+        else:
+            batch['cell'] = torch.tensor(
+                [cell_i for cell_i in cell],
+                dtype=self.dtype, device=self.device)*fconv
+
+        # Total atomic system charge
+        if conversion.get('charge') is None:
+            fconv = 1.0
+        else:
+            fconv = conversion['charge']
+        if charge is None:
+            try:
+                charge = [
+                    np.sum(atoms.get_charges())*fconv for _ in range(ncopies)]
+            except RuntimeError:
+                charge = [
+                    np.sum(atoms.get_initial_charges())*fconv
+                    for _ in range(ncopies)]
+        elif utils.is_numeric(charge):
+            charge = [charge*fconv]*ncopies
+        elif utils.is_numeric_array(charge):
+            charge = np.array(charge)*fconv
+        else:
+            charge = [0.0]*ncopies
+        batch['charge'] = torch.tensor(
+            charge, dtype=self.dtype, device=self.device)
+
+        # Compute atom pair indices
+        if not hasattr(self, 'neighbor_list'):
+            self.neighbor_list = module.TorchNeighborListRangeSeparated(
+                self.model_cutoff,
+                self.device,
+                self.dtype)
+        batch = self.neighbor_list(batch)
 
         return batch
+
+
+
+
+
+
+

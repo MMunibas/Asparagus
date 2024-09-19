@@ -60,10 +60,10 @@ class DMC:
     alpha: float, optional, default 1.0
         Alpha parameter for the DMC feed-back parameter, usually proportional
         to 1/stepsize
-    max_batch: int, optional, default 6000
-        Size of the batch
-    seed: (int, float), optional, default: np.random.randint(1E6)
-        Specify random seed
+    max_batch: int, optional, default 128
+        Maximum size of the batch to compute walker energies
+    seed: int, optional, default: np.random.randint(1E6)
+        Specify random seed for atom positions shuffling
     initial_positions: (str, list(float), ase.Atoms), optional, default None
         Initial coordinates for the DMC system as a list of the correct 
         shape in Angstrom, a file path to the respective ASE Atoms file or
@@ -90,7 +90,7 @@ class DMC:
         eqsteps: Optional[int] = 100,
         stepsize: Optional[float] = 0.1,
         alpha: Optional[float] = 1.0,
-        max_batch: Optional[int] = 6000,
+        max_batch: Optional[int] = 128,
         seed: Optional[int] = np.random.randint(1E6),
         initial_positions: Optional[Union[str, List[float], ase.Atoms]] = None,
         filename: Optional[str] = None,
@@ -206,8 +206,13 @@ class DMC:
             raise ValueError(
                 f"Invalid 'max_batch' input of type '{type(max_batch)}'.\n"
                 + "Required is a numeric input!")
-        # Random seed
-        self.seed = seed
+        # Seed for random generator
+        if utils.is_numeric(seed):
+            self.seed = int(seed)
+        else:
+            raise ValueError(
+                f"Invalid 'seed' input of type '{type(seed)}'.\n"
+                + "Required is a numeric input!")
 
         # Check initial coordinates for the DMC runs
         if initial_positions is None:
@@ -247,7 +252,10 @@ class DMC:
                 + "Required is a string for a filename tag.")
 
         # Initialize DMC logger
-        self.logger = Logger_DMC(self.filename)
+        self.logger = Logger_DMC(
+            self.filename,
+            maxsteps=self.nsteps,
+            maxwalker=3*self.nwalker)
 
         return
 
@@ -291,11 +299,6 @@ class DMC:
         self.atomic_masses = (
             self.atoms.get_masses()*self.dmc_conversion['mass'])
 
-        #self.mass = np.sqrt(self.atoms.get_masses()*self.emass)
-        #self.nucl_charge = self.atoms.get_atomic_numbers()
-        #self.au2ang = 0.5291772083
-        #self.coord_min = self.atoms.get_positions()/self.au2ang
-
         return
 
     def run(
@@ -303,6 +306,12 @@ class DMC:
         optimize: Optional[bool] = None,
         optimize_method: Optional[Callable] = BFGS,
         optimize_fmax: Optional[float] = 0.01,
+        nwalker: Optional[int] = None,
+        nsteps: Optional[int] = None,
+        eqsteps: Optional[int] = None,
+        stepsize: Optional[float] = None,
+        alpha: Optional[float] = None,
+        seed: Optional[int] = None,
     ):
         """
         Run the diffusion Monte-Carlo simulation.
@@ -317,16 +326,47 @@ class DMC:
         optmize_fmax: float, optional, default 0.01
             Maximum force component value used as convergence threshold for
             the optimization.
+        nwalker: int, optional, default None
+            Number of walkers for the DMC
+        nsteps: int, optional, default None
+            Number of steps for each of the DMC walkers
+        eqsteps: int, optional, default None
+            Number of initial equilibration steps for the DMC walkers
+        stepsize: float, optional, default None
+            Step size for the DMC in imaginary time
+        alpha: float, optional, default None
+            Alpha parameter for the DMC feed-back parameter, usually proportional
+            to 1/stepsize
+        seed: int
+            Specify random seed for atom positions shuffling
 
         """
 
+        # Check input parameter
+        if nwalker is None:
+            nwalker = self.nwalker
+        if nsteps is None:
+            nsteps = self.nsteps
+        if eqsteps is None:
+            eqsteps = self.eqsteps
+        if stepsize is None:
+            stepsize = self.stepsize
+        if alpha is None:
+            alpha = self.alpha
+        if seed is None:
+            seed = self.seed
+
         # Write log file header
         self.logger.log_begin(
-            self.nwalker,
-            self.nsteps,
-            self.eqsteps,
-            self.stepsize,
-            self.alpha)
+            nwalker,
+            nsteps,
+            eqsteps,
+            stepsize,
+            alpha,
+            seed)
+
+        # Set random generator seed
+        np.random.seed(seed)
 
         # If requested, perform structure optimization
         if optimize is None:
@@ -352,19 +392,57 @@ class DMC:
         results_initial = self.model_calculator(
             batch_initial,
             no_derivation=True)
-        results_minimum = self.model_calculator(
-            batch_minimum,
-            no_derivation=True)
         energy_initial = (
             results_initial['energy'].cpu().detach().numpy()
             * self.dmc_conversion['energy'])
+        results_minimum = self.model_calculator(
+            batch_minimum,
+            no_derivation=True)
         energy_minimum = (
             results_minimum['energy'].cpu().detach().numpy()
             * self.dmc_conversion['energy'])
 
-        #Initialize the DMC
-        psips, psips_f, v_ave, v_ref = self.init_walker(
-            energy_initial, energy_minimum)
+        # Initialize the DMC
+        w_positions, dmc_energy, w_status, w_stepsize = self.init_walker(
+            energy_initial,
+            energy_minimum,
+            self.atoms_initial.get_positions(),
+            nwalker,
+            nsteps,
+            eqsteps,
+            stepsize)
+
+        # Write initial state to log file
+        self.logger.write_pot(np.sum(w_status), dmc_energy, step=0)
+
+        # Run main DMC loop
+        dmc_avg_energy = 0.0
+        dmc_total_energy = 0.0
+        w_positions_step = np.zeros_like(w_positions)
+        for i in range(self.nsteps):
+
+            # Start timer
+            start_time = time.time()
+
+            # Execute walk step
+            w_positions_step = self.walk(
+                w_positions,
+                w_status,
+                w_stepsize,
+                w_positions_step)
+
+            # Execute branching step
+            w_positions, w_status, dmc_energy = self.branch(
+                w_positions,
+                w_positions_step,
+                dmc_energy,
+                w_status,
+                dmc_total_energy,
+                energy_minimum,
+                nwalker,
+                stepsize,
+                alpha)
+
         exit()
         # Main loop of the DMC
         v_tot = 0.0
@@ -380,7 +458,7 @@ class DMC:
                 psips_f,
                 v_ref,
                 v_tot)
-            self.logger.write_pot(psips_f[0], v_ref, step=i + 1,initial=False)
+            self.logger.write_pot(psips_f[0], v_ref, step=i + 1)
 
             if i > self.eqsteps:
                 v_ave += v_ref
@@ -458,236 +536,317 @@ class DMC:
         self,
         energy_initial: float,
         energy_minimum: float,
+        positions_initial: List[float],
+        nwalker: int,
+        nsteps: int,
+        eqsteps: int,
+        stepsize: float,
     ):
         """
         Initialize DMC simulation variables such as the atoms positions for
-        each walker (psi_positions) and the status of the walker (psi_status).
+        each walker (w_positions) and the status of the walker (w_status).
 
         Parameters
         ----------
         energy_initial: float
-            initial energy
+            Potential energy of the initial atom configuration
         energy_minimum:
-            minimum energy
+            Minimum potential energy of the atom configuration
+        positions_initial: list(float)
+            Initial atom positions assigned to the walkers
+        nwalker: int
+            Number of walkers for the DMC
+        nsteps: int
+            Number of steps for each of the DMC walkers
+        eqsteps: int
+            Number of initial equilibration steps for the DMC walkers
+        stepsize: float
+            Step size for the DMC in imaginary time
 
         Returns
         -------
 
         """
-        # Not sure this function is going to work,
-        # There are some variables that are not defined in the original code. LIVS 14/12/2023
 
-        #define stepsize
-        self.deltax = np.sqrt(self.stepsize/self.atomic_masses)
+        # Prepare atom mass weighted step size
+        w_stepsize = np.sqrt(stepsize)/self.atomic_masses
 
-        # define psips and psips_f
-        dim = self.natoms * 3
-        psips_f = np.zeros([3 * self.nwalker + 1], dtype=int)
-        psips = np.zeros([3 * self.nwalker, dim, 2], dtype=float)
+        # Initialize walker positions and walker status
+        w_status = np.ones(3*nwalker, dtype=bool)
+        w_status[nwalker:] = False
+        w_positions = np.zeros([3*nwalker, self.natoms, 3], dtype=float)
 
-        # psips_f keeps track of how many walkers are alive (psips_f[0]) and which ones (psips_f[1:], 1 for alive and 0 for dead)
-        psips_f[:] = 1
-        psips_f[0] = self.nwalker
-        psips_f[self.nwalker + 1:] = 0
+        # Set initial atom positions to each walker
+        w_positions[:] = positions_initial
 
-        # psips keeps track of atomic positions of all walkers
-        # is initialized to some molecular geometry defined in the input xyz file
-        psips[:, :, 0] = self.initial_coord.reshape(-1)
+        # Assign DMC energy shifted by the minimum potential energy
+        dmc_energy = energy_initial - energy_minimum
 
-        # reference energy (which is updated throughout the DMC simulation) is initialized to energy of v0, referenced to energy
-        # of minimum geometry
-        v_ref = energy_initial
-        v_ave = 0
-        v_ref = v_ref - energy_minimum
-        self.logger.write_pot(psips_f[0], v_ref, initial=True)
+        return w_positions, dmc_energy, w_status, w_stepsize
 
-        return psips, psips_f, v_ave, v_ref
-
-    def walk(self,psips):
+    def walk(
+        self,
+        w_positions: List[float],
+        w_status: List[bool],
+        w_stepsize: List[float],
+        w_positions_step: List[float],
+    ) -> List[float]:
         """
-        Walk routine performs the diffusion process of the replicas by adding to the
-        coordinates of the alive replicas sqrt(deltatau)rho, rho is random number
-        from Gaussian distr
+        Walk routine performs the diffusion process of the replicas/walkter by
+        adding random displacement sqrt(deltatau)*rho to the atom positions of
+        the alive replicas, where rho is random number from a Gaussian
+        distribution
 
         Parameters
         ----------
-        psips: array
-            coordinates of the walkers
+        w_positions: list(float)
+            Atom coordinates of the walkers
+        w_status: list(bool)
+            Walker status
+        w_stepsize: list(float)
+            Atom mass weighted step size
+        w_positions_step: list(float)
+            Array for the processed atom coordinates of the walkers
+
+        Returns
+        -------
+        list(float)
+            Processed atom coordinates of the walker
 
         """
-        # print(psips.shape)
-        dim = len(psips[0, :, 0])
-        for i in range(dim):
-            x = np.random.normal(size=(len(psips[:, 0, 0])))
-            psips[:, i, 1] = psips[:, i, 0] + x * self.deltax[int(np.ceil((i + 1) / 3.0)) - 1]
-            # print(psips[:,i-1,1])
 
-        return psips
+        # Get size of the random number array
+        size = w_positions[w_status].shape
 
-    def branch(self,refx, mass, symb, vmin, psips, psips_f, v_ref,v_tot):
+        # Get random Gaussian distributed numbers
+        rho = np.random.normal(size=size)
+
+        # Get processed atom positions
+        w_positions_step[w_status] = (
+            w_positions[w_status]
+            + rho*w_stepsize.reshape(1, -1, 1))
+
+        return w_positions_step
+
+    def compute_energies(
+        self,
+        w_positions: List[float],
+        w_status: List[bool],
+        w_nactive: Optional[int] = None,
+    ) -> List[float]:
         """
-
-        The birth-death (branching) process, which follows the diffusion step
+        Compute walker potential energies
 
         Parameters
         ----------
-        refx: array
-            reference positions of atoms
-        mass: array
-            atomic masses
-        symb: array
-            atomic symbols
-        vmin: float
-            minimum energy
-        psips: array
-            coordinates of the walkers
-        psips_f: array
-            flag to know which walkers are alive
-        v_ref: float
-            reference energy
-        v_tot: float
-            total energy
+        w_positions: list(float)
+            Atom coordinates of the walkers
+        w_status: list(bool)
+            Walker status
+        w_nactive: int, optional, default None
+            Number of active walkers
+
+        Returns
+        -------
+        list(float)
+            Walker potential energies
 
         """
 
-        nalive = psips_f[0]
+        # If not given, compute number of walkers which are active
+        if w_nactive is None:
+            w_nactive = np.sum(w_status)
 
-        psips[:, :, 1], psips_f, v_tot, nalive = self.gbranch(
-            refx, mass, symb, vmin, psips[:, :, 1],
-            psips_f, v_ref, v_tot, nalive)
+        if w_nactive < self.max_batch:
 
-        # after doing the statistics in gbranch remove all dead replicas.
-        count_alive = 0
-        psips[:, :, 0] = 0.0  # just to be sure we dont use "old" walkers
-        for i in range(nalive):
-            """update psips and psips_f using the number of alive walkers (nalive). 
-            """
-            if psips_f[i + 1] == 1:
-                count_alive += 1
-                psips[count_alive - 1, :, 0] = psips[i, :, 1]
-                psips_f[count_alive] = 1
-        psips_f[0] = count_alive
-        psips[:, :, 1] = 0.0  # just to be sure we dont use "old" walkers
-        psips_f[count_alive + 1:] = 0  # set everything beyond index count_alive to zero
+            # If number of walkers is below the maximum batch size limit,
+            # compute the walker energies in one batch
+            w_batch = self.model_calculator.create_batch_copies(
+                self.atoms,
+                ncopies=w_nactive,
+                positions=w_positions[w_status],
+                charge=self.charge,
+                conversion=self.ase_conversion)
 
-        # update v_ref
-        v_ref = v_tot / psips_f[0] + self.alpha * (1.0 - 3.0 * psips_f[0] / (len(psips_f) - 1))
+            w_results = self.model_calculator(
+                w_batch,
+                no_derivation=True)
+            w_energies = (
+                w_results['energy'].cpu().detach().numpy()
+                * self.dmc_conversion['energy'])
 
-        return psips, psips_f, v_ref
+        else:
 
-    def gbranch(self,refx, mass, symb, vmin, psips, psips_f, v_ref, v_tot, nalive):
+            # If number of walkers is larger than maximum batch size limit,
+            # compute the walker energies in multiple batches
+            w_energies = None
+            w_end = 0
+            while w_end < w_nactive:
+
+                # Prepare batch start and end point parameters
+                w_start = w_end
+                w_end = w_end + self.max_batch
+                if w_end > w_nactive:
+                    w_end = w_nactive
+                w_nbatch = w_end - w_start
+
+                # Prepare and run batch calculation
+                w_batch = self.model_calculator.create_batch_copies(
+                    self.atoms,
+                    ncopies=w_nbatch,
+                    positions=w_positions[w_status][w_start:w_end],
+                    charge=self.charge,
+                    conversion=self.ase_conversion)
+
+                w_results_batch = self.model_calculator(
+                                w_batch,
+                                no_derivation=True)
+                w_energies_batch = (
+                    w_results_batch['energy'].cpu().detach().numpy()
+                    * self.dmc_conversion['energy'])
+
+                # Assign batch energies
+                if w_energies is None:
+                    w_energies = torch.zeros(
+                        w_nactive,
+                        dtype=w_energies_batch.dtype,
+                        device=w_energies_batch.device)
+                w_energies[w_start:w_end] = w_energies_batch
+
+        return w_energies
+
+    def branch(
+        self,
+        w_positions: List[float],
+        w_positions_step: List[float],
+        dmc_energy: float,
+        w_status: List[bool],
+        dmc_total_energy: float,
+        energy_minimum: float,
+        nwalker: int,
+        stepsize: float,
+        alpha: float,
+        defective_threshold: Optional[float] = -1.e-5,
+    ):
         """
-        The birth-death criteria for the ground state energy. Note that psips is of shape
-        (3*nwalker, 3*natm) as only the progressed coordinates (i.e. psips[:,i,1]) are
-        given to gbranch
+        Perform The birth-death (branching) process, which follows the
+        diffusion step
 
         Parameters
         ----------
-
-        refx: array
-            reference positions of atoms
-        mass: array
-            atomic masses
-        symb: array
-            atomic symbols
-        vmin: float
-            minimum energy
-        psips: array
-            coordinates of the walkers
-        psips_f: array
-            flag to know which walkers are alive
-        v_ref: float
-            reference energy
-        v_tot: float
-            total energy
-        nalive: int
-            number of alive walkers
+        w_positions: list(float)
+            Atom coordinates of the walkers
+        w_positions_step: list(float)
+            Array for the processed atom coordinates of the walkers
+        dmc_energy: float
+            Current DMC reference energy to determine walker dying probability
+        w_status: list(bool)
+            Walker status
+        dmc_total_energy:
+            Total DMC run energy
+        energy_minimum: float
+            Atoms system minimum potential energy
+        nwalker: int, optional, default None
+            Number of walkers for the DMC
+        stepsize: float, optional, default None
+            Step size for the DMC in imaginary time
+        alpha: float, optional, default None
+            Alpha parameter for the DMC feed-back parameter, usually proportional
+            to 1/stepsize
+        defective_threshold: float, optional, default -1.0e-5
+            Negative threshold of potential energy below the minimum potential
+            energy to decide if walker atom positions predict wrong/defective
+            model calculator results.
 
         """
 
-        birth_flag = 0
-        error_checker = 0
-        # print(psips.shape) #-> (3*nwalker, 3*natm)
+        # Compute number of active walkers
+        w_nactive = np.sum(w_status)
 
+        # Update model calculator batch for new walker atom systems
+        # and compute walker potential energies
+        w_energies = self.compute_energies(
+            w_positions_step,
+            w_status,
+            w_nactive=w_nactive)
 
-        #RE-DEFINE THIS
-        v_psip = self.get_batch_energy(psips[:nalive, :], nalive)  # predict energy of all alive walkers.
+        # Shift walker energies by the minimum potential energy
+        w_energies = w_energies - energy_minimum
 
-        # reference energy with respect to minimum energy.
-        v_psip = v_psip - vmin
+        # Check for energies that are lower than the minimum potential energy
+        selection_defective = w_energies < defective_threshold
+        flag_defective = np.any(selection_defective)
 
-        # check for holes, i.e. check for energies that are lower than the one for the (global) min
-        if np.any(v_psip < -1e-5):
-            error_checker = 1
-            idx_err = np.where(v_psip < -1e-5)
-            self.logger.write_error(refx, mass, symb, psips[idx_err, :], v_psip, idx_err)
-            print("Defective geometry is written to file")
-            # kill defective walker idx_err + one as index 0 is counter of alive walkers
-            psips_f[idx_err[0] + 1] = 0  # idx_err[0] as it is some stupid array...
+        # Write defective walkers to file and kill the respective walkers
+        if flag_defective:
+            self.logger.write_error(
+                w_positions_step[w_status][selection_defective],
+                w_energies[selection_defective],
+                self.atomic_symbols)
+            w_status[w_status][selection_defective] = False
 
-        prob = np.exp((v_ref - v_psip) * self.stepsize)
-        sigma = np.random.uniform(size=nalive)
+        # DMC step acceptance criteria
+        probability_threshold = (
+            1.0 - np.exp((dmc_energy - w_energies)*stepsize))
 
-        if np.any((1.0 - prob) > sigma):
-            """test whether one of the walkers has to die given the probabilites
-               and then set corresponding energies v_psip to zero as they
-               are summed up later.
-               geometries with high energies are more likely to die.
-            """
-            idx_die = np.array(np.where((1.0 - prob) > sigma)) + 1
-            psips_f[idx_die] = 0
-            v_psip[idx_die - 1] = 0.0
+        # Test whether one of the walkers has to die, most likely due to
+        # high potential energy atom configuration
+        probability_dicerole = np.random.uniform(size=w_nactive)
+        probability_failed = probability_dicerole < probability_threshold
+        if np.any(probability_failed):
 
-        v_tot = v_tot + np.sum(v_psip)  # sum energies of walkers that are alive (i.e. fullfill conditions)
+            # Set walker status to dead and walker energies to zero
+            w_status[probability_failed] = False
+            w_energies[probability_failed] = 0.0
 
-        if np.any(prob > 1):
-            """give birth to new walkers given the probabilities and update psips, psips_f
-               and v_tot accordingly.
-            """
-            idx_prob = np.array(np.where(prob > 1)).reshape(-1)
+        # Compute new total DMC energy
+        dmc_total_energy = dmc_total_energy + np.sum(w_energies)
 
-            for i in idx_prob:
-                if error_checker == 0:
+        # Give birth to new walkers if walker energies are lower than the
+        # reference DMC energy shown by negative probability threshold.
+        probability_birth = probability_threshold < 0.0
+        if np.any(probability_birth):
 
-                    probtmp = prob[i] - 1.0
-                    n_birth = int(probtmp)
-                    sigma = np.random.uniform()
+            for iw in np.where(probability_birth)[0]:
 
-                    if (probtmp - n_birth) > sigma:
-                        n_birth += 1
-                    if n_birth > 2:
-                        birth_flag += 1
+                # Skip defective walkers
+                if selection_defective[iw]:
+                    continue
 
-                    while n_birth > 0:
-                        nalive += 1
-                        n_birth -= 1
-                        psips[nalive - 1, :] = psips[i, :]
-                        psips_f[nalive] = 1
-                        v_tot = v_tot + v_psip[i]
+                # Walker birth criteria
+                threshold = -1.0*probability_threshold[iw]
+                nbirth = int(threshold)
 
-                else:
-                    if np.any(i == idx_err[0]):  # to make sure none of the defective geom are duplicated
-                        pass
-                    else:
+                # Test wether new walker(s) is(are) born
+                dicerole = np.random.uniform()
+                if dicerole < (threshold - nbirth):
+                    nbirth += 1
 
-                        probtmp = prob[i] - 1.0
-                        n_birth = int(probtmp)
-                        sigma = np.random.uniform()
+                # Initialize new walker eventually
+                for ib in range(nbirth):
 
-                        if (probtmp - n_birth) > sigma:
-                            n_birth += 1
-                        if n_birth > 2:
-                            birth_flag += 1
+                    w_positions[w_nactive] = w_positions[iw]
+                    w_positions_step[w_nactive] = w_positions_step[iw]
+                    w_status[w_nactive] = True
+                    dmc_total_energy = dmc_total_energy + w_energies[iw]
+                    w_nactive += 1
 
-                        while n_birth > 0:
-                            nalive += 1
-                            n_birth -= 1
-                            psips[nalive - 1, :] = psips[i, :]
-                            psips_f[nalive] = 1
-                            v_tot = v_tot + v_psip[i]
+        # Assign accepted atom positions of active walkers as new walker
+        # positions
+        for iw, positions_new in enumerate(w_positions_step[w_status]):
+            w_positions[iw] = positions_new
+            w_status[iw] = True
+        w_nactive = iw + 1
+        w_positions[iw:] = 0.0
+        w_status[iw:] = False
+        w_positions_step[:] = 0.0
 
-        #error_checker = 0
-        return psips, psips_f, v_tot, nalive
+        # Update DMC reference energy
+        dmc_energy = (
+            dmc_total_energy/w_nactive
+            + alpha*(1.0 - float(w_nactive)/float(nwalker)))
+
+        return w_positions, w_status, dmc_energy
 
     def get_batch_energy(self,coor, batch_size):
         """
@@ -753,26 +912,55 @@ class Logger_DMC:
         Name tag of the output file where results are going to be stored. 
         The DMC code create 4 files with the same name but different 
         extensions: '.pot', '.log' and '.xyz'. 
-        '.pot': Potential energies of the DMC runs.
         '.log': Log information of the runs.
+        '.pot': Potential energies of the DMC runs.
         '.xyz': Two '.xyz' files are generated where the last 10 steps of the
             simulation and the defective geometries are saved respectively.
+    maxsteps: int, optional, default None
+        Expected maximum number of DMC steps just column formatting
+    maxwalker: int, optional, default None
+        Expected maximum number of DMC walkers just column formatting
+    write_interval: int, optional, default 10
+        Interval of writing log and potential output to the respective file
 
     """
 
     def __init__(
         self,
         filename: str,
+        maxsteps: Optional[int] = None,
+        maxwalker: Optional[int] = None,
+        write_interval: Optional[int] = 10,
     ):
 
         # File name tag
         self.filename = filename
         
         # Logger files
-        self.potfile = open(self.filename + ".pot", 'w')
         self.logfile = open(self.filename + ".log", 'w')
+        self.potfile = open(self.filename + ".pot", 'w')
         self.errorfile = open("defective_" + self.filename + ".xyz", 'w')
         self.lastfile = open("configs_" + self.filename + ".xyz", 'w')
+
+        # Check maximum DMC step and walker input and get number of expected
+        # digits for the step counter and alive walkers
+        if maxsteps is None:
+            self.dimstep = 6
+        else:
+            self.dimstep = len(str(maxsteps))
+        if maxwalker is None:
+            self.dimwalker = 4
+        else:
+            self.dimwalker = len(str(maxwalker))
+
+        # Check write interval parameter
+        self.write_interval = int(write_interval)
+        if self.write_interval < 1:
+            self.write_interval = self.write_interval
+
+        # Initialize log and potential file output message variables
+        self.log_message = ""
+        self.pot_message = ""
 
         # Units conversion
         self.au2ang = 0.5291772083
@@ -787,6 +975,7 @@ class Logger_DMC:
         eqstep: int,
         stepsize: float,
         alpha: float,
+        seed: int,
     ):
         """
         Subroutine to write header of log file
@@ -805,18 +994,22 @@ class Logger_DMC:
         alpha: float
             Alpha parameter for the DMC feed-back parameter, usually 
             proportional to 1/stepsize
+        seed: int
+            Random seed for atom positions shuffling
 
         """
 
         # Write log file header
         message = (
-            "     DMC for " + self.filename + "\n\n"
+            "  Diffusion Monte-Carlo Run\n"
+            + f"    stored in {self.filename:s}\n\n"
             + f"DMC Simulation started at {str(datetime.now()):s}\n"
             + f"Number of random walkers: {nwalker:d}\n"
             + f"Number of total steps: {nstep:d}\n"
             + f"Number of steps before averaging: {eqstep:d}\n"
             + f"Stepsize: {stepsize:.6e}\n"
-            + f"Alpha: {alpha:.6e}\n\n")
+            + f"Alpha: {alpha:.6e}\n"
+            + f"Random seed: {seed:d}\n\n")
         self.logfile.write(message)
 
         return
@@ -848,51 +1041,39 @@ class Logger_DMC:
 
     def write_error(
         self,
-        refx: np.ndarray,
-        mass: np.ndarray,
-        symb: np.ndarray,
-        errq: np.ndarray,
-        v: np.ndarray,
-        idx: np.ndarray,
+        w_positions: List[float],
+        w_energies: List[float],
+        symbols: List[str],
     ):
         """
         Subroutine to write '.xyz' file of defective configurations
 
         Parameters
         ----------
-        refx: np.ndarray
-            Reference positions of atoms
-        mass: np.ndarray
-            Atomic masses
-        symb: np.ndarray
-            Atomic symbols
-        errq: np.ndarray
-            Error in positions
-        v: np.ndarray
-            Potential energy
-        idx: np.ndarray
-            Index of defective configurations
+        w_positions: list(float)
+            Defective atom positions
+        w_energies: list(float)
+            Defective potential energies
+        symbols: list(str)
+            Element symbols of the atom system
 
         """
 
-        # Data preparation
-        natoms = len(refx)
-        errx = errq[0]*self.au2ang
-        errx = errx.reshape(len(idx[0]), natoms, 3)
-        
         # Iteration over defective configurations
         message = ""
-        for ix, xi in enumerate(errx):
+        for ip, (positions, energies) in enumerate(
+            zip(w_positions, w_energies)
+        ):
             message += (
-                f"{natoms:d}\n"
-                + f"{v[idx[0][ix]]*self.au2cm:.6e}\n")
-            for ia in range(natoms):
+                f"{positions.shape[0]:d}\n"
+                + f"{energies*self.au2cm:8.2f}\n")
+            for ia, (pi, si) in enumerate(zip(positions, symbols)):
                 message += (
-                    f"{symb[ia]:s}  "
-                    + f"{errx[ix, ia, 0]:.8f}  "
-                    + f"{errx[ix, ia, 1]:.8f}  "
-                    + f"{errx[ix, ia, 2]:.8f}\n")
-        
+                    f"{si:s}  "
+                    + f"{pi[0]:.8f}  "
+                    + f"{pi[1]:.8f}  "
+                    + f"{pi[2]:.8f}\n")
+
         # Write defective configurations
         self.errorfile.write(message)
 
@@ -900,39 +1081,39 @@ class Logger_DMC:
 
     def write_last(
         self,
-        psips_f: np.ndarray,
-        psips: np.ndarray,
+        w_alive: int,
+        w_positions: List[float],
         natoms: int,
-        symb: np.ndarray,
+        symbols: List[str],
     ):
         """
         Subroutine to write xyz file of last 10 steps of DMC simulation
 
         Parameters
         ----------
-        psips_f: np.ndarray
-            Flag to know which walkers are alive
-        psips: np.ndarray
-            Coordinates of the walkers
-        natm: int
-            Number of atoms
-        symb: np.ndarray
-            Atomic symbols
+        w_alive: int
+            Number of walkers which are alive
+        w_positions: list(float)
+            Atom positions of each walker
+        natoms: int
+            Number of atoms in the system
+        symbols: list(str)
+            Element symbols of the atom system
 
         """
 
         # Iteration over walkers
         message = ""
-        for iw, status in enumerate(psips_f[0]):
+        for iw, status in enumerate(w_alive):
             message += (
                 f"{natoms:d}\n"
                 + "\n")
-            for ia, si in enumerate(symb):
+            for ia, si in enumerate(symbols):
                 message += (
                     f"{si:s}  "
-                    + f"{psips[iw, 3*(ia - 1) - 3, 0]:.8f}  "
-                    + f"{psips[iw, 3*(ia - 1) - 2, 0]:.8f}  "
-                    + f"{psips[iw, 3*(ia - 1) - 1, 0]:.8f}\n"
+                    + f"{w_positions[iw, ia, 1]:.8f}  "
+                    + f"{w_positions[iw, ia, 2]:.8f}  "
+                    + f"{w_positions[iw, ia, 3]:.8f}\n"
                     )
 
         # Write last configurations
@@ -942,47 +1123,55 @@ class Logger_DMC:
 
     def write_pot(
         self,
-        psips_f,
-        v_ref: float,
-        step=None,
-        initial=False,
+        w_alive: int,
+        dmc_energy: float,
+        step: int,
     ):
         """
         Write potential file
 
         Parameters
         ----------
-        psips_f: np.ndarray
-            Flag to know which walkers are alive
-        v_ref: float
-            Potential energy
-
-        Returns
-        -------
+        w_alive: int
+            Number of walker which are alive
+        dmc_energy: float
+            DMC potential energy
+        step: int
+            DMC progression step
 
         """
-        if initial:
-           self.potfile.write("0  " + str(psips_f) + "  " + str(v_ref) + "  " + str(v_ref * self.au2cm) + "\n")
-        else:
-           self.potfile.write(str(step) + "  " + str(psips_f) + "  " + str(v_ref) + "  " + str(v_ref * self.au2cm) + "\n")
+
+        # Add step potential information
+        self.pot_message += (
+            f"{step:{self.dimstep:d}d}  "
+            + f"{w_alive:{self.dimwalker:d}d}  "
+            + f"{dmc_energy:8.7f} Hartree  "
+            + f"{dmc_energy*self.au2cm:8.2f} cm**-1\n")
+
+        # If write interval is reached, write potential information to file
+        if step % self.write_interval == 0:
+            self.potfile.write(self.pot_message)
+            self.pot_message = ""
 
         return
 
-    def write_log(self,v_ave):
+    def write_log(
+        self,
+        w_avg_energy):
         """
         Write average to log file
 
         Parameters
         ----------
-        v_ave: float
+        w_avg_energy: float
             Average energy of the trajectory
 
         """
         
         self.logfile.write(
             "Average energy of trajectory:  "
-            + f"{v_ave:.6e} Hartree,  "
-            + f"{v_ave*self.au2cm:.6e} cm**-1\n")
+            + f"{w_avg_energy:8.7f} Hartree  "
+            + f"{w_avg_energy*self.au2cm:8.2f} cm**-1\n")
 
         return
 
