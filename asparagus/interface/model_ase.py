@@ -261,7 +261,7 @@ class ASE_Calculator(ase_calc.Calculator):
         
         # Atom cell information
         atoms_batch['cell'] = torch.tensor(
-            self.atoms.get_cell()[:], dtype=self.model_dtype)
+            self.atoms.get_cell()[:].reshape(1, 3, 3), dtype=self.model_dtype)
         
         # Atom segment indices, just one atom segment allowed
         atoms_batch['sys_i'] = torch.zeros(
@@ -306,7 +306,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Atom cell information
         atoms_batch['cell'] = torch.tensor(
-            [self.atoms.get_cell()[:]], dtype=self.model_dtype)
+            self.atoms.get_cell()[:].reshape(1, 3, 3), dtype=self.model_dtype)
 
         # Create and assign atom pair indices and periodic offsets
         atoms_batch = self.neighbor_list(atoms_batch)

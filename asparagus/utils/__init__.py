@@ -37,7 +37,7 @@ from .output import(
 )
 
 from .functions import(
-    segment_sum, softplus_inverse, gather_nd, detach_tensor, flatten_array_like
+    segment_sum, gather_nd, detach_tensor, flatten_array_like
 )
 
 from .data_ase import(

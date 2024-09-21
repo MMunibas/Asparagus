@@ -153,31 +153,31 @@ def unsorted_segment_sum(
 
     else:
 
-        s = torch.prod(torch.tensor(data.shape[1:])).long().to(device)
+        s = torch.prod(
+            torch.tensor(data.shape[1:], dtype=torch.int64, device=device)
+            ).to(device)
         segment_ids = segment_ids.repeat_interleave(s).view(
             segment_ids.shape[0], *data.shape[1:]).to(device)
+        # print(segment_ids, s)
+        # print(segment_ids[:, None])
+        # segment_ids_repeat = torch.repeat_interleave(
+        #     segment_ids[:, None], s, dim=1
+        #     ).to(device)
+        # print(segment_ids_repeat)
+    # print(data.shape[1:])
+    # print((num_segments, *data.shape[1:]))
+    # tensor = torch.zeros(
+    #     (num_segments, *data.shape[1:]),
+    #     dtype=data.dtype, device=device).scatter_add(
+    #         0, segment_ids_repeat, data)
 
+    # OLD
     shape = [num_segments] + list(data.shape[1:])
     tensor = torch.zeros(
         *shape, dtype=data.dtype, device=device).scatter_add(
             0, segment_ids, data)
 
     return tensor
-
-
-def softplus_inverse(x: torch.Tensor) -> torch.Tensor:
-    r"""
-    Numerically stable inverse of softplus transform
-    .. math:: f(x) = x + \log(1 - \exp(x))
-
-    Parameters
-    ----------
-    x: torch.Tensor
-        A tensor of any shape.
-
-
-    """
-    return x + np.log(-np.expm1(-x))
 
 
 def gather_nd(

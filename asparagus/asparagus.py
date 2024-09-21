@@ -405,6 +405,7 @@ class Asparagus():
         model_calculator: Optional[torch.nn.Module] = None,
         model_type: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = None,
+        model_compile: Optional[bool] = None,
         **kwargs,
     ) -> torch.nn.Module:
         """
@@ -426,6 +427,11 @@ class Asparagus():
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
+        model_compile: bool, optional, default None
+            If True, the model calculator will get compiled at the first
+            call to enhance the performance. Generally not applicable during
+            training where multiple backwards calls are done (e.g. energy
+            gradient and loss metrics gradient)
 
         Returns
         -------
@@ -465,6 +471,7 @@ class Asparagus():
             model_calculator=model_calculator,
             model_type=model_type,
             model_checkpoint=model_checkpoint,
+            model_compile=model_compile,
             **kwargs,
             )
 
@@ -476,6 +483,7 @@ class Asparagus():
         model_calculator: Optional[torch.nn.Module] = None,
         model_type: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = 'best',
+        model_compile: Optional[bool] = False,
         **kwargs,
     ) -> torch.nn.Module:
         """
@@ -494,6 +502,11 @@ class Asparagus():
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
+        model_compile: bool, optional, default False
+            If True, the model calculator will get compiled at the first
+            call to enhance the performance. Generally not applicable during
+            training where multiple backwards calls are done (e.g. energy
+            gradient and loss metrics gradient)
 
         Returns
         -------
@@ -526,6 +539,10 @@ class Asparagus():
             self.logger.info("Checkpoint file loaded.")
             model_calculator.checkpoint_loaded = True
             model_calculator.checkpoint_file = checkpoint_file
+
+        # Compile model calculator if requested
+        if model_compile:
+            model_calculator.compile()
 
         return model_calculator
 

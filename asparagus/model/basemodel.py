@@ -646,7 +646,7 @@ class BaseModel(torch.nn.Module):
 
         # Atom periodic boundary conditions
         batch['pbc'] = torch.tensor(
-            [atms.get_pbc() for atms in atoms],
+            np.array([atms.get_pbc() for atms in atoms]),
             dtype=torch.bool, device=self.device)
 
         # Atom cell information
@@ -655,7 +655,7 @@ class BaseModel(torch.nn.Module):
         else:
             fconv = conversion['positions']
         batch['cell'] = torch.tensor(
-            [atms.get_cell()[:]*fconv for atms in atoms],
+            np.array([atms.get_cell()[:]*fconv for atms in atoms]),
             dtype=self.dtype, device=self.device)
 
         # Total atomic system charge
@@ -792,7 +792,7 @@ class BaseModel(torch.nn.Module):
 
         # Atom periodic boundary conditions
         batch['pbc'] = torch.tensor(
-            [atoms.get_pbc() for _ in range(ncopies)],
+            atoms.get_pbc().repeat(ncopies).reshape(ncopies, 3),
             dtype=torch.bool, device=self.device)
 
         # Atom cell information
@@ -802,7 +802,8 @@ class BaseModel(torch.nn.Module):
             fconv = conversion['positions']
         if cell is None:
             batch['cell'] = torch.tensor(
-                [atoms.get_cell()[:]*fconv for _ in range(ncopies)],
+                (atoms.get_cell()[:]*fconv).repeat(ncopies).reshape(
+                    ncopies, 3, 3),
                 dtype=self.dtype, device=self.device)
         else:
             batch['cell'] = torch.tensor(
