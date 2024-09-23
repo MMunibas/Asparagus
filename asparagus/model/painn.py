@@ -720,5 +720,6 @@ class Model_PaiNN(model.BaseModel):
                         results['atomic_dipoles'],
                         sys_i, dim=0, shape=(*atoms_number.shape, 3)
                         ).reshape(-1, 3)
+                )
 
         return results

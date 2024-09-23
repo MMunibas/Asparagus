@@ -132,7 +132,7 @@ class DMC:
             else:
                 raise ValueError(
                     f"The model calculator is of unknown type!\n")
-        
+
         # Read device and dtype information
         self.device = self.model_calculator.device
         self.dtype = self.model_calculator.dtype
@@ -382,7 +382,7 @@ class DMC:
                 self.charge,
                 optimize_method,
                 optimize_fmax)
-
+        self.model_calculator.compile()
         # Create initial system batch information
         batch_initial = self.model_calculator.create_batch(
             self.atoms_initial,
