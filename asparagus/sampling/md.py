@@ -53,7 +53,7 @@ class MDSampler(sampling.Sampler):
     md_equilibration_time: float, optional, default 0 (no equilibration)
         Total MD Simulation time in fs for a equilibration run prior to
         the production run.
-    md_initial_temperature: float, optional, default 0
+    md_initial_temperature: (float, bool), optional, default False
         Temperature for initial atom velocities according to a Maxwell-
         Boltzmann distribution.
 
@@ -71,7 +71,7 @@ class MDSampler(sampling.Sampler):
         'md_save_interval':             100,
         'md_langevin_friction':         1.E-2,
         'md_equilibration_time':        None,
-        'md_initial_temperature':       0.,
+        'md_initial_temperature':       False,
         })
     
     # Expected data types of input variables
@@ -83,20 +83,20 @@ class MDSampler(sampling.Sampler):
         'md_save_interval':             [utils.is_integer],
         'md_langevin_friction':         [utils.is_numeric],
         'md_equilibration_time':        [utils.is_numeric],
-        'md_initial_temperature':       [utils.is_numeric],
+        'md_initial_temperature':       [utils.is_numeric, utils.is_bool],
         })
 
     def __init__(
         self,
         config: Optional[Union[str, dict, settings.Configuration]] = None,
         config_file: Optional[str] = None, 
-        md_temperature: Optional[float, Dict[str, float]] = None,
+        md_temperature: Optional[Union[float, Dict[str, float]]] = None,
         md_time_step: Optional[float] = None,
         md_simulation_time: Optional[float] = None,
         md_save_interval: Optional[float] = None,
         md_langevin_friction: Optional[float] = None,
         md_equilibration_time: Optional[float] = None,
-        md_initial_temperature: Optional[float] = None,
+        md_initial_temperature: Optional[Union[float, bool]] = None,
         **kwargs,
     ):
         """
@@ -299,13 +299,13 @@ class MDSampler(sampling.Sampler):
     def run_langevin_md(
         self,
         system: ase.Atoms,
-        temperature: Optional[float] = None,
+        temperature: Optional[Union[float, Dict[str, float]]] = None,
         time_step: Optional[float] = None,
         simulation_time: Optional[float] = None,
         langevin_friction: Optional[float] = None,
         equilibration_time: Optional[float] = None,
         initial_velocities: Optional[bool] = None,
-        initial_temperature: Optional[float] = None,
+        initial_temperature: Optional[Union[float, bool]] = None,
         log_file: Optional[str] = None,
         trajectory_file: Optional[str] = None,
         ithread: Optional[int] = None,
@@ -340,7 +340,7 @@ class MDSampler(sampling.Sampler):
         equilibration_time: float, optional, default None
             Total MD Simulation time in fs for a equilibration run prior to
             the production run.
-        initial_temperature: float, optional, default None
+        initial_temperature: (float, bool), optional, default None
             Temperature for initial atom velocities according to a Maxwell-
             Boltzmann distribution.
         log_file: str, optional, default None
@@ -380,7 +380,12 @@ class MDSampler(sampling.Sampler):
         Nsample = 0
 
         # Set initial atom velocities if requested
-        if initial_temperature > 0.:
+        if utils.is_bool(initial_temperature):
+            if initial_temperature:
+                MaxwellBoltzmannDistribution(
+                    system,
+                    temperature_K=temperature)
+        elif initial_temperature > 0.:
             MaxwellBoltzmannDistribution(
                 system, 
                 temperature_K=initial_temperature)
@@ -438,7 +443,7 @@ class MDSampler(sampling.Sampler):
 
     def check_temperature(
         self,
-        temperature: Optional[float, Dict[str, float]],
+        temperature: Union[float, Dict[str, float]],
         simulation_time: float,
     ) -> (float, Dict[str, float]):
         """
@@ -447,9 +452,9 @@ class MDSampler(sampling.Sampler):
 
         Parameters
         ----------
-        temperature: (float, dict(str, float)), optional, default None
+        temperature: (float, dict(str, float))
             MD Simulation temperature in Kelvin
-        simulation_time: float, optional, default None
+        simulation_time: float
             Total MD Simulation time in fs
 
         Returns
@@ -496,7 +501,7 @@ class MDSampler(sampling.Sampler):
                 tincrement = temperature_short['tinc']
             elif (
                 'tend' in temperature_short
-                'tint' in temperature_short
+                and 'tint' in temperature_short
             ):
                 tsteps = int(simulation_time/temperature_short['tint']) - 1
                 tincrement = (tstart - tend)/tsteps
@@ -530,7 +535,7 @@ class MDSampler(sampling.Sampler):
 
         return
 
-    self update_temperature(self, dyn, increment):
+    def update_temperature(self, dyn, increment):
         """
         Apply Langevin reference temperature step
         """
