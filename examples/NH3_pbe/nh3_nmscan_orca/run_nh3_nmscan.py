@@ -4,7 +4,7 @@ from asparagus.sampling import NormalModeScanner
 # Initialize normal mode scanner sampler for an equilibrated ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the
 # molecular dipole moment. The reference calculation are divided into
-# 4 threads.
+# 4 threads each on a single CPU.
 # The step size of one normal mode step or combination of two normal mode steps
 # (nms_number_of_coupling=2) shall be harmonically about 0.05 eV 
 # (nms_harmonic_energy_step=0.05) and be applied up to a energy limit of 1 eV

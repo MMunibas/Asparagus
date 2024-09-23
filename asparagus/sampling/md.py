@@ -30,9 +30,16 @@ class MDSampler(sampling.Sampler):
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
         Path to json file (str)
-    md_temperature: float, optional, default 300
+    md_temperature: (float, dict(str, float)), optional, default 300
         Target temperature in Kelvin of the MD simulation controlled by a
-        Langevin thermostat
+        Langevin thermostat.
+        Can be provided as dictionary for varying temperatures during the run.
+        Expected dictionary keys and items are (only first four characters
+        of the keys are considered and case insensitive):
+            'Tstart': float     - Initial temperature in Kelvin
+            'Tend': float       - Final temperature in Kelvin
+            'Tincrement': float - Temperature step in K
+            'Tinterval': float  - Time interval for temperature increase in fs
     md_time_step: float, optional, default 1.0 (1 fs)
         MD Simulation time step in fs
     md_simulation_time: float, optional, default 1E5 (100 ps)
@@ -69,7 +76,8 @@ class MDSampler(sampling.Sampler):
     
     # Expected data types of input variables
     sampling.Sampler._dtypes_args.update({
-        'md_temperature':               [utils.is_numeric],
+        'md_temperature':               [
+            utils.is_numeric, utils.is_dictionary],
         'md_time_step':                 [utils.is_numeric],
         'md_simulation_time':           [utils.is_numeric],
         'md_save_interval':             [utils.is_integer],
@@ -82,7 +90,7 @@ class MDSampler(sampling.Sampler):
         self,
         config: Optional[Union[str, dict, settings.Configuration]] = None,
         config_file: Optional[str] = None, 
-        md_temperature: Optional[float] = None,
+        md_temperature: Optional[float, Dict[str, float]] = None,
         md_time_step: Optional[float] = None,
         md_simulation_time: Optional[float] = None,
         md_save_interval: Optional[float] = None,
@@ -313,8 +321,16 @@ class MDSampler(sampling.Sampler):
         ----------
         system: ase.Atoms
             System to be sampled.
-        temperature: float, optional, default None
+        temperature: (float, dict(str, float)), optional, default None
             MD Simulation temperature in Kelvin
+            Can be provided as dictionary for varying temperatures during the
+            run. Expected dictionary keys and items are (only first four
+            characters of the keys are considered and case insensitive):
+                'Tstart': float     - Initial temperature in Kelvin
+                'Tend': float       - Final temperature in Kelvin
+                'Tincrement': float - Temperature step in K
+                'Tinterval': float  - Time interval for temperature increase in
+                                      fs
         time_step: float, optional, default None
             MD Simulation time step in fs
         simulation_time: float, optional, default None
@@ -354,6 +370,11 @@ class MDSampler(sampling.Sampler):
             equilibration_time = self.md_equilibration_time
         if initial_temperature is None:
             initial_temperature = self.md_initial_temperature
+
+        # Check temperature input
+        temperature, temperature_program = self.check_temperature(
+            temperature,
+            simulation_time)
 
         # Initialize stored sample counter
         Nsample = 0
@@ -395,6 +416,16 @@ class MDSampler(sampling.Sampler):
                 system=system,
                 trajectory_file=trajectory_file)
 
+        # If defined, attach temperature program function to change reference
+        # temperature by an temperature increment every specified time interval
+        if temperature_program:
+            temperature_interval = int(temperature_program['tint']/time_step)
+            md_dyn.attach(
+                self.update_temperature,
+                interval=temperature_interval,
+                dyn=md_dyn,
+                increment=temperature_program['tinc'])
+
         # Run MD simulation
         simulation_steps = round(simulation_time/time_step)
         md_dyn.run(simulation_steps)
@@ -404,3 +435,104 @@ class MDSampler(sampling.Sampler):
         Nsample = simulation_steps//self.md_save_interval + 1
         
         return Nsample
+
+    def check_temperature(
+        self,
+        temperature: Optional[float, Dict[str, float]],
+        simulation_time: float,
+    ) -> (float, Dict[str, float]):
+        """
+        Check temperature parameter input and, eventually, prepare temperature
+        program parameters
+
+        Parameters
+        ----------
+        temperature: (float, dict(str, float)), optional, default None
+            MD Simulation temperature in Kelvin
+        simulation_time: float, optional, default None
+            Total MD Simulation time in fs
+
+        Returns
+        -------
+        float
+            MD Simulation temperature in Kelvin
+        dict(str, float)
+            Temperature program parameter to change the reference temperature
+            during the MD simulation. If empty, reference temperature stays
+            constant
+
+        """
+
+        # If temperature is numeric - constant reference temperature
+        if utils.is_numeric(temperature):
+
+            return temperature, {}
+
+        elif utils.is_dictionary(temperature):
+
+            # Reduce dictionary keys to 4 letter codes
+            temperature_short = {}
+            for key, item in temperature.items():
+                key_short = f"{key.lower():<4s}"[:4]
+                temperature_short[key_short] = float(item)
+
+            # Check temperature program parameters
+            # Essential starting temperature
+            if 'tsta' in temperature_short:
+                tstart = temperature_short['tsta']
+            else:
+                raise SyntaxError(
+                    "Initial MD simulation temperature 'tstart 'is not "
+                    + "defined!")
+            # Optional final temperature if increment and interval is given
+            if 'tend' in temperature_short:
+                tend = temperature_short['tend']
+            elif not 'tint' in temperature_short:
+                raise SyntaxError(
+                    "Final MD simulation temperature 'tend 'is not "
+                    + "defined!")
+            # Optional temperature increment if final temperature is given
+            if 'tinc' in temperature_short:
+                tincrement = temperature_short['tinc']
+            elif (
+                'tend' in temperature_short
+                'tint' in temperature_short
+            ):
+                tsteps = int(simulation_time/temperature_short['tint']) - 1
+                tincrement = (tstart - tend)/tsteps
+            else:
+                tincrement = 10.0
+            # Optional temperature increment interval
+            if 'tint' in temperature_short:
+                tinterval = temperature_short['tint']
+            elif 'tend' in temperature_short:
+                tsteps = int((tstart - tend)/tinc) + 1
+                tinterval = simulation_time/tsteps
+            else:
+                raise SyntaxError(
+                    "Interval for MD simulation temperature increase 'tint' "
+                    + "is not defined!")
+
+            # Complete temperature program dictionary
+            temperature_program = {
+                'tsta': tstart,
+                'tend': tend,
+                'tinc': tincrement,
+                'tint': tinterval,
+                }
+
+            return tstart, temperature_program
+
+        else:
+
+            raise SyntaxError(
+                "MD simulation temperature input is invalid!")
+
+        return
+
+    self update_temperature(self, dyn, increment):
+        """
+        Apply Langevin reference temperature step
+        """
+        dyn.temp = dyn.temp + units.kB*increment
+        return

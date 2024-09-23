@@ -4,7 +4,7 @@ from asparagus.sampling import MetaSampler
 # Initialize meta dynamics sampler for an ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the
 # molecular dipole moment. The reference calculator ORCA runs on 4 CPUs
-# ('orcablocks': '%pal nprocs 1 end').
+# ('orcablocks': '%pal nprocs 4 end').
 # The collective variables of the meta dyanmics are the three N-H bonds
 # (meta_cv=[[0, 1], [0, 2], [0, 3]]) where Gaussian potentials are added 
 # every 10 steps (meta_gaussian_interval=10) of 0.05 eV height with 0.1 Ang

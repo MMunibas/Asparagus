@@ -4,7 +4,7 @@ from asparagus.sampling import MDSampler
 # Initialize molecule dynamics sampler for an ammonia molecule
 # using the ORCA program to compute PBE reference energies, forces and the
 # molecular dipole moment. The reference calculator ORCA runs on 4 CPUs
-# ('orcablocks': '%pal nprocs 1 end').
+# ('orcablocks': '%pal nprocs 4 end').
 # The temperature of the Langevin dyanmics is set to 500 K and run for
 # 10000 steps a 1 fs time steps (total of 10 ps). Every 10th step is written
 # to the database yielding 1000 reference samples.
@@ -21,7 +21,7 @@ sampler = MDSampler(
         'charge': 0,
         'mult': 1,
         'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
-        'orcablocks': '%pal nprocs 1 end',
+        'orcablocks': '%pal nprocs 4 end',
         'directory': 'orca'},
     sample_num_threads=1,
     sample_save_trajectory=True,

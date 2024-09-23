@@ -85,7 +85,7 @@ def get_orca(**kwargs) -> "ASE.Calculator":
             mkwargs['profile'] = OrcaProfile(command=kwargs.get('profile'))
         else:
             mkwargs['profile'] = kwargs.get('profile')
-        
+
         return ORCA, mkwargs
 
 
