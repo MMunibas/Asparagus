@@ -183,7 +183,10 @@ class MDSampler(sampling.Sampler):
         # Check sample system queue
         if sample_systems_queue is None:
             sample_systems_queue = queue.Queue()
-        
+
+        # Initialize auxiliary array
+        self.first_increment = [True]*sample_systems_queue.qsize()
+
         # Initialize thread continuation flag
         self.thread_keep_going = np.array(
             [True for ithread in range(self.sample_num_threads)],
@@ -356,7 +359,7 @@ class MDSampler(sampling.Sampler):
             Number of sampled systems to database
 
         """
-        
+
         # Check input parameters
         if temperature is None:
             temperature = self.md_temperature
@@ -425,11 +428,14 @@ class MDSampler(sampling.Sampler):
         # temperature by an temperature increment every specified time interval
         if temperature_program:
             temperature_interval = int(temperature_program['tint']/time_step)
+            if ithread is None:
+                ithread = 0
             md_dyn.attach(
                 self.update_temperature,
                 interval=temperature_interval,
                 dyn=md_dyn,
-                increment=temperature_program['tinc'])
+                increment=temperature_program['tinc'],
+                ithread=ithread)
 
         # Run MD simulation
         simulation_steps = round(simulation_time/time_step)
@@ -438,7 +444,7 @@ class MDSampler(sampling.Sampler):
         # As function attachment to ASE Dynamics class does not provide a 
         # return option of Nsamples, guess attached samples
         Nsample = simulation_steps//self.md_save_interval + 1
-        
+
         return Nsample
 
     def check_temperature(
@@ -496,6 +502,8 @@ class MDSampler(sampling.Sampler):
                 raise SyntaxError(
                     "Final MD simulation temperature 'tend 'is not "
                     + "defined!")
+            else:
+                tend = None
             # Optional temperature increment if final temperature is given
             if 'tinc' in temperature_short:
                 tincrement = temperature_short['tinc']
@@ -519,6 +527,9 @@ class MDSampler(sampling.Sampler):
                     + "is not defined!")
 
             # Complete temperature program dictionary
+            if tend is None:
+                tsteps = int(simulation_time/tinterval) - 1
+                tend = tstart + tsteps*tincrement
             temperature_program = {
                 'tsta': tstart,
                 'tend': tend,
@@ -535,9 +546,13 @@ class MDSampler(sampling.Sampler):
 
         return
 
-    def update_temperature(self, dyn, increment):
+    def update_temperature(self, dyn, increment, ithread):
         """
         Apply Langevin reference temperature step
         """
+        if self.first_increment[ithread]:
+            self.first_increment[ithread] = False
+            return
         dyn.temp = dyn.temp + units.kB*increment
+        dyn.updatevars()
         return
