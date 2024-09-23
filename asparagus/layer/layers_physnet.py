@@ -1,6 +1,7 @@
 from typing import Optional, Callable
 
 import torch
+from torch_scatter import scatter_sum
 
 from .base import DenseLayer, ResidualLayer
 
@@ -259,7 +260,7 @@ class InteractionLayer(torch.nn.Module):
 
         # Combine descriptor weighted neighbor atoms feature vector for each
         # central atom i
-        xj = utils.segment_sum(gxj, idx_i, device=gxj.device)
+        xj = utils.scatter_sum(gxj, idx_i, dim=0, shape=xi.shape)
 
         # Combine features to message vector
         message = xi + xj

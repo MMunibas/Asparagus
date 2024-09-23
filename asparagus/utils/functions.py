@@ -31,18 +31,6 @@ def detach_tensor(
     return x
 
 
-#def flatten_array_like(
-    #x: List[Any],
-#) -> List[Any]:
-    #for xi in x:
-        #if utils.is_string(xi):
-            #yield x
-        #else:
-            #try:
-                #yield from flatten_array_like(xi)
-            #except TypeError:
-                #yield xi
-
 def flatten_array_like(
     x: List[Any],
 ) -> List[Any]:
@@ -56,6 +44,7 @@ def flatten_array_like(
                     yield xj
             else:
                 yield xi
+
 
 def segment_sum(
     data: torch.Tensor,
@@ -158,20 +147,7 @@ def unsorted_segment_sum(
             ).to(device)
         segment_ids = segment_ids.repeat_interleave(s).view(
             segment_ids.shape[0], *data.shape[1:]).to(device)
-        # print(segment_ids, s)
-        # print(segment_ids[:, None])
-        # segment_ids_repeat = torch.repeat_interleave(
-        #     segment_ids[:, None], s, dim=1
-        #     ).to(device)
-        # print(segment_ids_repeat)
-    # print(data.shape[1:])
-    # print((num_segments, *data.shape[1:]))
-    # tensor = torch.zeros(
-    #     (num_segments, *data.shape[1:]),
-    #     dtype=data.dtype, device=device).scatter_add(
-    #         0, segment_ids_repeat, data)
 
-    # OLD
     shape = [num_segments] + list(data.shape[1:])
     tensor = torch.zeros(
         *shape, dtype=data.dtype, device=device).scatter_add(
@@ -212,3 +188,95 @@ def gather_nd(
 
     params = params.reshape((-1, *tuple(torch.tensor(params.size()[ndim:]))))
     return params[idx]
+
+
+def _broadcast(
+    index: torch.Tensor,
+    data: torch.Tensor,
+    dim: int,
+) -> torch.Tensor:
+    """
+    Computes the sum along the segmented tensor according to index array.
+    Code gladly taken and modified from the source:
+        https://github.com/rusty1s/pytorch_scatter
+
+    Parameters
+    ----------
+    index: torch.tensor
+        Index array to assign source data to output tensor
+    data: torch.tensor
+        Source segmented data tensor
+    dim: int, optional, default 0
+         The axis along which to index
+
+    Returns
+    -------
+    torch.tensor
+        Adjusted index array of matching shape with respect to source
+
+    """
+    if dim < 0:
+        dim = data.dim() + dim
+    if index.dim() == 1:
+        for _ in range(0, dim):
+            index = index.unsqueeze(0)
+    for _ in range(index.dim(), data.dim()):
+        index = index.unsqueeze(-1)
+    index = index.expand(data.size())
+    return index
+
+
+def scatter_sum(
+    data: torch.Tensor,
+    index: torch.Tensor,
+    dim: int = 0,
+    out: Optional[torch.Tensor] = None,
+    shape: Optional[torch.Tensor] = None,
+    dim_size: Optional[int] = None,
+) -> torch.Tensor:
+    """
+    Computes the sum along the segmented tensor according to index array.
+    Code gladly taken and modified from the source:
+        https://github.com/rusty1s/pytorch_scatter
+
+    Parameters
+    ----------
+    data: torch.tensor
+        Source segmented data tensor
+    index: torch.tensor
+        Index array to assign source data to output tensor
+    dim: int, optional, default 0
+        Dimension of output tensor to add source data
+    out: torch.tensor, optional, default None
+        Output tensor to which source data are added.
+        If None, output tensor shape is predicted (takes more time) and
+        initialized as zero tensor with dtype and device of source data.
+    shape: torch.tensor, optional, default None
+        Output tensor shape used for the initialization of a zero tensor to
+        which source data are added.
+        If None, output tensor shape is predicted (takes more time).
+        Ignored if parameter for 'out' is provided.
+    dim_size: int, optional, default None
+        Size of output tensor shape at 'dim'.
+        If None, it will be predicted by maximum number in index array (takes
+        more time).
+        Ignored if a parameter for 'out' or 'shape' is provided.
+
+    Returns
+    -------
+    torch.tensor
+        Output tensor to which source data are added
+
+    """
+    index = _broadcast(index, data, dim)
+    if out is None:
+        if shape is None:
+            shape = list(data.size())
+            if dim_size is not None:
+                shape[dim] = dim_size
+            elif index.numel() == 0:
+                shape[dim] = 0
+            else:
+                shape[dim] = int(index.max()) + 1
+        out = torch.zeros(shape, dtype=data.dtype, device=data.device)
+    return out.scatter_add_(dim, index, data)

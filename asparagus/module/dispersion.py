@@ -223,6 +223,7 @@ class D3_dispersion(torch.nn.Module):
 
     def _ncoord(
         self,
+        atomic_numbers: torch.Tensor,
         atomic_numbers_i: torch.Tensor,
         atomic_numbers_j: torch.Tensor, 
         distances: torch.Tensor, 
@@ -242,7 +243,8 @@ class D3_dispersion(torch.nn.Module):
         if self.use_switch:
             damp = damp*self._smootherstep(distances)
 
-        return utils.segment_sum(damp, idx_i, device=self.device)
+        return utils.scatter_sum(
+            damp, idx_i, dim=0, shape=atomic_numbers.shape)
 
     def _getc6(
         self,
@@ -332,7 +334,12 @@ class D3_dispersion(torch.nn.Module):
 
         # Compute coordination numbers
         nc = self._ncoord(
-            atomic_numbers_i, atomic_numbers_j, distances_d3, idx_i, idx_j)
+            atomic_numbers,
+            atomic_numbers_i,
+            atomic_numbers_j,
+            distances_d3,
+            idx_i,
+            idx_j)
         nci = torch.gather(nc, 0, idx_i)
         ncj = torch.gather(nc, 0, idx_j)
         
@@ -378,7 +385,7 @@ class D3_dispersion(torch.nn.Module):
         e8 = -0.5*self.d3_s8*c8*e8
 
         # Summarize and convert dispersion energy
-        Edisp = self.energies_Hatree2model*utils.segment_sum(
-            e6 + e8, idx_i, device=self.device)
+        Edisp = self.energies_Hatree2model*utils.scatter_sum(
+            e6 + e8, idx_i, dim=0, shape=atomic_numbers.shape)
 
         return Edisp

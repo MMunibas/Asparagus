@@ -200,8 +200,8 @@ class ZBL_repulsion(torch.nn.Module):
             * cutoffs)
 
         # Summarize and convert repulsion potential
-        Erep = self.energies_Hatree2model*utils.segment_sum(
-            repulsion, idx_i, device=self.device)
+        Erep = self.energies_Hatree2model*utils.scatter_sum(
+            repulsion, idx_i, dim=0, shape=atomic_numbers.shape)
 
         return Erep
 

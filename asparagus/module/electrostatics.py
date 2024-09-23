@@ -211,7 +211,8 @@ class PC_shielded_electrostatics(torch.nn.Module):
             torch.zeros_like(E))    # distance > cutoff
 
         # Sum up electrostatic atom pair contribution of each atom
-        return utils.segment_sum(E, idx_i, device=self.device)
+        return utils.scatter_sum(
+             E, idx_i, dim=0, shape=atomic_charges.shape)
 
 
 class PC_damped_electrostatics(torch.nn.Module):
@@ -494,7 +495,8 @@ class PC_damped_electrostatics(torch.nn.Module):
             torch.zeros_like(E))    # distance > cutoff
 
         # Sum up electrostatic atom pair contribution of each atom
-        return utils.segment_sum(E, idx_i, device=self.device)
+        return utils.scatter_sum(
+             E, idx_i, dim=0, shape=atomic_charges.shape)
 
 
 class PC_Dipole_damped_electrostatics(torch.nn.Module):
@@ -699,4 +701,6 @@ class PC_Dipole_damped_electrostatics(torch.nn.Module):
             torch.zeros_like(E))    # distance > cutoff
 
         # Sum up electrostatic atom pair contribution of each atom
-        return utils.segment_sum(E, idx_i, device=self.device)
+        return utils.scatter_sum(
+             E, idx_i, dim=0, shape=atomic_charges.shape)
+

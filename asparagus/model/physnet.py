@@ -5,6 +5,7 @@ import numpy as np
 
 import ase
 import torch
+from torch_scatter import scatter_sum
 
 from asparagus import model
 from asparagus import module
@@ -596,9 +597,10 @@ class Model_PhysNet(model.BaseModel):
         # Scale atomic charges to ensure correct total charge
         if self.model_atomic_charges:
             charge_deviation = (
-                charge - utils.segment_sum(
-                    results['atomic_charges'], sys_i, device=self.device
-                    )/atoms_number
+                charge - utils.scatter_sum(
+                    results['atomic_charges'], sys_i, dim=0,
+                    shape=charge.shape)
+                / atoms_number
             )
             results['atomic_charges'] = (
                 results['atomic_charges'] + charge_deviation[sys_i])
@@ -614,8 +616,9 @@ class Model_PhysNet(model.BaseModel):
         # Compute property - Energy
         if self.model_energy:
             results['energy'] = torch.squeeze(
-                utils.segment_sum(
-                    results['atomic_energies'], sys_i, device=self.device)
+                utils.scatter_sum(
+                        results['atomic_energies'], sys_i, dim=0,
+                        shape=atoms_number.shape)
             )
 
         # Compute gradients and Hessian if demanded
@@ -653,26 +656,30 @@ class Model_PhysNet(model.BaseModel):
             # For non-zero system charges, shift origin to center of mass
             if torch.any(charge):
                 atomic_masses = self.atomic_masses[atomic_numbers]
-                system_masses = utils.segment_sum(
-                    atomic_masses, sys_i, device=self.device)
+                system_mass = utils.scatter_sum(
+                        atomic_masses, sys_i, dim=0,
+                        shape=atoms_number.shape)
                 system_com = (
-                    utils.segment_sum(
+                    utils.scatter_sum(
                         atomic_masses[..., None]*positions,
-                        sys_i, device=self.device).reshape(-1, 3)
-                    )/system_masses[..., None]
+                        sys_i, dim=0, shape=(*atoms_number.shape, 3)
+                        ).reshape(-1, 3)
+                    )/system_mass[..., None]
                 positions_com = positions - system_com[sys_i]
             else:
                 positions_com = positions
 
             # Compute molecular dipole moment from atomic charges
             if pbc_atoms is None:
-                results['dipole'] = utils.segment_sum(
+                results['dipole'] = utils.scatter_sum(
                     results['atomic_charges'][..., None]*positions_com,
-                    sys_i, device=self.device).reshape(-1, 3)
+                    sys_i, dim=0, shape=(*atoms_number.shape, 3)
+                    ).reshape(-1, 3)
             else:
-                results['dipole'] = utils.segment_sum(
+                results['dipole'] = utils.scatter_sum(
                     results['atomic_charges'][..., None]
                     * positions_com[pbc_atoms],
-                    sys_i, device=self.device).reshape(-1, 3)
+                    sys_i, dim=0, shape=(*atoms_number.shape, 3)
+                    ).reshape(-1, 3)
 
         return results
