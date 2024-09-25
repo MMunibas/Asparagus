@@ -68,29 +68,6 @@ config_file = 'test/data.json'
 config = {
     'config_file': config_file}
 
-
-# Initialize PhysNet model training
-if flag_train_physnet_sql:
-    config_file1 = 'test/model_physnet.json'
-    config_file2 = 'test/train_physnet.json'
-    model = asparagus.Asparagus(
-        config=config_file1,
-        config_file=config_file2,
-        data_file='test/test.db',
-        data_source=[
-            'data/nms_nh3.db',
-            'data/h2co_B3LYP_cc-pVDZ_4001.npz'
-            ],
-        data_overwrite=True,
-        model_directory='test/physnet_sql',
-        model_num_threads=2,
-        trainer_max_epochs=10,
-        trainer_debug_mode=False,
-        )
-    trainer = model.get_trainer()
-    model.train()
-    model.test(test_directory='test/physnet_sql')
-exit()
 # SQL
 if flag_database_sql:
 

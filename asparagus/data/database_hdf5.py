@@ -129,6 +129,12 @@ class DataBase_hdf5(data.DataBase):
             raise exc_type
         return
 
+    def close(self):
+        if self.data.name:
+            self.data.close()
+            self.data = None
+        return
+
     def _set_metadata(self, metadata):
 
         # Convert metadata dictionary

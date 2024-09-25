@@ -296,6 +296,16 @@ class DataContainer():
         """
         return len(self.dataset)
 
+    def __iter__(
+        self
+    ):
+        return self.dataset.__iter__()
+
+    def __next__(
+        self
+    ):
+        return self.dataset.__next__()
+
     def __getitem__(
         self,
         idx: int,

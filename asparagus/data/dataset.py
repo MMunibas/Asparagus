@@ -121,6 +121,9 @@ class DataSet():
         # Initialize DataReader variable
         self.datareader = None
 
+        # Initialize database pointer
+        self.db = None
+
         return
 
     def __len__(
@@ -169,7 +172,8 @@ class DataSet():
             self.counter += 1
             return data
         else:
-            del self.db
+            self.db.close()
+            self.db = None
             raise StopIteration
 
     def get(
@@ -191,10 +195,9 @@ class DataSet():
         idx: int,
     ) -> Dict[str, torch.tensor]:
 
-        with self.connect(self.data_file[0], mode='r') as db:
-            row = db.get(idx + 1)[0]
-
-        return row
+        if self.db is None:
+            self.db = self.connect(self.data_file[0], mode='r')
+        return self.db.get(idx + 1)[0]
 
     def set_properties(
         self,
@@ -215,6 +218,12 @@ class DataSet():
         properties: List[Dict[str, torch.tensor]],
     ):
 
+        # Close database if open
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+
+        # Assign properties
         with self.connect(self.data_file[0], mode='a') as db:
             for idx, props in zip(idcs, properties):
                 row_id = db.write(props, row_id=idx + 1)

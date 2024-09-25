@@ -20,26 +20,43 @@ from asparagus import utils
 __all__ = ['connect', 'DataBase_SQLite3']
 
 # Current SQLite3 database version
-VERSION = 1
+VERSION = 2
 
 all_tables = ['systems']
 
 # Initial SQL statement lines
-init_systems = [
-    """CREATE TABLE systems (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    mtime TEXT,
-    username TEXT,
-    atoms_number BLOB,
-    atomic_numbers BLOB,
-    positions BLOB,
-    charge BLOB,
-    cell BLOB,
-    pbc BLOB,
-    idx_i BLOB,
-    idx_j BLOB,
-    pbc_offset BLOB,
-    """]
+init_systems_version = {
+    0: [
+            """CREATE TABLE systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtime TEXT,
+            username TEXT,
+            atoms_number BLOB,
+            atomic_numbers BLOB,
+            positions BLOB,
+            charge BLOB,
+            cell BLOB,
+            pbc BLOB,
+            idx_i BLOB,
+            idx_j BLOB,
+            pbc_offset BLOB,
+            """
+        ],
+    2: [
+            """CREATE TABLE systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtime TEXT,
+            username TEXT,
+            atoms_number BLOB,
+            atomic_numbers BLOB,
+            positions BLOB,
+            charge BLOB,
+            cell BLOB,
+            pbc BLOB,
+            """
+        ],
+    }
+
 
 init_information = [
     """CREATE TABLE information (
@@ -48,29 +65,49 @@ init_information = [
     "INSERT INTO information VALUES ('version', '{}')".format(VERSION)]
 
 # Structural property labels and dtypes
-structure_properties_dtype = {
-    'atoms_number':     np.int32,
-    'atomic_numbers':   np.int32,
-    'positions':        np.float32,
-    'charge':           np.float32,
-    'cell':             np.float32,
-    'pbc':              np.bool_,
-    'idx_i':            np.int32,
-    'idx_j':            np.int32,
-    'pbc_offset':       np.float32,
+structure_properties_dtype_version = {
+    0: {
+            'atoms_number':     np.int32,
+            'atomic_numbers':   np.int32,
+            'positions':        np.float32,
+            'charge':           np.float32,
+            'cell':             np.float32,
+            'pbc':              np.bool_,
+            'idx_i':            np.int32,
+            'idx_j':            np.int32,
+            'pbc_offset':       np.float32,
+        },
+    2: {
+            'atoms_number':     np.int32,
+            'atomic_numbers':   np.int32,
+            'positions':        np.float32,
+            'charge':           np.float32,
+            'cell':             np.float32,
+            'pbc':              np.bool_
+        },
 }
 
 # Structural property labels and array shape
-structure_properties_shape = {
-    'atoms_number':     (-1,),
-    'atomic_numbers':   (-1,),
-    'positions':        (-1, 3,),
-    'charge':           (-1,),
-    'cell':             (-1, 3,),
-    'pbc':              (-1, 3,),
-    'idx_i':            (-1,),
-    'idx_j':            (-1,),
-    'pbc_offset':       (-1, 3,),
+structure_properties_shape_version = {
+    0: {
+            'atoms_number':     (-1,),
+            'atomic_numbers':   (-1,),
+            'positions':        (-1, 3,),
+            'charge':           (-1,),
+            'cell':             (-1, 3,),
+            'pbc':              (-1, 3,),
+            'idx_i':            (-1,),
+            'idx_j':            (-1,),
+            'pbc_offset':       (-1, 3,),
+    },
+    2: {
+            'atoms_number':     (-1,),
+            'atomic_numbers':   (-1,),
+            'positions':        (-1, 3,),
+            'charge':           (-1,),
+            'cell':             (-1, 3,),
+            'pbc':              (-1, 3,),
+    },
 }
 reference_properties_shape = {
     # 'energy':           (-1,),
@@ -273,6 +310,53 @@ class DataBase_SQLite3(data.DataBase):
         else:
             self.lock = None
 
+        with self.managed_connection() as con:
+
+            # Select any data in the database
+            cur = con.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name='systems'")
+            data_fetched = cur.fetchone()[0]
+
+            # Get and assign version number
+            if data_fetched == 0:
+                self.version = VERSION
+            else:
+                cur = con.execute(
+                    'SELECT value FROM information WHERE name="version"')
+                self.version = int(cur.fetchone()[0])
+
+            # Initialize version compatible parameters. If not compatible
+            # parameter are defined, take the latest version smaller than the
+            # requested one
+            if self.version in init_systems_version:
+                self.init_systems_execute = (
+                    init_systems_version[self.version][:])
+            else:
+                version = self.latest_version(init_systems_version)
+                self.init_systems_execute = (init_systems_version[version][:])
+            if self.version in structure_properties_dtype_version:
+                self.structure_properties_dtype = (
+                    structure_properties_dtype_version[self.version])
+            else:
+                version = self.latest_version(
+                    structure_properties_dtype_version)
+                self.structure_properties_dtype = (
+                    structure_properties_dtype_version[version])
+            if self.version in structure_properties_shape_version:
+                self.structure_properties_shape = (
+                    structure_properties_shape_version[self.version])
+            else:
+                version = self.latest_version(
+                    structure_properties_shape_version)
+                self.structure_properties_shape = (
+                    structure_properties_shape_version[version])
+
+        # Check version compatibility
+        if self.version > VERSION:
+            raise IOError(
+                f"Can not read newer version of the database format "
+                f"(version {self.version}).")
+
         return
 
     def _connect(self):
@@ -290,6 +374,13 @@ class DataBase_SQLite3(data.DataBase):
         else:
             self.connection.rollback()
         self.connection.close()
+        self.connection = None
+        return
+
+    def close(self):
+        if self.connection is not None:
+            self.connection.commit()
+            self.connection.close()
         self.connection = None
         return
 
@@ -392,6 +483,12 @@ class DataBase_SQLite3(data.DataBase):
 
         return self._metadata
 
+    def latest_version(self, parameter_version):
+        version_available = [
+            int(version) for version in parameter_version.keys()
+            if int(version) <= self.version]
+        return max(version_available)
+
     def _init_systems(self):
 
         # Get metadata
@@ -402,36 +499,28 @@ class DataBase_SQLite3(data.DataBase):
             # Select any data in the database
             cur = con.execute(
                 "SELECT COUNT(*) FROM sqlite_master WHERE name='systems'")
+            data_fetched = cur.fetchone()[0]
 
-            # If no system in database
-            if cur.fetchone()[0] == 0:
+            # If no system in database, initialize
+            if data_fetched == 0:
 
                 # Update initial statements with properties to load
-                init_systems_execute = init_systems[:]
                 for prop_i in metadata.get('load_properties'):
-                    if prop_i not in structure_properties_dtype.keys():
-                        init_systems_execute[0] += f"{prop_i} BLOB,\n"
-                init_systems_execute[0] = init_systems_execute[0][:-2] + ")"
+                    if prop_i not in self.structure_properties_dtype.keys():
+                        self.init_systems_execute[0] += f"{prop_i} BLOB,\n"
+                self.init_systems_execute[0] = (
+                    self.init_systems_execute[0][:-2] + ")")
 
                 # Initialize data columns
-                for statement in init_systems_execute:
+                for statement in self.init_systems_execute:
                     con.execute(statement)
                 con.commit()
 
-                self.version = VERSION
-
-            # Else get information from database
-            else:
-
-                cur = con.execute(
-                    'SELECT value FROM information WHERE name="version"')
-                self.version = int(cur.fetchone()[0])
-
-        # Check version compatibility
-        if self.version > VERSION:
-            raise IOError(
-                f"Can not read newer version of the database format "
-                f"(version {self.version}).")
+        # # Check version compatibility
+        # if self.version > VERSION:
+        #     raise IOError(
+        #         f"Can not read newer version of the database format "
+        #         f"(version {self.version}).")
 
         return
 
@@ -595,7 +684,7 @@ class DataBase_SQLite3(data.DataBase):
         values += [time.ctime(), os.getenv('USER')]
 
         # Structural properties
-        for prop_i, dtype_i in structure_properties_dtype.items():
+        for prop_i, dtype_i in self.structure_properties_dtype.items():
 
             columns += [prop_i]
             if properties.get(prop_i) is None:
@@ -609,7 +698,7 @@ class DataBase_SQLite3(data.DataBase):
         # Reference properties
         for prop_i in self.metadata.get('load_properties'):
 
-            if prop_i not in structure_properties_dtype:
+            if prop_i not in self.structure_properties_dtype:
 
                 columns += [prop_i]
                 if properties.get(prop_i) is None:
@@ -663,7 +752,7 @@ class DataBase_SQLite3(data.DataBase):
         values += [time.ctime(), os.getenv('USER')]
 
         # Structural properties
-        for prop_i, dtype_i in structure_properties_dtype.items():
+        for prop_i, dtype_i in self.structure_properties_dtype.items():
 
             if prop_i in properties:
                 columns += [prop_i]
@@ -680,7 +769,7 @@ class DataBase_SQLite3(data.DataBase):
 
             if (
                     prop_i in properties
-                    and prop_i not in structure_properties_dtype
+                    and prop_i not in self.structure_properties_dtype
             ):
 
                 columns += [prop_i]
@@ -822,7 +911,7 @@ class DataBase_SQLite3(data.DataBase):
 
         # Structural properties
         Np = 3
-        for prop_i, dtype_i in structure_properties_dtype.items():
+        for prop_i, dtype_i in self.structure_properties_dtype.items():
             if row[Np] is None:
                 properties[prop_i] = None
             elif isinstance(row[Np], bytes):
@@ -830,18 +919,18 @@ class DataBase_SQLite3(data.DataBase):
                     self.deblob(
                         row[Np],
                         dtype=dtype_i,
-                        shape=structure_properties_shape[prop_i]
+                        shape=self.structure_properties_shape[prop_i]
                     ).copy())
             else:
                 properties[prop_i] = torch.reshape(
                     torch.tensor(row[Np], dtype=dtype_i),
-                    structure_properties_shape[prop_i])
+                    self.structure_properties_shape[prop_i])
 
             Np += 1
 
         for prop_i in metadata.get('load_properties'):
 
-            if prop_i in structure_properties_dtype:
+            if prop_i in self.structure_properties_dtype:
                 continue
 
             if row[Np] is None:

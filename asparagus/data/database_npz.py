@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import json
 import functools
@@ -163,7 +164,14 @@ class DataBase_npz(data.DataBase):
 
     def _load(self):
         if os.path.exists(self.data_file):
-            self.data = np.load(self.data_file)
+            # Get file size
+            size = os.path.getsize(self.data_file)/(1024.**3)
+            # If file size smaller than 1GB, load data to memory, else only
+            # open file
+            if size < 1.0:
+                self.data = dict(np.load(self.data_file))
+            else:
+                self.data = np.load(self.data_file)
         else:
             self.data = None
         self.connected = True
@@ -294,6 +302,13 @@ class DataBase_npz(data.DataBase):
             raise exc_type
         else:
             self._save()
+        self.connected = False
+        self.data = None
+        self.data_new = {}
+        return
+
+    def close(self):
+        self._save()
         self.connected = False
         self.data = None
         self.data_new = {}
