@@ -164,6 +164,24 @@ class PyCharmm_Calculator:
             self.implemented_properties = (
                 self.model_calculator.model_properties)
 
+        # Check if model calculator has loaded a checkpoint file or stored
+        # if model parameters are stored in a checkpoint file
+        if self.model_calculator is None:
+            for ic, calc in enumerate(self.model_calculator_list):
+                if not calc.checkpoint_loaded:
+                    raise SyntaxError(
+                        f"Model calculator {ic:d} does not seem to have a "
+                        + "proper parameter set loaded from a checkpoint file."
+                        + "\nMake sure parameters are loaded otherwise "
+                        + "model predictions are random.")
+        else:
+            if not self.model_calculator.checkpoint_loaded:
+                raise SyntaxError(
+                    "The model calculator does not seem to have a "
+                    + "proper parameter set loaded from a checkpoint file."
+                    + "\nMake sure parameters are loaded otherwise "
+                    + "model predictions are random.")
+
         #############################
         # # # Set ML/MM Options # # #
         #############################

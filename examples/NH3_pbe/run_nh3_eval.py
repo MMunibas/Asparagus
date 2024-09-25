@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea
 
 from asparagus import Asparagus
-from asparagus.interface.orca_ase import ORCA_Dipole
+from asparagus.interface.orca_ase import ORCA
 
 # Asparagus Models
 configs = [

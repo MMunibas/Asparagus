@@ -20,26 +20,43 @@ from asparagus import utils
 __all__ = ['connect', 'DataBase_SQLite3']
 
 # Current SQLite3 database version
-VERSION = 1
+VERSION = 2
 
 all_tables = ['systems']
 
 # Initial SQL statement lines
-init_systems = [
-    """CREATE TABLE systems (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    mtime TEXT,
-    username TEXT,
-    atoms_number BLOB,
-    atomic_numbers BLOB,
-    positions BLOB,
-    charge BLOB,
-    cell BLOB,
-    pbc BLOB,
-    idx_i BLOB,
-    idx_j BLOB,
-    pbc_offset BLOB,
-    """]
+init_systems_version = {
+    1: [
+            """CREATE TABLE systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtime TEXT,
+            username TEXT,
+            atoms_number BLOB,
+            atomic_numbers BLOB,
+            positions BLOB,
+            charge BLOB,
+            cell BLOB,
+            pbc BLOB,
+            idx_i BLOB,
+            idx_j BLOB,
+            pbc_offset BLOB,
+            """
+        ],
+    2: [
+            """CREATE TABLE systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtime TEXT,
+            username TEXT,
+            atoms_number BLOB,
+            atomic_numbers BLOB,
+            positions BLOB,
+            charge BLOB,
+            cell BLOB,
+            pbc BLOB,
+            """
+        ],
+    }
+
 
 init_information = [
     """CREATE TABLE information (
@@ -48,29 +65,49 @@ init_information = [
     "INSERT INTO information VALUES ('version', '{}')".format(VERSION)]
 
 # Structural property labels and dtypes
-structure_properties_dtype = {
-    'atoms_number':     np.int32,
-    'atomic_numbers':   np.int32,
-    'positions':        np.float32,
-    'charge':           np.float32,
-    'cell':             np.float32,
-    'pbc':              np.bool_,
-    'idx_i':            np.int32,
-    'idx_j':            np.int32,
-    'pbc_offset':       np.float32,
+structure_properties_dtype_version = {
+    1: {
+            'atoms_number':     np.int32,
+            'atomic_numbers':   np.int32,
+            'positions':        np.float32,
+            'charge':           np.float32,
+            'cell':             np.float32,
+            'pbc':              np.bool_,
+            'idx_i':            np.int32,
+            'idx_j':            np.int32,
+            'pbc_offset':       np.float32,
+        },
+    2: {
+            'atoms_number':     np.int32,
+            'atomic_numbers':   np.int32,
+            'positions':        np.float32,
+            'charge':           np.float32,
+            'cell':             np.float32,
+            'pbc':              np.bool_
+        },
 }
 
 # Structural property labels and array shape
-structure_properties_shape = {
-    'atoms_number':     (-1,),
-    'atomic_numbers':   (-1,),
-    'positions':        (-1, 3,),
-    'charge':           (-1,),
-    'cell':             (-1, 3,),
-    'pbc':              (-1, 3,),
-    'idx_i':            (-1,),
-    'idx_j':            (-1,),
-    'pbc_offset':       (-1, 3,),
+structure_properties_shape_version = {
+    1: {
+            'atoms_number':     (-1,),
+            'atomic_numbers':   (-1,),
+            'positions':        (-1, 3,),
+            'charge':           (-1,),
+            'cell':             (-1, 3,),
+            'pbc':              (-1, 3,),
+            'idx_i':            (-1,),
+            'idx_j':            (-1,),
+            'pbc_offset':       (-1, 3,),
+    },
+    2: {
+            'atoms_number':     (-1,),
+            'atomic_numbers':   (-1,),
+            'positions':        (-1, 3,),
+            'charge':           (-1,),
+            'cell':             (-1, 3,),
+            'pbc':              (-1, 3,),
+    },
 }
 reference_properties_shape = {
     # 'energy':           (-1,),
@@ -406,8 +443,14 @@ class DataBase_SQLite3(data.DataBase):
             # If no system in database
             if cur.fetchone()[0] == 0:
 
+                # Get version compatible
+
                 # Update initial statements with properties to load
-                init_systems_execute = init_systems[:]
+                if VERSION in init_systems_version:
+                    init_systems_execute = init_systems[:]
+                else:
+                    init_systems_execute = init_systems_version[
+                        max(list(init_systems_version.keys()))]
                 for prop_i in metadata.get('load_properties'):
                     if prop_i not in structure_properties_dtype.keys():
                         init_systems_execute[0] += f"{prop_i} BLOB,\n"

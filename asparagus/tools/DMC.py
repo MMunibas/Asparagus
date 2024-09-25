@@ -382,7 +382,7 @@ class DMC:
                 self.charge,
                 optimize_method,
                 optimize_fmax)
-        self.model_calculator.compile()
+
         # Create initial system batch information
         batch_initial = self.model_calculator.create_batch(
             self.atoms_initial,

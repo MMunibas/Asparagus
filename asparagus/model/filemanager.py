@@ -201,6 +201,7 @@ class FileManager():
         torch.save(state, ckpt_name)
 
         # Store latest checkpoint file in model calculator
+        model_calc.checkpoint_loaded = True
         model_calc.checkpoint_file = ckpt_name
 
         # Check number of epoch checkpoints
