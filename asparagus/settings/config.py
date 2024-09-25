@@ -317,7 +317,7 @@ class Configuration():
 
         # Return if update dictionary is empty
         if not len(config_new):
-            self.logger.info("Empty update configuration dictionary!")
+            self.logger.debug("Empty update configuration dictionary!")
             return
 
         # Show update information

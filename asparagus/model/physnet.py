@@ -5,7 +5,6 @@ import numpy as np
 
 import ase
 import torch
-from torch_scatter import scatter_sum
 
 from asparagus import model
 from asparagus import module

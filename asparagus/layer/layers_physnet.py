@@ -1,7 +1,6 @@
 from typing import Optional, Callable
 
 import torch
-from torch_scatter import scatter_sum
 
 from .base import DenseLayer, ResidualLayer
 
