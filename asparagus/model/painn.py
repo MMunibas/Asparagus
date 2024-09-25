@@ -684,6 +684,12 @@ class Model_PaiNN(model.BaseModel):
         # Compute molecular dipole
         if self.model_dipole:
 
+            # For supercluster method, just use primary cell atom positions
+            if pbc_atoms is None:
+                positions_dipole = positions
+            else:
+                positions_dipole = positions[pbc_atoms]
+
             # For non-zero system charges, shift origin to center of mass
             if torch.any(charge):
                 atomic_masses = self.atomic_masses[atomic_numbers]
@@ -692,26 +698,19 @@ class Model_PaiNN(model.BaseModel):
                         shape=atoms_number.shape)
                 system_com = (
                     utils.scatter_sum(
-                        atomic_masses[..., None]*positions,
+                        atomic_masses[..., None]*positions_dipole,
                         sys_i, dim=0, shape=(*atoms_number.shape, 3)
                         ).reshape(-1, 3)
                     )/system_mass[..., None]
-                positions_com = positions - system_com[sys_i]
+                positions_com = positions_dipole - system_com[sys_i]
             else:
-                positions_com = positions
+                positions_com = positions_dipole
 
             # Compute molecular dipole moment from atomic charges
-            if pbc_atoms is None:
-                results['dipole'] = utils.scatter_sum(
-                    results['atomic_charges'][..., None]*positions_com,
-                    sys_i, dim=0, shape=(*atoms_number.shape, 3)
-                    ).reshape(-1, 3)
-            else:
-                results['dipole'] = utils.scatter_sum(
-                    results['atomic_charges'][..., None]
-                    * positions_com[pbc_atoms],
-                    sys_i, dim=0, shape=(*atoms_number.shape, 3)
-                    ).reshape(-1, 3)
+            results['dipole'] = utils.scatter_sum(
+                results['atomic_charges'][..., None]*positions_com,
+                sys_i, dim=0, shape=(*atoms_number.shape, 3)
+                ).reshape(-1, 3)
 
             # Refine molecular dipole moment with atomic dipole moments
             if self.model_atomic_dipoles:
