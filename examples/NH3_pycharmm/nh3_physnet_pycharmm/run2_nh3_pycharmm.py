@@ -191,7 +191,7 @@ energy.show()
 #-----------------------------------------------------------
 
 # Load Asparagus model
-ml_model = Asparagus(config='model_nh3/nh3_meta.json')
+ml_model = Asparagus(config='model_nh3/nh3_physnet.json')
 
 # Get atomic number from ASE atoms object
 ml_Z = ase_ammonia.get_atomic_numbers()
