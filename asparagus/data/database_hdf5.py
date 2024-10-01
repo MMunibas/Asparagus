@@ -41,7 +41,7 @@ reference_properties_shape = {
     # 'atomic_energies':  (-1,),
     'forces':           (-1, 3,),
     # 'hessian':          (-1,),
-    # 'atomic_charge':    (-1,),
+    # 'atomic_charges':   (-1,),
     # 'dipole':           (3),
     # 'atomic_dipoles':   (-1,),
     'polarizability':   (3, 3,),

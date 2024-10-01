@@ -50,7 +50,7 @@ reference_properties_shape = {
     'atomic_energies':  (-1,),
     'forces':           (-1, 3,),
     #'hessian':          (-1,),
-    'atomic_charge':    (-1,),
+    'atomic_charges':   (-1,),
     'dipole':           (-1, 3,),
     'atomic_dipoles':   (-1, 3,),
     'polarizability':   (-1, 3, 3,),
@@ -123,6 +123,7 @@ class DataBase_npz(data.DataBase):
         self,
         data_file: str,
         lock_file: bool,
+        memory_limit: Optional[float] = 1024.0,
     ):
         """
         Numpy Database object that contain reference data.
@@ -134,6 +135,10 @@ class DataBase_npz(data.DataBase):
         lock_file: bool
             Use a lock file when manipulating the database to prevent
             parallel manipulation by multiple processes.
+        memory_limit: float, optional, default 1024.
+            File size limit in MB of the database file which is loaded to the
+            memory when smaller. Otherwise keep database just connection
+            (slower). Default value is 1GB or 1024MB.
 
         """
 
@@ -160,15 +165,18 @@ class DataBase_npz(data.DataBase):
         self.data_new = {}
         self.metadata_new = False
 
+        # Assign file size limit
+        self.memory_limit = memory_limit
+
         return
 
     def _load(self):
         if os.path.exists(self.data_file):
-            # Get file size
-            size = os.path.getsize(self.data_file)/(1024.**3)
-            # If file size smaller than 1GB, load data to memory, else only
+            # Get file size in MB
+            size = os.path.getsize(self.data_file)/(1024.**2)
+            # If file size smaller than limit, load data to memory, else only
             # open file
-            if size < 1.0:
+            if size < self.memory_limit:
                 self.data = dict(np.load(self.data_file))
             else:
                 self.data = np.load(self.data_file)
@@ -193,11 +201,42 @@ class DataBase_npz(data.DataBase):
             # Reset new data flags
             self.data_new = {}
             self.metadata_new = False
-            
-        # TODO update flag
+
         return
 
-    def _merge(self):
+    def __enter__(self):
+        self._load()
+        return self
+
+    def __exit__(self, exc_type, exc_value, tb):
+        if exc_type is not None:
+            raise exc_type
+        else:
+            self._save()
+        self.connected = False
+        self.data = None
+        self.data_new = {}
+        return
+
+    def close(self):
+        self._save()
+        self.connected = False
+        self.data = None
+        self.data_new = {}
+        return
+
+    def _merge(self) -> Dict[str, Any]:
+        """
+        Check if stored data (self.data) are to merge with loaded data
+        (self.data_new) to a data dictionary that will be store in a file.
+        Also check for metadata updates.
+
+        Returns
+        -------
+        dict(str, any)
+            Data dictionary including metadata
+
+        """
 
         # If no new data or metadata are available return current data
         if not (bool(self.data_new) or self.metadata_new):
@@ -223,8 +262,18 @@ class DataBase_npz(data.DataBase):
 
         return data_merged
 
-    def _merge_data(self):
-        
+    def _merge_data(self) -> Dict[str, Any]:
+        """
+        Merge stored data (self.data) with loaded data (self.data_new) to a
+        data dictionary.
+
+        Returns
+        -------
+        dict(str, any)
+            Data dictionary
+
+        """
+
         # Initialize merged data dictionary
         data_merged = {}
         
@@ -293,25 +342,57 @@ class DataBase_npz(data.DataBase):
 
         return data_merged
 
-    def __enter__(self):
-        self._load()
-        return self
+    def split_data(self):
+        """
+        Split the stored data dictionary (self.data) to lists of data entries
+        (self.data_new) that allow individual data manipulation.
 
-    def __exit__(self, exc_type, exc_value, tb):
-        if exc_type is not None:
-            raise exc_type
-        else:
-            self._save()
-        self.connected = False
-        self.data = None
-        self.data_new = {}
-        return
+        """
 
-    def close(self):
+        # Store recent changes and reload data
         self._save()
-        self.connected = False
-        self.data = None
-        self.data_new = {}
+        self._load()
+
+        # Initialize empty data dictionary self.data_new
+        self._init_data_new()
+
+        # Split system id
+        self.data_new['id'] = np.array(
+            self.data['id'], dtype=integer_numpy_dtype)
+
+        # Split data time and user name
+        self.data_new['mtime'] = np.array(
+            self.data['mtime'], dtype=string_numpy_dtype).reshape(-1, 1)
+        self.data_new['username'] = np.array(
+            self.data['username'], dtype=string_numpy_dtype).reshape(-1, 1)
+
+        # Iterate over data
+        for idx in self.data_new['id']:
+
+            # Split from structural properties
+            for prop_i in structure_properties_dtype:
+
+                # Get system ids
+                id_start = self.data[structure_properties_ids[prop_i]][idx - 1]
+                id_end = self.data[structure_properties_ids[prop_i]][idx]
+
+                # Append property
+                self.data_new[prop_i].append(
+                    self.data[prop_i][id_start:id_end])
+
+            # Split from reference properties
+            for prop_i in self.metadata.get('load_properties'):
+
+                # Get system ids
+                id_start = self.data[prop_i + ':id'][idx - 1]
+                id_end = self.data[prop_i + ':id'][idx]
+
+                # Append property and property ids
+                self.data_new[prop_i].append(
+                    self.data[prop_i][id_start:id_end])
+                self.data_new[prop_i + ':id'].append(
+                    np.array(id_end - id_start, dtype=integer_numpy_dtype))
+
         return
 
     @lock
@@ -579,7 +660,7 @@ class DataBase_npz(data.DataBase):
         self.data_new['id'].append(
             np.array([row_id], dtype=integer_numpy_dtype))
 
-        # Current datatime and User name
+        # Current data time and username
         self.data_new['mtime'].append(
             np.array([time.ctime()], dtype=string_numpy_dtype))
         self.data_new['username'].append(
@@ -628,47 +709,37 @@ class DataBase_npz(data.DataBase):
             row_id = self._write(properties, row_id)
             return row_id
 
-        raise NotImplementedError
-        ## Current datatime and User name
-        #self.data_new['mtime'].append(time.ctime())
-        #self.data_new['username'].append(os.getenv('USER'))
+        # Split data for individual row manipulation
+        self.split_data()
 
-        ## Structural properties
-        #for prop_i, dtype_i in structure_properties_dtype.items():
-            #if properties.get(prop_i) is None:
-                #self.data_new[prop_i].append(None)
-            #else:
-                #self.data_new[prop_i].append(
-                    #np.array([properties.get(prop_i)], dtype=dtype_i))
+        # Update data time and username
+        self.data_new['mtime'][row_id] = np.array(
+            [time.ctime()], dtype=string_numpy_dtype)
+        self.data_new['username'][row_id] = np.array(
+            [os.getenv('USER')], dtype=string_numpy_dtype)
 
-        ## Reference properties
-        #for prop_i in self.metadata.get('load_properties'):
-            #if prop_i not in structure_properties_dtype:
-                #if properties.get(prop_i) is None:
-                    #self.data_new[prop_i].append(None)
-                #else:
-                    #self.data_new[prop_i].append(
-                        #np.array([properties.get(prop_i)], dtype=dtype_i))
+        # Update structural properties
+        for prop_i, dtype_i in structure_properties_dtype.items():
+            if properties.get(prop_i) is None:
+                self.data_new[prop_i][row_id] = None
+            else:
+                self.data_new[prop_i][row_id] = np.array(
+                    properties.get(prop_i), dtype=dtype_i
+                    ).reshape(structure_properties_shape[prop_i])
 
-        #if not new_data:
-
-            #raise SyntaxError(
-                #"At least one input 'ref_data' or 'properties' should "
-                #+ "contain reference data!")
-
-        #elif ref_data is None:
-
-            #row_id = self._write(properties, row_id)
-
-        #else:
-
-            ## Add or update database values
-            #with self.managed_connection() as data:
-
-                #key_id = f"id{row_id:d}"
-                #if not isinstance(self.data, dict):
-                    #self.data = dict(self.data)
-                #self.data[key_id] = ref_data
+        # Update reference properties
+        for prop_i in self.metadata.get('load_properties'):
+            if prop_i not in structure_properties_dtype:
+                if properties.get(prop_i) is None:
+                    self.data_new[prop_i][row_id] = None
+                else:
+                    data_i = np.array(
+                        properties.get(prop_i),
+                        dtype=self.properties_numpy_dtype).reshape(
+                            reference_properties_shape[prop_i])
+                    self.data_new[prop_i][row_id] = data_i
+                    self.data_new[prop_i + ':id'][row_id] = np.array(
+                        data_i.shape[0], dtype=integer_numpy_dtype)
 
         return row_id
 
@@ -701,8 +772,40 @@ class DataBase_npz(data.DataBase):
         else:
             return 0
 
-    def _delete(self, row_ids):
-        raise NotImplementedError()
+    def _delete(self, row_id):
+
+        # Check if data are loaded
+        if not self.connected:
+            self._load()
+
+        # Check data dictionary
+        if self.data is None:
+            self._init_data()
+
+        # Check if 'row_id' is found and can be deleted
+        if row_id is None or row_id not in self.data['id']:
+            return row_id
+
+        # Split data for individual row manipulation
+        self.split_data()
+
+        # Delete data id list
+        del data_new['id'][row_id]
+
+        # Delete data time and username
+        del self.data_new['mtime'][row_id]
+        del self.data_new['username'][row_id]
+
+        # Delete structural properties
+        for prop_i, dtype_i in structure_properties_dtype.items():
+            del self.data_new[prop_i][row_id]
+
+        # Delete reference properties
+        for prop_i in self.metadata.get('load_properties'):
+            if prop_i not in structure_properties_dtype:
+                del self.data_new[prop_i][row_id]
+
+        return row_id
 
     def _delete_file(self):
         """

@@ -55,6 +55,22 @@ init_systems_version = {
             pbc BLOB,
             """
         ],
+
+    99: [
+            """CREATE TABLE systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtime TEXT,
+            username TEXT,
+            atoms_number BLOB,
+            atomic_numbers BLOB,
+            positions BLOB,
+            charge BLOB,
+            cell BLOB,
+            pbc BLOB,
+            atomic_types BLOB,
+            fragment_atoms BLOB,
+            """
+        ],
     }
 
 
@@ -83,7 +99,17 @@ structure_properties_dtype_version = {
             'positions':        np.float32,
             'charge':           np.float32,
             'cell':             np.float32,
-            'pbc':              np.bool_
+            'pbc':              np.bool_,
+        },
+    99: {
+            'atoms_number':     np.int32,
+            'atomic_numbers':   np.int32,
+            'positions':        np.float32,
+            'charge':           np.float32,
+            'cell':             np.float32,
+            'pbc':              np.bool_,
+            'atomic_types':     'U4',
+            'fragment_atoms':   np.int32,
         },
 }
 
@@ -108,16 +134,28 @@ structure_properties_shape_version = {
             'cell':             (-1, 3,),
             'pbc':              (-1, 3,),
     },
+    99: {
+            'atoms_number':     (-1,),
+            'atomic_numbers':   (-1,),
+            'positions':        (-1, 3,),
+            'charge':           (-1,),
+            'cell':             (-1, 3,),
+            'pbc':              (-1, 3,),
+            'atomic_types':     (-1,),
+            'fragment_atoms':   (-1,),
+    },
 }
 reference_properties_shape = {
-    # 'energy':           (-1,),
-    # 'atomic_energies':  (-1,),
-    'forces':           (-1, 3,),
-    # 'hessian':          (-1,),
-    # 'atomic_charge':    (-1,),
-    # 'dipole':           (3),
-    # 'atomic_dipoles':   (-1,),
-    'polarizability':   (3, 3,),
+    # 'energy':               (-1,),
+    # 'atomic_energies':      (-1,),
+    'forces':               (-1, 3,),
+    # 'hessian':              (-1,),
+    # 'atomic_charges':       (-1,),
+    # 'dipole':               (3),
+    # 'atomic_dipoles':       (-1,),
+    'polarizability':       (3, 3,),
+    # 'fragment_energies':    (-1,),
+    # 'interaction_energy':   (-1,),
     }
 
 
