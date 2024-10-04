@@ -20,7 +20,8 @@ flag_datareader = True
 
 flag_sampler_all = True
 flag_sampler_shell = True
-flag_sampler_slurm = False
+flag_sampler_slurm = True
+flag_sampler_shell_case = True
 
 flag_model_physnet = True
 flag_train_physnet_sql = True
@@ -516,6 +517,78 @@ if flag_sampler_all:
         )
     sampler.run()
 
+    # Sample a single system loaded from a xyz file using the Molecular 
+    # Dynamics sampling method with the XTB calculator
+    sampler = MDSampler(
+        config='test/md_nh3.json',
+        sample_directory='test',
+        sample_data_file='test/md_nh3.db',
+        sample_systems='data/nh3_c3v.xyz',
+        sample_systems_format='xyz',
+        sample_calculator='XTB',   # Not thread save when using ASE modules
+        sample_num_threads=1,
+        sample_systems_optimize=True,
+        sample_systems_optimize_fmax=0.001,
+        md_temperature={
+            'tstart': 10.0,
+            'tend': 100.0,
+            'tincrement': 10.0},
+        md_time_step=1.0,
+        md_simulation_time=10.0,
+        md_save_interval=10,
+        md_langevin_friction=0.01,
+        md_equilibration_time=0,
+        md_initial_velocities=False,
+        )
+    sampler.run()
+
+    # Sample a single system loaded from a xyz file using the Molecular 
+    # Dynamics sampling method with the XTB calculator
+    sampler = MDSampler(
+        config='test/md_nh3.json',
+        sample_directory='test',
+        sample_data_file='test/md_nh3.db',
+        sample_systems='data/nh3_c3v.xyz',
+        sample_systems_format='xyz',
+        sample_calculator='XTB',   # Not thread save when using ASE modules
+        sample_num_threads=1,
+        sample_systems_optimize=True,
+        sample_systems_optimize_fmax=0.001,
+        md_temperature={
+            'tstart': 10.0,
+            'tinterval': 10.0},
+        md_time_step=1.0,
+        md_simulation_time=10.0,
+        md_save_interval=10,
+        md_langevin_friction=0.01,
+        md_equilibration_time=0,
+        md_initial_velocities=False,
+        )
+    sampler.run()
+    # Sample a single system loaded from a xyz file using the Molecular 
+    # Dynamics sampling method with the XTB calculator
+    sampler = MDSampler(
+        config='test/md_nh3.json',
+        sample_directory='test',
+        sample_data_file='test/md_nh3.db',
+        sample_systems='data/nh3_c3v.xyz',
+        sample_systems_format='xyz',
+        sample_calculator='XTB',   # Not thread save when using ASE modules
+        sample_num_threads=1,
+        sample_systems_optimize=True,
+        sample_systems_optimize_fmax=0.001,
+        md_temperature={
+            'tstart': 10.0,
+            'tend': 100.0},
+        md_time_step=1.0,
+        md_simulation_time=10.0,
+        md_save_interval=10,
+        md_langevin_friction=0.01,
+        md_equilibration_time=0,
+        md_initial_velocities=False,
+        )
+    sampler.run()
+
     # Sample two systems loaded from a xyz files in parallel using the 
     # Molecular Dynamics sampling method and the ORCA calculator (thread safe)
     sampler = MDSampler(
@@ -816,7 +889,7 @@ if flag_sampler_slurm:
     from asparagus.sampling import Sampler
     
     # Calculate properties of a sample system with multiple conformations
-    # using the Slurm calculator with template files for a MOLPRO calculation.
+    # using the slurm calculator with template files for a MOLPRO calculation.
     sampler = Sampler(
         config='test/calc_nh3.json',
         sample_directory='test',
@@ -825,6 +898,7 @@ if flag_sampler_slurm:
         sample_systems_format='xyz',
         sample_calculator='slurm',
         sample_calculator_args = {
+            'remote_client': 'pc-beethoven',
             'files': [
                 'asparagus/templates/slurm/run_molpro.sh',
                 'asparagus/templates/slurm/run_molpro.inp',
@@ -839,7 +913,7 @@ if flag_sampler_slurm:
             'charge': 0,
             'multiplicity': 1,
             'directory': 'test/slurm',
-            'result_properties': ['energy', 'forces', 'dipole']
+            'result_properties': ['energy', 'forces', 'dipole'],
             },
         sample_num_threads=1,
         )
@@ -871,32 +945,6 @@ if flag_sampler_slurm:
         """
         return int(proc.stdout.decode().split()[-1])
     
-    def check_id(
-        slurm_id: int,
-    ) -> bool:
-        """
-        Check slurm task id with e.g. task id list extracted from squeue
-        
-        Parameters
-        ----------
-        slurm_id: int
-            Slurm task id of the submitted job
-        
-        Return
-        ------
-        bool
-            Answer if task is done:
-            False, if task is still running (task id is found in squeue)
-            True, if task is done (task id not found in squeue)
-        """
-        proc = subprocess.run(
-            ['squeue', '-u', os.environ['USER']],
-            capture_output=True)
-        active_id = [
-            int(tasks.split()[0])
-            for tasks in proc.stdout.decode().split('\n')[1:-1]]
-        return not slurm_id in active_id
-
     sampler = Sampler(
         config='test/calc_nh3.json',
         sample_directory='test',
@@ -905,6 +953,7 @@ if flag_sampler_slurm:
         sample_systems_format='xyz',
         sample_calculator='slurm',
         sample_calculator_args = {
+            'remote_client': 'pc-beethoven',
             'files': [
                 'asparagus/templates/slurm/run_molpro.sh',
                 'asparagus/templates/slurm/run_molpro.inp',
@@ -924,10 +973,9 @@ if flag_sampler_slurm:
         sample_num_threads=1,
         scan_interval=1,
         scan_catch_id=catch_id,
-        scan_check_id=check_id,
         )
     sampler.run()
-    
+
     # Calculate properties of a sample system with multiple conformations
     # using the Slurm calculator with template files for a MOLPRO calculation.
     sampler = Sampler(
@@ -939,6 +987,7 @@ if flag_sampler_slurm:
         sample_systems_indices=[0, 1, 2, 3, -4, -3, -2, -1],
         sample_calculator='slurm',
         sample_calculator_args = {
+            'remote_client': 'pc-beethoven',
             'files': [
                 'asparagus/templates/slurm/run_molpro.sh',
                 'asparagus/templates/slurm/run_molpro.inp',
@@ -956,6 +1005,58 @@ if flag_sampler_slurm:
             'result_properties': ['energy', 'forces', 'dipole']
             },
         sample_num_threads=4,
+        )
+    sampler.run()
+
+# Predefined case Shell Calculator
+if flag_sampler_shell_case:
+    
+    from asparagus.sampling import Sampler
+    
+    # Test the predefined case shell calculator using template file
+    # in asparagus/template/shell
+    sampler = Sampler(
+        config='test/calc_nh3.json',
+        sample_directory='test',
+        sample_data_file='test/smpl_nh3.db',
+        sample_systems='data/nh3_c3v.xyz',
+        sample_systems_format='xyz',
+        sample_calculator='shell:mp2',
+        sample_calculator_args = {
+            'charge': 0,
+            'multiplicity': 1,
+            'directory': 'test/shell',
+            'result_properties': ['energy', 'forces', 'dipole']
+            },
+        sample_num_threads=1,
+        )
+    sampler.run()
+
+    if os.path.exists('test/calc_nh3.json'):
+        os.remove('test/calc_nh3.json')
+
+    # Test the predefined case shell calculator using template file
+    # in asparagus/template/shell with additional parameter 'basis' and
+    # changed property list.
+    sampler = Sampler(
+        config='test/calc_nh3.json',
+        sample_directory='test',
+        sample_data_file='test/smpl_nh3.db',
+        sample_systems='data/meta_nh3.traj',
+        sample_calculator='shell:mp2',
+        sample_calculator_args = {
+            'files_replace': {
+                '%nproc%': 2,
+                },
+            'charge': 0,
+            'multiplicity': 1,
+            'basis': 'cc-pVDZ',
+            'directory': 'test/shell',
+            'result_properties': ['energy', 'forces']
+            },
+        sample_num_threads=4,
+        sample_save_trajectory=True,
+        sample_data_overwrite=True,
         )
     sampler.run()
 

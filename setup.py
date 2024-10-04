@@ -8,7 +8,9 @@ setup(
     name='Asparagus',
     version='0.3.0',
     description='Function Bundle from Sampling, Training to Application of NN Potentials',
-    author='L.I.Vazquez-Salazar, Silvan Kaeser and Kai Toepfer',
+    author=(
+        'L.I.Vazquez-Salazar, Silvan Kaeser, '
+        + 'Valerii Andreichev and Kai Toepfer'),
     long_description=long_description,
     author_email='luisitza.vazquezsalazar@unibas.ch',
     url='https://github.com/LIVazquezS/Asparagus/tree/main',

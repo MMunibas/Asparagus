@@ -60,6 +60,7 @@ class ORCA(FileIOCalculator):
             **kwargs)
 
         self.pcpot = None
+        self.converged = False
 
     def set(self, **kwargs):
         changed_parameters = FileIOCalculator.set(self, **kwargs)
@@ -94,6 +95,7 @@ class ORCA(FileIOCalculator):
                 symbols.append(words[0])
                 positions.append([float(word) for word in words[1:]])
 
+        self.converged = True
         self.parameters = Parameters.read(self.label + '.ase')
         self.read_results()
 
@@ -113,6 +115,9 @@ class ORCA(FileIOCalculator):
         found_line = re_energy.search(text)
         if found_line and not re_not_converged.search(found_line.group()):
             self.results['energy'] = float(found_line.group().split()[-1])*Hartree
+        else:
+            self.converged = False
+        return
 
     def read_forces(self):
         """Read Forces from ORCA output file."""
@@ -147,6 +152,9 @@ class ORCA(FileIOCalculator):
         if found_line and not re_not_converged.search(found_line.group()):
             self.results['dipole'] = np.array(
                 found_line.group().split()[-3:], dtype=float) * Bohr
+        else:
+            self.converged = False
+        return
 
     def embed(self, mmcharges=None, **parameters):
         """Embed atoms in point-charges (mmcharges)

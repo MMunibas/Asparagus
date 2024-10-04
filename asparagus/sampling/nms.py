@@ -3,6 +3,7 @@ import queue
 import logging
 import itertools
 import threading
+import subprocess
 from typing import Optional, List, Dict, Tuple, Union, Any
 
 import numpy as np
@@ -58,6 +59,9 @@ class NormalModeScanner(sampling.Sampler):
         modes from vibrational (and rotational). Normalized Normal modes
         with a center of mass shift larger than the threshold are not
         considered in the normal mode scan.
+    nms_limit_mode_shift: float, optional, default 1.e-8 Angstrom
+        Normal mode shift threshold to identify translational and rotational
+        normal modes from vibrational.
     nms_save_displacements: bool, optional, default False
         If True, add results of atom displacement calculations from the normal
         mode analysis to the dataset.
@@ -75,6 +79,7 @@ class NormalModeScanner(sampling.Sampler):
         'nms_number_of_coupling':       1,
         'nms_limit_of_steps':           10,
         'nms_limit_com_shift':          0.1,
+        'nms_limit_mode_shift':         1.e-8,
         'nms_save_displacements':       False
         })
     
@@ -86,6 +91,7 @@ class NormalModeScanner(sampling.Sampler):
         'nms_number_of_coupling':       [utils.is_numeric],
         'nms_limit_of_steps':           [utils.is_numeric],
         'nms_limit_com_shift':          [utils.is_numeric],
+        'nms_limit_mode_shift':         [utils.is_numeric],
         'nms_save_displacements':       [utils.is_bool],
         })
 
@@ -98,6 +104,7 @@ class NormalModeScanner(sampling.Sampler):
         nms_number_of_coupling: Optional[int] = None,
         nms_limit_of_steps: Optional[int] = None,
         nms_limit_com_shift: Optional[float] = None,
+        nms_limit_mode_shift: Optional[float] = None,
         nms_save_displacements: Optional[bool] = None,
         **kwargs,
     ):
@@ -160,6 +167,7 @@ class NormalModeScanner(sampling.Sampler):
             'nms_energy_limits': self.nms_energy_limits,
             'nms_number_of_coupling': self.nms_number_of_coupling,
             'nms_limit_com_shift': self.nms_limit_com_shift,
+            'nms_limit_mode_shift': self.nms_limit_mode_shift,
             'nms_limit_of_steps': self.nms_limit_of_steps,
             'nms_save_displacements': self.nms_save_displacements
             })
@@ -417,24 +425,42 @@ class NormalModeScanner(sampling.Sampler):
 
         # Compute and compare same quantities for displaced system
         system_com_shift = np.zeros(Nmodes, dtype=float)
-        
+        system_mode_shift = np.zeros(Nmodes, dtype=float)
+
         for imode, mode in enumerate(system_modes):
 
-            # COM shift
+            # Normal mode displacements
+            check_scale = 0.1
             system_mode_positions = system_init_positions.copy()
-            system_mode_positions[atom_indices] += mode
+            system_mode_positions[atom_indices] += mode*check_scale
+            
+            # COM shift
             system.set_positions(system_mode_positions, apply_constraint=False)
             system_displ_com = system[atom_indices].get_center_of_mass()
             system_com_shift[imode] = np.sqrt(np.sum(
                 (system_init_com - system_displ_com)**2))
 
+            # Mode shift
+            system_mode_shift[imode] = (
+                np.sum(
+                    np.sum(
+                        system.get_masses().reshape(Natoms, 1)
+                        * mode*check_scale
+                        / np.sum(system.get_masses()),
+                        axis=0
+                    )**2
+                )
+            )
+
         # Reset system positions
         system.set_positions(system_init_positions)
 
-        # Vibrational modes are assumed with center of mass shifts smaller
-        # than 1.e-1 Angstrom displacement
-        system_vib_modes = system_com_shift < self.nms_limit_com_shift
-        
+        # Vibrational modes are assumed with center of mass shifts and mode
+        # shifts smaller than the threshold
+        system_vib_modes = np.logical_and(
+            system_com_shift < self.nms_limit_com_shift,
+            system_mode_shift < self.nms_limit_mode_shift)
+
         # Apply exclusion list if defined
         if nms_exclude_modes is not None:
 
@@ -492,22 +518,35 @@ class NormalModeScanner(sampling.Sampler):
         # Displacement factor for energy step (in eV)
         system_displfact = np.sqrt(
             2.*self.nms_harmonic_energy_step/system_forceconst)
-
+        
         # Add normal mode analysis results to log file
-        message = "\nStart Normal Mode Scanning at system: "
+        message = "\nStart Normal Mode Sampling at system: "
         if self.sample_data_file is None:
             message += f"{system.get_chemical_formula():s}\n"
         else:
             message += f"{self.sample_data_file:s}\n"
-        message += (
-            " Index | Frequency (cm**-1) | Selected Vib. (CoM displacemnt)\n"
-            + "-------------------------------------------------------------\n")
+        message = (
+            f" {'Index':5s} |"
+            + f" {'Frequency (cm**-1)':18s} |"
+            + f" {'Vib. Mode':9s} |"
+            + f" {'CoM displacemnt':<16s} |"
+            + f" {'Mode displacemnt':<16s}\n"
+            + f" {'':5s} |"
+            + f" {'':18s} |"
+            + f" {'Selected':9s} |"
+            + f" {'(< ' + f'{self.nms_limit_com_shift:5.2E}' + ')':<16s} |"
+            + f" {'(< ' + f'{self.nms_limit_mode_shift:5.2E}' + ')':<16s}\n"
+            + " "
+            + "-"*(7 + 21 + 11 + 2*19)
+            + "\n")
         for ivib, freq in enumerate(system_frequencies):
             message += f" {ivib + 1:5d} | {freq:18.2f} |"
             if system_vib_modes[ivib]:
-                message += f"   x   ({system_com_shift[ivib]:2.1e})\n"
+                message +=  f" {'   x   ':9s} |"
             else:
-                message += f"       ({system_com_shift[ivib]:2.1e})\n"
+                message +=  f" {'':9s} |"
+            message +=  f" {system_com_shift[ivib]:16.2E} |"
+            message +=  f" {system_mode_shift[ivib]:16.2E}\n"
         with open(self.sample_log_file.format(isample), 'a') as flog:
             flog.write(message)
         self.logger.info(message)
@@ -706,7 +745,15 @@ class NormalModeScanner(sampling.Sampler):
                     current_properties = system.calc.results
                     current_potential = current_properties['energy']
 
-                    converged = True
+                    if hasattr(ase_calculator, 'converged'):
+                        converged = ase_calculator.converged
+                    elif (
+                        current_potential is None
+                        or np.isnan(current_potential)
+                    ):
+                        converged = False
+                    else:
+                        converged = True
 
                     if current_potential < system_initial_potential:
                         threshold_reached = (
@@ -721,7 +768,10 @@ class NormalModeScanner(sampling.Sampler):
                                 - system_initial_potential
                             ) > self.nms_energy_limits[1])
 
-                except ase.calculators.calculator.CalculationFailed:
+                except (
+                    ase.calculators.calculator.CalculationFailed
+                    or subprocess.CalledProcessError
+                ):
 
                     converged = False
                     threshold_reached = True
@@ -801,11 +851,14 @@ class NormalModeSampler(sampling.Sampler):
         Temperature in Kelvin to sample the normal modes.
     nms_nsamples: int, optional, default 100
         Number of samples to generate.
-    nms_limit_com_shift: float, optional, default 0.1 Angstrom
+    nms_limit_com_shift: float, optional, default 0.01 Angstrom
         Center of mass shift threshold to identify translational normal
         modes from vibrational (and rotational). Normalized Normal modes
         with a center of mass shift larger than the threshold are not
         considered in the normal mode scan.
+    nms_limit_mode_shift: float, optional, default 1.e-8 Angstrom
+        Normal mode shift threshold to identify translational and rotational
+        normal modes from vibrational.
     nms_save_displacements: bool, optional, default False
         If True, add results of atom displacement calculations from the normal
         mode analysis to the dataset.
@@ -820,7 +873,8 @@ class NormalModeSampler(sampling.Sampler):
     sampling.Sampler._default_args.update({
         'nms_temperature':              300.0,
         'nms_nsamples':                 100,
-        'nms_limit_com_shift':          0.1,
+        'nms_limit_com_shift':          1.e-2,
+        'nms_limit_mode_shift':         1.e-8,
         'nms_save_displacements':       False,
         })
     
@@ -829,6 +883,7 @@ class NormalModeSampler(sampling.Sampler):
         'nms_temperature':              [utils.is_numeric],
         'nms_nsamples':                 [utils.is_integer],
         'nms_limit_com_shift':          [utils.is_numeric],
+        'nms_limit_mode_shift':         [utils.is_numeric],
         'nms_save_displacements':       [utils.is_bool],
         })
 
@@ -839,6 +894,7 @@ class NormalModeSampler(sampling.Sampler):
         nms_temperature: Optional[float] = None,
         nms_nsamples: Optional[int] = None,
         nms_limit_com_shift: Optional[float] = None,
+        nms_limit_mode_shift: Optional[float] = None,
         nms_save_displacements: Optional[bool] = None,
         **kwargs
     ):
@@ -895,6 +951,7 @@ class NormalModeSampler(sampling.Sampler):
             'nms_temperature': self.nms_temperature,
             'nms_nsamples': self.nms_nsamples,
             'nms_limit_com_shift': self.nms_limit_com_shift,
+            'nms_limit_mode_shift': self.nms_limit_mode_shift,
             'nms_save_displacements': self.nms_save_displacements,
             })
         
@@ -1018,6 +1075,7 @@ class NormalModeSampler(sampling.Sampler):
         ----------
         sample_systems_queue: queue.Queue
             Queue object including sample systems.
+
         """
 
         # Initialize stored sample counter
@@ -1155,20 +1213,41 @@ class NormalModeSampler(sampling.Sampler):
 
         # Compute and compare same quantities for displaced system
         system_com_shift = np.zeros(Nmodes, dtype=float)
-        
+        system_mode_shift = np.zeros(Nmodes, dtype=float)
+
         for imode, mode in enumerate(system_modes):
 
-            # COM shift
+            # Normal mode displacements
+            check_scale = 0.1
             system_mode_positions = system_init_positions.copy()
-            system_mode_positions[atom_indices] += mode
+            system_mode_positions[atom_indices] += mode*check_scale
+            
+            # COM shift
             system.set_positions(system_mode_positions, apply_constraint=False)
             system_displ_com = system[atom_indices].get_center_of_mass()
             system_com_shift[imode] = np.sqrt(np.sum(
                 (system_init_com - system_displ_com)**2))
 
-        # Vibrational modes are assumed with center of mass shifts smaller
-        # than 1.e-1 Angstrom displacement
-        system_vib_modes = system_com_shift < self.nms_limit_com_shift
+            # Mode shift
+            system_mode_shift[imode] = (
+                np.sum(
+                    np.sum(
+                        system.get_masses().reshape(Natoms, 1)
+                        * mode*check_scale
+                        / np.sum(system.get_masses()),
+                        axis=0
+                    )**2
+                )
+            )
+
+        # Reset system positions
+        system.set_positions(system_init_positions)
+
+        # Vibrational modes are assumed with center of mass shifts and mode
+        # shifts smaller than the threshold
+        system_vib_modes = np.logical_and(
+            system_com_shift < self.nms_limit_com_shift,
+            system_mode_shift < self.nms_limit_mode_shift)
 
         # Apply exclusion list if defined
         if nms_exclude_modes is not None:
@@ -1230,15 +1309,28 @@ class NormalModeSampler(sampling.Sampler):
             message += f"{system.get_chemical_formula():s}\n"
         else:
             message += f"{self.sample_data_file:s}\n"
-        message += (
-            " Index | Frequency (cm**-1) | Selected Vib. (CoM displacemnt)\n"
-            + "-------------------------------------------------------------\n")
+        message = (
+            f" {'Index':5s} |"
+            + f" {'Frequency (cm**-1)':18s} |"
+            + f" {'Vib. Mode':9s} |"
+            + f" {'CoM displacemnt':<16s} |"
+            + f" {'Mode displacemnt':<16s}\n"
+            + f" {'':5s} |"
+            + f" {'':18s} |"
+            + f" {'Selected':9s} |"
+            + f" {'(< ' + f'{self.nms_limit_com_shift:5.2E}' + ')':<16s} |"
+            + f" {'(< ' + f'{self.nms_limit_mode_shift:5.2E}' + ')':<16s}\n"
+            + " "
+            + "-"*(7 + 21 + 11 + 2*19)
+            + "\n")
         for ivib, freq in enumerate(system_frequencies):
             message += f" {ivib + 1:5d} | {freq:18.2f} |"
             if system_vib_modes[ivib]:
-                message += f"   x   ({system_com_shift[ivib]:2.1e})\n"
+                message +=  f" {'   x   ':9s} |"
             else:
-                message += f"       ({system_com_shift[ivib]:2.1e})\n"
+                message +=  f" {'':9s} |"
+            message +=  f" {system_com_shift[ivib]:16.2E} |"
+            message +=  f" {system_mode_shift[ivib]:16.2E}\n"
         with open(self.sample_log_file.format(isample), 'a') as flog:
             flog.write(message)
         self.logger.info(message)
@@ -1331,6 +1423,8 @@ class NormalModeSampler(sampling.Sampler):
             message += f"'{self.sample_data_file:s}'."
             self.logger.info(message)
 
+        return
+
     def run_sampling(
         self,
         sample_system: ase.Atoms,
@@ -1350,6 +1444,7 @@ class NormalModeSampler(sampling.Sampler):
             Queue containing normal mode combination parameters
         ithread: int, optional, default None
             Thread number
+
         """
 
         # Initialize stored sample counter
@@ -1390,9 +1485,23 @@ class NormalModeSampler(sampling.Sampler):
                     system,
                     properties=self.sample_properties,
                     system_changes=system.calc.implemented_properties)
-                converged = True
-            
-            except ase.calculators.calculator.CalculationFailed:
+                if hasattr(ase_calculator, 'converged'):
+                    converged = ase_calculator.converged
+                elif (
+                    'energy' in system.calc.results
+                    and (
+                        system.calc.results['energy'] is None
+                        or np.isnan(system.calc.results['energy'])
+                    )
+                ):
+                    converged = False
+                else:
+                    converged = True
+
+            except (
+                    ase.calculators.calculator.CalculationFailed
+                    or subprocess.CalledProcessError
+                ):
 
                 converged = False
 
@@ -1433,7 +1542,7 @@ class NormalModeSampler(sampling.Sampler):
         Nmodes: int
             Normal modes of the system
         vib_modes: np.ndarray(float)
-            Nomralized vibrational modes
+            Normalized vibrational modes
         vib_masses: np.ndarray(float)
             Reduced mass of the normal modes
         vib_fcnts: np.ndarray(float)
@@ -1447,19 +1556,23 @@ class NormalModeSampler(sampling.Sampler):
         -------
         np.ndarray
             Sample coordinates for the system
+
         """
 
-        Rx = self.R(Nmodes, vib_fcnts, vib_temp)
+        Natoms = initial_positions.shape[0]
+        Rx = self.R(Natoms, Nmodes, vib_fcnts, vib_temp)
         sample_positions = initial_positions.copy()
 
         for imode, mode_i in enumerate(vib_modes):
             if vib_include[imode]:
-                disp_i = vib_masses[imode]*Rx[imode]*mode_i
+                #disp_i = (
+                    #vib_masses[imode]*Rx[imode]*mode_i/np.linalg.norm(mode_i))
+                disp_i = Rx[imode]*mode_i/np.linalg.norm(mode_i)
                 sample_positions += disp_i
 
         return sample_positions
 
-    def R(self, Nmodes, fcnts, temp):
+    def R(self, Natoms, Nmodes, fcnts, temp):
         """
         Made a random displacement for each of the modes in the system.
         The displacements follow a Bernoulli distribution with $P=0.5$
@@ -1471,6 +1584,8 @@ class NormalModeSampler(sampling.Sampler):
 
         Parameters
         ----------
+        Natoms: int
+            Number of atoms
         Nmodes: int
             Number of modes in the system
         fcnts: np.ndarray(float)
@@ -1482,15 +1597,25 @@ class NormalModeSampler(sampling.Sampler):
         -------
         np.ndarray
             Array of displacements for each mode in the system
+
         """
 
-        random_num = np.random.uniform(size=Nmodes)**2
-        sign = [-1 if i < 0.5 else 1 for i in random_num]
-        fix_fcnts = [0.05 if i < 0.05 else i for i in fcnts]
-        R = []
+        # Uniform random number in the range [0, 1]
+        random_num = np.random.uniform(0, 1, size=Nmodes)
+        random_num *= np.random.uniform(0, 1)/np.sum(random_num)
+        
+        # Sign selection
+        sign = np.random.choice([-1.0, 1.0], size=Nmodes)
 
-        for i, j in enumerate(fix_fcnts):
-            R_i = sign[i] * np.sqrt((3*random_num[i]*units.kB*temp)/j)
+        # Constraint force constants to a minimum to avoid large displacement
+        # factors (R ~ 1/fcnts), mostly for low frequencies such as 
+        # translation or rotation if not removed from sampling otherwise.
+        fix_fcnts = [0.10 if i < 0.10 else i for i in fcnts]
+
+        # Get random displacement factors
+        R = []
+        for i, fcnt in enumerate(fix_fcnts):
+            R_i = sign[i] * np.sqrt(3*random_num[i]*Natoms*units.kB*temp/fcnt)
             R.append(R_i)
 
         return np.array(R)

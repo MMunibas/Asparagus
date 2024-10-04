@@ -519,7 +519,7 @@ class MDSampler(sampling.Sampler):
             if 'tint' in temperature_short:
                 tinterval = temperature_short['tint']
             elif 'tend' in temperature_short:
-                tsteps = int((tstart - tend)/tinc) + 1
+                tsteps = int((tstart - tend)/tincrement) + 1
                 tinterval = simulation_time/tsteps
             else:
                 raise SyntaxError(

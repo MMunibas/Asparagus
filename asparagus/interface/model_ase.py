@@ -179,6 +179,9 @@ class ASE_Calculator(ase_calc.Calculator):
         # Set ASE atoms object
         self.set_atoms(atoms, initialize=True)
 
+        # Initialize convergence flat
+        self.converged = False
+
         return
 
     def set_atoms(

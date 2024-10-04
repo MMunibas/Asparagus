@@ -1,0 +1,5 @@
+! engrad RI-MP2 %basis% %basis%/C TightSCF 
+%pal nprocs %nproc% end 
+*xyz %charge% %multiplicity%
+%xyz%
+*

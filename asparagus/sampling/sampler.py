@@ -79,6 +79,7 @@ class Sampler:
         calculator available property list and return an error when one
         requested property is unavailable. By default all available
         properties will be stored.
+        If None, compute all properties implemented in the ASE calculator.
     sample_systems_optimize: bool, optional, default False
         Instruction flag if the system coordinates shall be
         optimized using the ASE calculator defined by 'sample_calculator'.
@@ -109,7 +110,7 @@ class Sampler:
         'sample_calculator_args':       {},
         'sample_save_trajectory':       True,
         'sample_num_threads':           1,
-        'sample_properties':            ['energy', 'forces', 'dipole'],
+        'sample_properties':            None,
         'sample_systems_optimize':      False,
         'sample_systems_optimize_fmax': 0.001,
         'sample_systems_indices':       None,
@@ -135,7 +136,7 @@ class Sampler:
         'sample_save_trajectory':       [utils.is_bool],
         'sample_num_threads':           [utils.is_integer],
         'sample_properties':            [
-            utils.is_string, utils.is_string_array],
+            utils.is_None, utils.is_string, utils.is_string_array],
         'sample_systems_optimize':      [
             utils.is_bool, utils.is_boolean_array],
         'sample_systems_optimize_fmax': [utils.is_numeric],
@@ -295,6 +296,8 @@ class Sampler:
             data_properties=self.sample_properties,
             data_unit_properties=self.sample_unit_properties,
             data_overwrite=self.sample_data_overwrite)
+
+        return
 
     def __str__(self):
         """
@@ -544,6 +547,13 @@ class Sampler:
             Sample properties (+ positions, charge) units
 
         """
+
+        # If sample properties are not defined (None), take all available
+        # properties from ASE calculator
+        if sample_properties is None:
+            sample_properties = [
+                prop for prop in sample_calculator.implemented_properties
+                if prop in settings._valid_properties]
 
         # Check requested system properties
         for prop in sample_properties:

@@ -10,6 +10,7 @@ import ase
 from ase.calculators.calculator import Calculator, FileIOCalculator, Parameters
 
 from asparagus import utils
+from asparagus import templates
 
 __all__ = ['ShellCalculator', 'TagReplacement']
 
@@ -164,7 +165,15 @@ class TagReplacement:
         elif 'multiplicity' in self.calculator.parameters:
             out = f"{self.calculator.parameters['multiplicity']:d}"
         else:
-            out = "1"
+            # Get number of electrons
+            number_protons = np.sum(atoms.get_atomic_numbers())
+            number_electrons = (
+                number_protons + int(self.get_charge(atoms, parameters)))
+            # Singlet for even electron number, else dublett
+            if number_electrons%2:
+                out = "2"
+            else:
+                out = "1"
 
         return out
 
@@ -239,10 +248,14 @@ class ShellCalculator(FileIOCalculator):
 
     Parameters
     ----------
-    files: (str, list(str))
+    case: str, optional, default None
+        Predefined case using template files in asparagus/template/shell with
+        additional keyword parameter or default settings.
+    files: (str, list(str)), optional, default None
         Template input files to copy into working directory and regarding for
         tag replacement.
-    files_replace: dict(str, any) or list(dict(str, any))
+    files_replace: dict(str, any) or list(dict(str, any)), optional, 
+            default None
         Template file tag replacement commands in the form of a dictionary or
         a list of dictionaries. The keys of the dictionary is the tag in the
         template files which will be replaced by the respective item or
@@ -309,8 +322,10 @@ class ShellCalculator(FileIOCalculator):
 
     def __init__(
         self,
-        files: Union[str, List[str]],
-        files_replace: Union[List[Dict[str, Any]], Dict[str, Any]],
+        case: Optional[str] = None,
+        files: Optional[Union[str, List[str]]] = None,
+        files_replace: 
+            Optional[Union[List[Dict[str, Any]], Dict[str, Any]]] = None,
         execute_file: Optional[str] = None,
         result_properties: Optional[Union[str, List[str]]] = ['energy'],
         result_file: Optional[str] = 'results.json',
@@ -346,6 +361,7 @@ class ShellCalculator(FileIOCalculator):
 
         # Set calculator parameters
         self.set_shell(
+            case,
             files,
             files_replace,
             execute_file,
@@ -364,12 +380,18 @@ class ShellCalculator(FileIOCalculator):
         
         # Initialize a point charge object
         self.pcpot = None
+        
+        # Set convergence flag
+        self.converged = False
+
+        return
 
     def __str__(self):
         return f"ShellCalculator {self.execute_file:s}"
 
     def set_shell(
         self,
+        case: str,
         files: Union[str, List[str]],
         files_replace: Union[List[Dict[str, Any]], Dict[str, Any]],
         execute_file: str,
@@ -387,9 +409,11 @@ class ShellCalculator(FileIOCalculator):
         
         # Check template files and executable file
         files, files_replace, execute_file = self.set_input_files(
+            case,
             files,
             files_replace, 
-            execute_file)
+            execute_file,
+            **kwargs)
 
         # Check result files and properties
         result_properties, result_file, result_file_format = (
@@ -405,6 +429,7 @@ class ShellCalculator(FileIOCalculator):
             multiplicity)
         
         # Set parameters
+        self.case = case
         self.files = files
         self.files_replace = files_replace
         self.execute_file = execute_file
@@ -433,15 +458,38 @@ class ShellCalculator(FileIOCalculator):
 
     def set_input_files(
         self,
+        case: str,
         files: Union[str, List[str]],
         files_replace: Union[List[Dict[str, Any]], Dict[str, Any]],
         execute_file: str,
+        **kwargs,
     ):
         """
         Check template files and executable file.
 
         """
         
+        # Check for predefined cases
+        if case is not None and case in templates.shell.shell_cases_available:
+            
+            files, case_files_replace, execute_file = (
+                templates.shell.shell_cases_available[case](**kwargs))
+            
+            # Set or update files keyword replacement instructions
+            if files_replace is None:
+                files_replace = case_files_replace
+            elif utils.is_dictionary(files_replace):
+                files_replace.update({
+                    key: item for key, item in case_files_replace.items()
+                    if key not in files_replace})
+            elif utils.is_dictionary_array(files_replace):
+                [
+                    files_replace_i.update({
+                        key: item for key, item in case_files_replace.items()
+                        if key not in files_replace})
+                    for files_replace_i in files_replace
+                ]
+
         # Check if template file exists
         if utils.is_string(files):
             files = [files]
@@ -648,7 +696,7 @@ class ShellCalculator(FileIOCalculator):
     
         # Iterate over template files
         for ifile, file_i in enumerate(files):
-            
+
             # Get tag replacement instructions
             file_replace = files_replace[ifile]
             
@@ -666,11 +714,10 @@ class ShellCalculator(FileIOCalculator):
                     else:
                         item_str = item                    
                 elif utils.is_callable(item):
-                    item_str = item(atoms)
+                    item_str = item(atoms, parameters=parameters)
                 else:
-                    raise SyntaxError(
-                        f"Template file replacement item for label '{tag:s}' "
-                        + "is neither a string nor a callable function!")
+                    item_str = str(item)
+
                 # Replace label tag with item string
                 flines = flines.replace(
                     tag, 
@@ -742,7 +789,13 @@ class ShellCalculator(FileIOCalculator):
         # Read results from file
         self._valid_result_file_format[self.result_file_format](
             os.path.join(self.directory, self.result_file))
-        
+
+        # Check for completeness
+        self.converged = True
+        for prop_i in self.result_properties:
+            if prop_i not in self.results:
+                self.converged = False
+
         return
 
     def load_results_npz(self):

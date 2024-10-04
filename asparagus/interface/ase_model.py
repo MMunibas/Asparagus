@@ -145,33 +145,51 @@ def get_ase_calculator(
     # In case of calculator label, initialize ASE calculator
     if utils.is_string(calculator):
 
-        # 
+        # A column separates the calculator label from a argument of the
+        # keyword 'case', that is quick parameter linked to predefined
+        # template files in asparagus/template/
+        calculator_tag = calculator[:]
+        if ":" in calculator:
+            calculator_label = calculator.split(":")[0]
+            calculator_case = ":".join(calculator.split(":")[1:])
+        else:
+            calculator_label = calculator
+            calculator_case = None
 
         # Check availability
-        if calculator.lower() not in ase_calculator_avaiable:
+        if calculator_label.lower() not in ase_calculator_avaiable:
             raise ValueError(
-                f"ASE calculator '{calculator}' is not avaiable!\n"
+                f"ASE calculator '{calculator_label}' is not avaiable!\n"
                 + "Choose from:\n" +
                 str(ase_calculator_avaiable.keys()))
 
         # Initialize ASE calculator
         try:
-            calculator_tag = calculator
-            calc, args = ase_calculator_avaiable[calculator.lower()](
+            
+            # Get calculator class
+            calc, args = ase_calculator_avaiable[calculator_label.lower()](
                 **calculator_args)
+            
+            # Update predefined arguments and calculator case
             calculator_args.update(args)
+            if calculator_case is not None and 'case' not in calculator_args:
+                calculator_args.update({'case': calculator_case})
+            
+            # Initialize ASE calculator
             calculator = calc(**calculator_args)
+
         except TypeError as error:
             logger.error(error)
             raise TypeError(
-                f"ASE calculator '{calculator}' does not accept "
-                + "arguments in 'calculator_args'")
+                f"ASE calculator '{calculator}' is not accepted!")
 
     else:
 
         # Check for calculator name parameter in calculator class
         if hasattr(calculator, 'calculator_tag'):
             calculator_tag = calculator.calculator_tag
+        else:
+            calculator_tag = None
 
     # For application with multi threading (ithread not None), modify directory
     # by adding subdirectory 'thread_{ithread:d}'

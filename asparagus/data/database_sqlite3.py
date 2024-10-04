@@ -67,7 +67,7 @@ init_systems_version = {
             charge BLOB,
             cell BLOB,
             pbc BLOB,
-            atomic_types BLOB,
+            atom_types BLOB,
             fragment_atoms BLOB,
             """
         ],
@@ -108,7 +108,7 @@ structure_properties_dtype_version = {
             'charge':           np.float32,
             'cell':             np.float32,
             'pbc':              np.bool_,
-            'atomic_types':     'U4',
+            'atom_types':       'U4',
             'fragment_atoms':   np.int32,
         },
 }
@@ -141,7 +141,7 @@ structure_properties_shape_version = {
             'charge':           (-1,),
             'cell':             (-1, 3,),
             'pbc':              (-1, 3,),
-            'atomic_types':     (-1,),
+            'atom_types':       (-1,),
             'fragment_atoms':   (-1,),
     },
 }
