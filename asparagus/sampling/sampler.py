@@ -3,6 +3,7 @@ import time
 import queue
 import logging
 import threading
+import subprocess
 from typing import Optional, List, Dict, Tuple, Union, Any
 
 import numpy as np
@@ -387,7 +388,11 @@ class Sampler:
                 sample_systems_queue.put((source, isample, source_file, 1))
             
             # Check for an Asparagus dataset
-            elif source_format.lower() == 'db':
+            # elif source_format.lower() == 'db':
+            elif (
+                data.check_data_format(source_format, ignore_error=True)
+                is not None
+            ):
                 
                 # Open dataset
                 dataset = data.DataSet(source)
@@ -417,14 +422,11 @@ class Sampler:
                             continue
 
                     # Check cell parameter
-                    cell = data_i['cell']
-                    if cell.dim() == 1 and cell.shape[0] == 9:
-                       cell = cell.reshape(3, 3) 
-
-                    # Create and append atoms object to sample queue
                     cell = data_i['cell'].numpy().reshape(-1)
                     if cell.shape == (9,):
                         cell = cell.reshape(3, 3)
+
+                    # Create and append atoms object to sample queue
                     system = ase.Atoms(
                         data_i['atomic_numbers'],
                         positions=data_i['positions'],
@@ -433,6 +435,9 @@ class Sampler:
                     if 'charge' in data_i:
                         system.info['charge'] = int(
                             data_i['charge'].numpy()[0])
+                    if 'fragments' in data_i:
+                        system.info['fragments'] = int(
+                            data_i['fragments'].numpy()[0])
                     sample_systems_queue.put((system, isample, source, isys))
             
             # Else, use ase.read function with respective format
@@ -783,10 +788,25 @@ class Sampler:
                     system,
                     properties=self.sample_properties,
                     system_changes=system.calc.implemented_properties)
-                
-                converged = True
 
-            except ase.calculators.calculator.CalculationFailed:
+                if hasattr(system.calc, 'converged'):
+                    converged = system.calc.converged
+                elif (
+                    self.sample_properties[0] in system.calc.results
+                    and (
+                        system.calc.results[self.sample_properties[0]] is None
+                        or np.any(np.isnan(
+                            system.calc.results[self.sample_properties[0]]))
+                    )
+                ):
+                    converged = False
+                else:
+                    converged = True                
+
+            except (
+                ase.calculators.calculator.CalculationFailed
+                or subprocess.CalledProcessError
+            ):
 
                 converged = False
 

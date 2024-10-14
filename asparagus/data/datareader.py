@@ -50,8 +50,9 @@ _data_source_formats = {
 
 def check_data_format(
     data_format: str,
-    is_source_format: Optional[bool] = False
-):
+    is_source_format: Optional[bool] = False,
+    ignore_error: Optional[bool] = False,
+) -> Union[str, bool]:
     """
     Check input for compatible data format labels
 
@@ -62,6 +63,8 @@ def check_data_format(
     is_source_format: bool, optional, default False
         If False, 'data_format' input is only compared with Asparagus
         database labels. Else, update format library with source format labels.
+    ignore_error: bool, optional, default False
+        If data format not found, return None rather than an error
 
     Returns
     -------
@@ -101,10 +104,13 @@ def check_data_format(
         if data_format_label.lower() in file_formats:
             return file_formats[data_format_label.lower()]
 
-    raise SyntaxError(
-        f"Data file format for '{data_format:s}' could not identified!")
+    if ignore_error:
+        return None
+    else:
+        raise SyntaxError(
+            f"Data file format for '{data_format:s}' could not identified!")
 
-    return
+    return None
 
 
 class DataReader():
@@ -1306,10 +1312,12 @@ class DataReader():
         atoms_properties['cell'] = (
             conversion['positions']*self.convert_cell(source['cell']))
         atoms_properties['pbc'] = source['pbc']
-        if 'charge' not in source.keys():
+        if source.get('charge') is None:
             atoms_properties['charge'] = 0.0
         else:
             atoms_properties['charge'] = source['charge']
+        if source.get('fragments') is not None:
+            atoms_properties['fragments'] = source['fragments']
 
         # Collect properties
         for prop, item in property_labels.items():
@@ -1365,16 +1373,20 @@ class DataReader():
             # Fundamental properties
             atoms_properties['atoms_number'] = source['atoms_number'][idx]
             atoms_properties['atomic_numbers'] = (
-                source['atomic_numbers'][idx])
+                source['atomic_numbers'][idx][:source['atoms_number'][idx]])
             atoms_properties['positions'] = (
-                conversion['positions']*source['positions'][idx])
+                conversion['positions']
+                * source['positions'][idx][:source['atoms_number'][idx]])
             atoms_properties['cell'] = (
                 conversion['positions']*self.convert_cell(source['cell'][idx]))
             atoms_properties['pbc'] = source['pbc'][idx]
-            if 'charge' not in source.keys():
+            if source.get('charge') is None:
                 atoms_properties['charge'] = 0.0
             else:
                 atoms_properties['charge'] = source['charge'][idx]
+            if source.get('fragments') is not None:
+                atoms_properties['fragments'] = (
+                    source['fragments'][idx][:source['atoms_number'][idx]])
 
             # Collect properties
             for prop, item in source.items():
@@ -1410,7 +1422,7 @@ class DataReader():
 
         Parameters
         ----------
-        source: ase.Atoms
+        atoms: ase.Atoms
             Database atoms object
         source: dict
             Database source dictionary
@@ -1451,6 +1463,8 @@ class DataReader():
                 source['initial_charges'])
         else:
             atoms_properties['charge'] = 0.0
+        if source.get('fragments') is not None:
+            atoms_properties['fragments'] = source['fragments']
 
         # Collect properties
         for prop, item in property_labels.items():

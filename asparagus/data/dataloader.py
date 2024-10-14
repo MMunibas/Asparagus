@@ -203,11 +203,17 @@ class DataLoader(torch.utils.data.DataLoader):
             [b['atoms_number'] for b in batch],
             device=self.device, dtype=torch.int64)
 
-        # System segment index of atom i
+        # System segment index
         coll_batch['sys_i'] = torch.repeat_interleave(
             torch.arange(Nsys, device=self.device, dtype=torch.int64),
             repeats=coll_batch['atoms_number'], dim=0).to(
                 device=self.device, dtype=torch.int64)
+
+        # System fragment index
+        if batch[0].get('fragments') is not None:
+            coll_batch['fragments'] = torch.cat(
+                [b['fragments'] for b in batch], 0).to(
+                    device=self.device, dtype=torch.int64)
 
         # Atomic numbers properties
         coll_batch['atomic_numbers'] = torch.cat(
@@ -243,7 +249,8 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Iterate over batch properties
         skip_props = [
-            'atoms_number', 'atomic_numbers', 'positions', 'pbc', 'cell']
+            'atoms_number', 'atomic_numbers', 'positions', 'pbc', 'cell',
+            'atom_types', 'fragments']
         for prop_i in batch[0]:
 
             # Skip previous parameter and None

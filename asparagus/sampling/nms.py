@@ -1565,8 +1565,6 @@ class NormalModeSampler(sampling.Sampler):
 
         for imode, mode_i in enumerate(vib_modes):
             if vib_include[imode]:
-                #disp_i = (
-                    #vib_masses[imode]*Rx[imode]*mode_i/np.linalg.norm(mode_i))
                 disp_i = Rx[imode]*mode_i/np.linalg.norm(mode_i)
                 sample_positions += disp_i
 
@@ -1576,11 +1574,6 @@ class NormalModeSampler(sampling.Sampler):
         """
         Made a random displacement for each of the modes in the system.
         The displacements follow a Bernoulli distribution with $P=0.5$
-
-        The value R is given by:
-        .. :math:
-
-            R_{i} = \pm \sqrt{\dfrac{3c_{i}N_{a}k_{b}T}{K_{i}}}
 
         Parameters
         ----------

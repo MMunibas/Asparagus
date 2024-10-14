@@ -261,7 +261,7 @@ def is_dictionary(x: Any, verbose=False):
 
 def is_array_like(
     x: Any,
-    inhomogeneity: Optional[bool] = False,
+    empty: Optional[bool] = True,
     verbose: Optional[bool] = False,
 ) -> bool:
     """
@@ -271,8 +271,8 @@ def is_array_like(
     ----------
     x: Any
         Input variable of which to check dtype
-    inhomogeneity: bool, optional, default False
-        If True, return positive match for inhomogeneous array like variables
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     verbose: bool, optional, default False
         If True, return the type of the input and the expected type
 
@@ -284,9 +284,16 @@ def is_array_like(
     """
     
     if isinstance(x, darr_all_shape) and x.shape:
+        if x.shape[0] or empty:
+            result = True
+        else:
+            result = False
         result = True
-    elif isinstance(x, darr_all_len) and len(x):
-        result = True
+    elif isinstance(x, darr_all_len):
+        if len(x) or empty:
+            result = True
+        else:
+            result = False
     else:
         result = False
     xtype = type(x)
@@ -299,6 +306,7 @@ def is_array_like(
 
 def is_numeric_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
@@ -309,6 +317,8 @@ def is_numeric_array(
     ----------
     x: Any
         Input variable of which to check dtype
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     inhomogeneity: bool, optional, default False
         If True, return positive match for inhomogeneous array like variables
     verbose: bool, optional, default False
@@ -326,7 +336,10 @@ def is_numeric_array(
             x = [xi for xi in utils.flatten_array_like(x)]
         try:
             x_arr = np.asarray(x)
-            if (x_arr.dtype in dnum_all):
+            if not x_arr.shape[0] and empty:
+                result = True
+                xtype = f"({type(x)})['empty']"
+            elif (x_arr.dtype in dnum_all):
                 result = True
                 xtype = f"({type(x)})[{x_arr.dtype}]"
             else:
@@ -348,6 +361,7 @@ def is_numeric_array(
 
 def is_integer_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
@@ -358,6 +372,8 @@ def is_integer_array(
     ----------
     x: Any
         Input variable of which to check dtype
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     inhomogeneity: bool, optional, default False
         If True, return positive match for inhomogeneous array like variables
     verbose: bool, optional, default False
@@ -375,7 +391,10 @@ def is_integer_array(
             x = [xi for xi in utils.flatten_array_like(x)]
         try:
             x_arr = np.asarray(x)
-            if (x_arr.dtype in dint_all):
+            if not x_arr.shape[0] and empty:
+                result = True
+                xtype = f"({type(x)})['empty']"
+            elif (x_arr.dtype in dint_all):
                 result = True
                 xtype = f"({type(x)})[{x_arr.dtype}]"
             else:
@@ -397,6 +416,7 @@ def is_integer_array(
 
 def is_string_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
@@ -407,6 +427,8 @@ def is_string_array(
     ----------
     x: Any
         Input variable of which to check dtype
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     inhomogeneity: bool, optional, default False
         If True, return positive match for inhomogeneous array like variables
     verbose: bool, optional, default False
@@ -424,7 +446,10 @@ def is_string_array(
             x = [xi for xi in utils.flatten_array_like(x)]
         try:
             x_arr = np.asarray(x)
-            if x_arr.dtype.char == 'U':
+            if not x_arr.shape[0] and empty:
+                result = True
+                xtype = f"({type(x)})['empty']"
+            elif x_arr.dtype.char == 'U':
                 result = True
                 xtype = f"({type(x)})[{x_arr.dtype}]"
             else:
@@ -453,6 +478,7 @@ def is_string_array_inhomogeneous(
 
 def is_bool_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
@@ -463,6 +489,8 @@ def is_bool_array(
     ----------
     x: Any
         Input variable of which to check dtype
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     inhomogeneity: bool, optional, default False
         If True, return positive match for inhomogeneous array like variables
     verbose: bool, optional, default False
@@ -480,7 +508,10 @@ def is_bool_array(
             x = [xi for xi in utils.flatten_array_like(x)]
         try:
             x_arr = np.asarray(x)
-            if (x_arr.dtype in dbool_all):
+            if not x_arr.shape[0] and empty:
+                result = True
+                xtype = f"({type(x)})['empty']"
+            elif (x_arr.dtype in dbool_all):
                 result = True
                 xtype = f"({type(x)})[{x_arr.dtype}]"
             else:
@@ -502,14 +533,17 @@ def is_bool_array(
 
 def is_boolean_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
-    return is_bool_array(x, inhomogeneity=inhomogeneity, verbose=verbose)
+    return is_bool_array(
+        x, empty=empty, inhomogeneity=inhomogeneity, verbose=verbose)
 
 
 def is_None_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
@@ -520,6 +554,8 @@ def is_None_array(
     ----------
     x: Any
         Input variable of which to check dtype
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     inhomogeneity: bool, optional, default False
         If True, return positive match for inhomogeneous array like variables
     verbose: bool, optional, default False
@@ -537,7 +573,10 @@ def is_None_array(
             x = [xi for xi in utils.flatten_array_like(x)]
         try:
             x_arr = np.asarray(x)
-            if (np.asarray(x_arr) == None).all():
+            if not x_arr.shape[0] and empty:
+                result = True
+                xtype = f"({type(x)})['empty']"
+            elif (np.asarray(x_arr) == None).all():
                 result = True
                 xtype = f"({type(x)})[{x_arr.dtype}]"
             else:
@@ -582,6 +621,7 @@ def is_ase_atoms(x: Any, verbose: Optional[bool] = False) -> bool:
 
 def is_ase_atoms_array(
     x: Any,
+    empty: Optional[bool] = True,
     inhomogeneity: Optional[bool] = False,
     verbose: Optional[bool] = False,
 ) -> bool:
@@ -592,6 +632,8 @@ def is_ase_atoms_array(
     ----------
     x: Any
         Input variable of which to check object type
+    empty: bool, optional, default True
+        If True, return positive match for empty array like variables
     inhomogeneity: bool, optional, default False
         If True, return positive match for inhomogeneous array like variables
     verbose: bool, optional, default False
@@ -607,7 +649,10 @@ def is_ase_atoms_array(
     if is_array_like(x):
         if inhomogeneity:
             x = [xi for xi in utils.flatten_array_like(x)]
-        if all([is_ase_atoms(xi) for xi in x]):
+        if not len(x) and empty:
+            result = True
+            xtype = f"({type(x)})['empty']"
+        elif all([is_ase_atoms(xi) for xi in x]):
             result = True
             xtype = f"({type(x)})[{type(x[0])}]"
         else:

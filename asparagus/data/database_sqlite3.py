@@ -20,7 +20,7 @@ from asparagus import utils
 __all__ = ['connect', 'DataBase_SQLite3']
 
 # Current SQLite3 database version
-VERSION = 2
+VERSION = 3
 
 all_tables = ['systems']
 
@@ -56,7 +56,7 @@ init_systems_version = {
             """
         ],
 
-    99: [
+    3: [
             """CREATE TABLE systems (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             mtime TEXT,
@@ -68,7 +68,7 @@ init_systems_version = {
             cell BLOB,
             pbc BLOB,
             atom_types BLOB,
-            fragment_atoms BLOB,
+            fragments BLOB,
             """
         ],
     }
@@ -101,7 +101,7 @@ structure_properties_dtype_version = {
             'cell':             np.float32,
             'pbc':              np.bool_,
         },
-    99: {
+    3: {
             'atoms_number':     np.int32,
             'atomic_numbers':   np.int32,
             'positions':        np.float32,
@@ -109,7 +109,7 @@ structure_properties_dtype_version = {
             'cell':             np.float32,
             'pbc':              np.bool_,
             'atom_types':       'U4',
-            'fragment_atoms':   np.int32,
+            'fragments':        np.int32,
         },
 }
 
@@ -134,7 +134,7 @@ structure_properties_shape_version = {
             'cell':             (-1, 3,),
             'pbc':              (-1, 3,),
     },
-    99: {
+    3: {
             'atoms_number':     (-1,),
             'atomic_numbers':   (-1,),
             'positions':        (-1, 3,),
@@ -142,7 +142,7 @@ structure_properties_shape_version = {
             'cell':             (-1, 3,),
             'pbc':              (-1, 3,),
             'atom_types':       (-1,),
-            'fragment_atoms':   (-1,),
+            'fragments':        (-1,),
     },
 }
 reference_properties_shape = {
