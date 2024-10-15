@@ -58,6 +58,19 @@ class Sampler:
     sample_systems_indices: (int, list), optional, default None
         List of sample number indices for specific selection of systems
         in the sample system files.
+    sample_system_fragments: (list, dict), optional, default None
+        System specific fragment definition to assign system atoms to 
+        difference fragments which are, e.g., compute at different level of
+        theory or get treated differently by the model potential.
+        It can be either a list containing lists of atom indices assigned to
+        fragment 0, 1, ..., or a dictionary of fragment name (key) and atom
+        indices (item).
+        The atom indices can be given as an integer atom index or a string of
+        a single index (e.g. '0') or an index range (e.g. '0-10').
+        Not defined atoms are always added to a new fragment of the last index
+        plus 1.
+        If multiple sample systems are defined, the system fragment definition
+        is applied on each system.
     sample_calculator: (str, callable object), optional, default 'XTB'
         Definition of the ASE calculator type for reference data
         computation. The input can be either directly a ASE calculator
@@ -107,6 +120,8 @@ class Sampler:
         'sample_systems_queue':         None,
         'sample_systems':               None,
         'sample_systems_format':        None,
+        'sample_systems_indices':       None,
+        'sample_system_fragments':      None,
         'sample_calculator':            'XTB',
         'sample_calculator_args':       {},
         'sample_save_trajectory':       True,
@@ -114,7 +129,6 @@ class Sampler:
         'sample_properties':            None,
         'sample_systems_optimize':      False,
         'sample_systems_optimize_fmax': 0.001,
-        'sample_systems_indices':       None,
         'sample_data_overwrite':        False,
         'sample_tag':                   'sample',
         }
@@ -132,6 +146,8 @@ class Sampler:
             utils.is_None, utils.is_string, utils.is_string_array],
         'sample_systems_indices':       [
             utils.is_integer, utils.is_integer_array],
+        'sample_system_fragments':      [
+            utils.is_array_like, utils.is_dictionary],
         'sample_calculator':            [utils.is_string, utils.is_object],
         'sample_calculator_args':       [utils.is_dictionary],
         'sample_save_trajectory':       [utils.is_bool],
@@ -155,6 +171,8 @@ class Sampler:
         sample_systems: Optional[Union[str, List[str], object]] = None,
         sample_systems_format: Optional[Union[str, List[str]]] = None,
         sample_systems_indices: Optional[Union[int, List[int]]] = None,
+        sample_system_fragments: 
+            Optional[Union[List[int], Dict[int, Any]]] = None,
         sample_calculator: Optional[Union[str, object]] = None,
         sample_calculator_args: Optional[Dict[str, Any]] = None,
         sample_save_trajectory: Optional[bool] = None,
@@ -312,6 +330,7 @@ class Sampler:
         sample_systems,
         sample_systems_format,
         sample_systems_indices,
+        sample_system_fragments,
     ):
         """
         Iterator to read next sample system and return as ASE atoms object
@@ -384,6 +403,13 @@ class Sampler:
                     f"{self.sample_counter:d}_sample_system_{isample:d}.xyz")
                 ase.io.write(source_file, source, format='xyz')
 
+                # Assign system fragment definition to atoms object
+                if sample_system_fragments is not None:
+                    fragments = self.get_system_fragments(
+                        sample_system_fragments,
+                        source)
+                    source.info['fragments'] = fragments
+
                 # Add sample system to queue
                 sample_systems_queue.put((source, isample, source_file, 1))
             
@@ -435,9 +461,16 @@ class Sampler:
                     if 'charge' in data_i:
                         system.info['charge'] = int(
                             data_i['charge'].numpy()[0])
-                    if 'fragments' in data_i:
-                        system.info['fragments'] = int(
-                            data_i['fragments'].numpy()[0])
+                    
+                    # Assign system fragment definition to atoms object
+                    if sample_system_fragments is not None:
+                        fragments = self.get_system_fragments(
+                            sample_system_fragments,
+                            system)
+                        system.info['fragments'] = fragments
+                    elif 'fragments' in data_i:
+                        system.info['fragments'] = data_i['fragments'].numpy()
+                    
                     sample_systems_queue.put((system, isample, source, isys))
             
             # Else, use ase.read function with respective format
@@ -454,9 +487,18 @@ class Sampler:
                             isys = sample_systems_indices[counter]
                         else:
                             isys = counter
-                        
+
+                        # Read sample system from source file
                         system = ase.io.read(
                             source, index=isys, format=source_format)
+
+                        # Assign system fragment definition to atoms object
+                        if sample_system_fragments is not None:
+                            fragments = self.get_system_fragments(
+                                sample_system_fragments,
+                                system)
+                            system.info['fragments'] = fragments
+
                         sample_systems_queue.put(
                             (system, isample, source, isys))
                     
@@ -593,6 +635,7 @@ class Sampler:
             'sample_directory': self.sample_directory,
             'sample_systems': self.sample_systems,
             'sample_systems_format': self.sample_systems_format,
+            'sample_system_fragments': self.sample_system_fragments,
             'sample_calculator': self.sample_calculator_tag,
             'sample_calculator_args': self.sample_calculator_args,
             'sample_properties': self.sample_properties,
@@ -607,6 +650,8 @@ class Sampler:
         sample_systems: Optional[Union[str, List[str], object]] = None,
         sample_systems_format: Optional[Union[str, List[str]]] = None,
         sample_systems_indices: Optional[Union[int, List[int]]] = None,
+        sample_system_fragments: 
+            Optional[Union[List[int], Dict[int, Any]]] = None,
         **kwargs
     ):
         """
@@ -626,6 +671,8 @@ class Sampler:
             sample_systems_format = self.sample_systems_format
         if sample_systems_indices is None:
             sample_systems_indices = self.sample_systems_indices
+        if sample_system_fragments is None:
+            sample_system_fragments = self.sample_system_fragments
 
         # Collect sampling parameters
         config_sample_tag = f'{self.sample_counter}_{self.sample_tag}'
@@ -640,7 +687,8 @@ class Sampler:
             sample_systems_queue,
             sample_systems,
             sample_systems_format,
-            sample_systems_indices)
+            sample_systems_indices,
+            sample_system_fragments)
 
         # Update configuration file with sampling parameters
         if 'sampler_schedule' in self.config:

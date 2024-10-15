@@ -120,7 +120,7 @@ class Trainer:
         'trainer_properties_metrics':   {'else': 'mse'},
         'trainer_properties_weights':   {
             'energy': 1., 'forces': 50., 'dipole': 25., 'else': 1.},
-        'trainer_batch_size':           128,
+        'trainer_batch_size':           32,
         'trainer_train_batch_size':     None,
         'trainer_valid_batch_size':     None,
         'trainer_test_batch_size':      None,

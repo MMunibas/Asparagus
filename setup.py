@@ -6,7 +6,7 @@ with open('README.md','r') as fh:
 
 setup(
     name='Asparagus',
-    version='0.3.0',
+    version='0.3.1',
     description='Function Bundle from Sampling, Training to Application of NN Potentials',
     author=(
         'L.I.Vazquez-Salazar, Silvan Kaeser, '

@@ -630,9 +630,7 @@ class Model_PaiNN(model.BaseModel):
             charge_deviation = (
                 charge - utils.scatter_sum(
                     results['atomic_charges'], sys_i, dim=0,
-                    shape=charge.shape)
-                / atoms_number
-            )
+                    shape=charge.shape))/atoms_number
             results['atomic_charges'] = (
                 results['atomic_charges'] + charge_deviation[sys_i])
 

@@ -365,9 +365,8 @@ class Tester:
 
             # Prepare dictionary for property values and number of atoms per
             # system
-            test_prediction = {prop: [] for prop in test_properties}
-            test_reference = {prop: [] for prop in test_properties}
-            test_prediction['atoms_number'] = []
+            test_prediction = {}
+            test_reference = {}
 
             # Reset property metrics
             metrics_test = self.reset_metrics(eval_properties)
@@ -386,28 +385,44 @@ class Tester:
                 self.update_metrics(
                     metrics_test, metrics_batch, eval_properties)
 
-                # Store prediction and reference data
+                # Store prediction and reference data system resolved
                 Nsys = len(batch['atoms_number'])
+                Natoms = len(batch['atomic_numbers'])
+                Npairs = len(batch['idx_i'])
                 for prop in eval_properties:
+                    
+                    # Detach prediction and reference data
                     data_prediction = prediction[prop].detach().cpu().numpy()
                     data_reference = batch[prop].detach().cpu().numpy()
-                    if data_prediction.shape[0] == len(batch['sys_i']):
+
+                    # If data are atom resolved
+                    if data_prediction.shape[0] == Natoms:
                         data_prediction = [
-                            list(data_prediction[isys])
+                            list(data_prediction[batch['sys_i'] == isys])
                             for isys in range(Nsys)]
                         data_reference = [
-                            list(data_reference[isys]) for isys in range(Nsys)]
-                    elif data_prediction.shape[0] == len(batch['idx_i']):
+                            list(data_reference[batch['sys_i'] == isys])
+                            for isys in range(Nsys)]
+                    # If data are atom pair resolved
+                    elif data_prediction.shape[0] == Npairs:
+                        sys_pair_i = batch['sys_i'][batch['idx_i']]
                         data_prediction = [
-                            list(data_prediction[isys])
+                            list(data_prediction[sys_pair_i == isys])
                             for isys in range(Nsys)]
                         data_reference = [
-                            list(data_reference[isys]) for isys in range(Nsys)]
-                    test_prediction[prop] += list(data_prediction)
-                    test_reference[prop] += list(data_reference)
+                            list(data_reference[sys_pair_i == isys])
+                            for isys in range(Nsys)]
+                    # Else, it is already system resolved
+                    else:
+                        data_prediction = list(data_prediction)
+                        data_reference = list(data_reference)
+
+                    # Assign prediction and reference data
+                    test_prediction[prop] = data_prediction
+                    test_reference[prop] = data_reference
 
                 # Store atom numbers
-                test_prediction['atoms_number'] += list(
+                test_prediction['atoms_number'] = (
                     batch['atoms_number'].cpu().numpy())
 
             # Print metrics

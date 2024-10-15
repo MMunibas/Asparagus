@@ -90,8 +90,8 @@ class DataSet():
 
         # If overwrite, remove old DataSet file
         if os.path.exists(self.data_file[0]) and data_overwrite:
-            with self.connect(self.data_file[0], 'w') as f:
-                f.delete_file()
+            with self.connect(self.data_file[0], 'w') as db:
+                db.delete_file()
 
         # Copy current metadata
         metadata = self.get_metadata()

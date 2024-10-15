@@ -157,9 +157,7 @@ class DataContainer():
         data_file = self.check_data_files(data_file)
             
         # If not to overwrite, get metadata from existing database
-        if (
-            data_overwrite or config.get('data_overwrite') or data_file is None
-        ):
+        if data_overwrite or config.get('data_overwrite') or data_file is None:
 
             metadata = {}
 
@@ -170,11 +168,11 @@ class DataContainer():
 
             # Check input with existing database properties
             data_properties, data_unit_properties = (
-                self.get_from_metadata(
+                self.get_properties_from_metadata(
                     metadata,
                     config,
-                    data_properties=data_properties,
-                    unit_properties=data_unit_properties,
+                    data_properties,
+                    data_unit_properties,
                     )
                 )
 
@@ -463,6 +461,61 @@ class DataContainer():
                     + f" {str(files_formats):s}\n"
                     + f" Returned file and format {str(files_formats[0]):s}")
             return files_formats[0]
+
+    def get_properties_from_metadata(
+        self,
+        metadata: Dict[str, Any],
+        config: settings.Configuration,
+        data_properties,
+        data_unit_properties,
+    ) -> (List[str], Dict[str, str]):
+        """
+        Return property data from top priority source. Priority:
+            1. Keyword argument input
+            2. Config input
+            3. Metadata properties
+
+        Parameters
+        ----------
+        metadata: dict
+            Database file metadata deictionary.
+        config: setting.Configuration
+            Configuaration object with parameters
+        data_properties: list(str)
+            Set of properties to store in the DataSet
+        data_unit_properties: dictionary
+            Dictionary from properties (keys) to corresponding unit as a
+            string (item).
+
+        Returns
+        -------
+        list
+            Updated property labels
+        dict
+            Updated property units
+
+        """
+        
+        # Get properties
+        if data_properties is None and config.get('data_properties') is None:
+            properties = metadata.get('load_properties')
+        elif data_properties is None:
+            properties = config.get('data_properties')
+        else:
+            properties = data_properties
+
+        # Get property units
+        if (
+            data_unit_properties is None 
+            and config.get('data_unit_properties') is None
+        ):
+            unit_properties = metadata.get('unit_properties')
+        elif data_unit_properties is None:
+            unit_properties = config.get('data_unit_properties')
+        else:
+            unit_properties = data_unit_properties
+
+        return properties, unit_properties
 
     def get_from_metadata(
         self,

@@ -7,7 +7,7 @@ Asparagus bundle is a package for the automatic construction of Potential Energy
 
 """
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 
 from .asparagus import (
     Asparagus
