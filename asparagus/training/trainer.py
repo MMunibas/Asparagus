@@ -335,11 +335,11 @@ class Trainer:
                 message += f" {'None':<12s} |"
             else:
                 message += f" {self.model_conversion.get(prop):>12.4e} |"
-            if prop in self.trainer_properties_metrics:
+            if prop in self.trainer_properties:
                 message += f" {self.trainer_properties_metrics[prop]:<12s} |"
             else:
                 message += f" {'':<12s} |"
-            if prop in self.trainer_properties_weights:
+            if prop in self.trainer_properties:
                 message += f" {self.trainer_properties_weights[prop]:> 11.4f}"
             message += "\n"
         self.logger.info(
@@ -529,7 +529,8 @@ class Trainer:
             # Get model property scaling
             model_property_scaling = self.prepare_property_scaling(
                 data_loader=self.data_train,
-                properties=properties_scaleable)
+                properties=properties_scaleable,
+                energy_only=True)
 
             # Set model property shift terms to the model calculator output
             # module
@@ -1188,7 +1189,8 @@ class Trainer:
         data_loader: data.DataLoader,
         properties: List[str],
         use_model_prediction: Optional[bool] = True,
-        guess_atomic_energies_shift: Optional[bool] = True
+        guess_atomic_energies_shift: Optional[bool] = True,
+        energy_only: Optional[bool] = False,
     ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
         """
         Compute model property scaling parameters and prepare respective
@@ -1209,6 +1211,9 @@ class Trainer:
             In case atomic energies are not available by the reference data
             set, which is normally the case, predict anyways from a guess of
             the difference between total reference energy and predicted energy.
+        energy_only: bool, optional, default False
+            Compute model property scaling parameter only for directly energy
+            related properties such as 'enery' or 'atomic_energies'.
 
         Returns
         -------
@@ -1221,13 +1226,17 @@ class Trainer:
         # from the available data
         properties_available = []
         for prop in properties:
+            # If requested, only regard energy related properties
+            if energy_only and prop not in ['energy', 'atomic_energies']:
+                continue
+            # Else continue property check
             if (
                 prop in data_loader.data_properties 
                 and prop not in properties_available
             ):
                 properties_available.append(prop)
             elif (
-                prop == 'atomic_energies' 
+                prop == 'atomic_energies'
                 and guess_atomic_energies_shift
                 and 'energy' in data_loader.data_properties
                 and 'energy' not in properties_available
