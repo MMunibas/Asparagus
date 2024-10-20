@@ -1448,7 +1448,7 @@ class Trainer:
         
         # Loop over training batches
         for ib, batch in enumerate(data_loader):
-            print("batch: ", ib)
+
             # Predict model properties from data batch
             prediction = self.model_calculator(
                 batch, no_derivation=True)
