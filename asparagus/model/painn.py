@@ -718,6 +718,5 @@ class Model_PaiNN(model.BaseModel):
                         sys_i, dim=0, shape=(*atoms_number.shape, 3)
                         ).reshape(-1, 3)
                 )
-        print(results)
-        exit()
+
         return results

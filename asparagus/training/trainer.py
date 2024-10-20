@@ -1463,10 +1463,7 @@ class Trainer:
             for prop in properties_system + properties_available:
                 properties_reference[prop].append(
                     batch[prop].cpu().detach())
-            if ib > 10:
-                break
-            else:
-                print(ib)
+
         # Concatenate prediction and reference results
         for prop in properties_available:
             if ib:
