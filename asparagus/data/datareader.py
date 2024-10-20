@@ -251,6 +251,7 @@ class DataReader():
         data_source: List[str],
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
+        data_skip_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> Union[str, List[Dict[str, Any]]]:
@@ -268,6 +269,8 @@ class DataReader():
             string (item), e.g.:
                 {property: unit}: { 'energy': 'eV',
                                     'force': 'eV/Ang', ...}
+        data_skip_properties: List(str), optional, default None
+            Properties not to load even if in data source.
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
@@ -298,6 +301,8 @@ class DataReader():
             data_unit_properties = self.data_unit_properties
         if data_alt_property_labels is None:
             data_alt_property_labels = self.data_alt_property_labels
+        if data_skip_properties is None:
+            data_skip_properties = []
 
         # Get data sample property labels for label to comparison
         with data.connect(data_source[0], data_source[1], mode='r') as db:
@@ -308,6 +313,7 @@ class DataReader():
             data_source,
             source_properties,
             data_properties,
+            data_skip_properties,
             data_alt_property_labels)
 
         # Get source property units
@@ -404,6 +410,7 @@ class DataReader():
         data_source: List[str],
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
+        data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
         **kwargs,
     ) -> Union[str, List[Dict[str, Any]]]:
@@ -421,6 +428,8 @@ class DataReader():
             string (item), e.g.:
                 {property: unit}: { 'energy': 'eV',
                                     'force': 'eV/Ang', ...}
+        data_skip_properties: List(str), optional, default None
+            Properties not to load even if in data source.
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
@@ -452,6 +461,16 @@ class DataReader():
         if data_alt_property_labels is None:
             data_alt_property_labels = self.data_alt_property_labels
 
+        # Check list of properties to skip
+        default_skip_properties = [
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+        if data_skip_properties is None:
+            data_skip_properties = default_skip_properties
+        else:
+            for prop in default_skip_properties:
+                if prop not in data_skip_properties:
+                    data_skip_properties.append(prop)
+
         # Get data sample property labels for label to comparison
         with data.connect(data_source[0], data_source[1], mode='r') as db:
             source_properties = db.get(1)[0].keys()
@@ -461,6 +480,7 @@ class DataReader():
             data_source,
             source_properties,
             data_properties,
+            data_skip_properties,
             data_alt_property_labels)
 
         # Get source property units - default ASE units
@@ -555,6 +575,7 @@ class DataReader():
         data_source: List[str],
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
+        data_skip_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
         **kwargs,
@@ -573,6 +594,8 @@ class DataReader():
             string (item), e.g.:
                 {property: unit}: { 'energy': 'eV',
                                     'force': 'eV/Ang', ...}
+        data_skip_properties: List(str), optional, default None
+            Properties not to load even if in data source.
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
@@ -607,6 +630,8 @@ class DataReader():
             data_unit_properties = self.data_unit_properties
         if data_alt_property_labels is None:
             data_alt_property_labels = self.data_alt_property_labels
+        if data_skip_properties is None:
+            data_skip_properties = []
 
         # Get data sample property labels for label to comparison
         source_properties = source.keys()
@@ -616,6 +641,7 @@ class DataReader():
             data_source,
             source_properties,
             data_properties,
+            data_skip_properties,
             data_alt_property_labels)
 
         # Initialize source data dictionary and assign properties
@@ -764,6 +790,7 @@ class DataReader():
         data_source: List[str],
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
+        data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
         **kwargs,
     ):
@@ -781,6 +808,8 @@ class DataReader():
             string (item), e.g.:
                 {property: unit}: { 'energy': 'eV',
                                     'force': 'eV/Ang', ...}
+        data_skip_properties: List(str), optional, default None
+            Properties not to load even if in data source.
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
@@ -813,6 +842,16 @@ class DataReader():
         if data_alt_property_labels is None:
             data_alt_property_labels = self.data_alt_property_labels
 
+        # Check list of properties to skip
+        default_skip_properties = [
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+        if data_skip_properties is None:
+            data_skip_properties = default_skip_properties
+        else:
+            for prop in default_skip_properties:
+                if prop not in data_skip_properties:
+                    data_skip_properties.append(prop)
+
         # Get data sample to compare property labels
         data_sample = source[0]
 
@@ -837,6 +876,7 @@ class DataReader():
             data_source,
             source_properties,
             data_properties,
+            data_skip_properties,
             data_alt_property_labels)
 
         # Get source property units - default ASE units
@@ -928,6 +968,7 @@ class DataReader():
         atoms_properties: Dict[str, Any],
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
+        data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
     ) -> Union[str, List[Dict[str, Any]]]:
         """
@@ -946,6 +987,8 @@ class DataReader():
             string (item), e.g.:
                 {property: unit}: { 'energy': 'eV',
                                     'force': 'eV/Ang', ...}
+        data_skip_properties: List(str), optional, default None
+            Properties not to load even if in data source.
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
@@ -966,6 +1009,16 @@ class DataReader():
         if data_alt_property_labels is None:
             data_alt_property_labels = self.data_alt_property_labels
 
+        # Check list of properties to skip
+        default_skip_properties = [
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+        if data_skip_properties is None:
+            data_skip_properties = default_skip_properties
+        else:
+            for prop in default_skip_properties:
+                if prop not in data_skip_properties:
+                    data_skip_properties.append(prop)
+
         # Get data sample property labels for label to comparison
         source_properties = atoms_properties.keys()
 
@@ -974,6 +1027,7 @@ class DataReader():
             'ase.Atoms',
             source_properties,
             data_properties,
+            data_skip_properties,
             data_alt_property_labels)
 
         # Get source property units - default ASE units
@@ -1052,6 +1106,7 @@ class DataReader():
         data_source: List[str],
         source_properties: List[str],
         data_properties: List[str],
+        skip_properties: List[str],
         data_alt_property_labels: Dict[str, List[str]],
     ) -> Dict[str, str]:
         """
@@ -1065,6 +1120,8 @@ class DataReader():
             Properties list of source data
         data_properties: List(str)
             Subset of properties to load
+        skip_properties: List(str)
+            Properties not to load even if in source.
         data_alt_property_labels: dict
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
@@ -1080,8 +1137,8 @@ class DataReader():
         assigned_properties = {}
         for source_label in source_properties:
 
-            # Skip default system properties
-            if source_label in self.default_property_labels:
+            # Skip system properties, which are read otherwise
+            if source_label in skip_properties:
                 continue
 
             match, modified, valid_label = utils.check_property_label(
@@ -1220,9 +1277,9 @@ class DataReader():
         # Iterate over properties
         for data_prop, source_prop in assigned_properties.items():
 
-            # Skip default properties
-            if data_prop in self.default_property_labels:
-                continue
+            # # Skip default properties
+            # if data_prop in self.default_property_labels:
+            #     continue
 
             # Check property labels
             if source_unit_properties is None:

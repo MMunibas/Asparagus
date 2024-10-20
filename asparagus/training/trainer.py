@@ -437,6 +437,7 @@ class Trainer:
         restart: Optional[bool] = True,
         reset_best_loss: Optional[bool] = False,
         reset_energy_shift: Optional[bool] = False,
+        skip_property_scaling: Optional[bool] = False,
         verbose=True,
         **kwargs,
     ):
@@ -495,6 +496,34 @@ class Trainer:
                 else:
                     best_loss = latest_checkpoint['best_loss']
 
+        ################################
+        # # # Prepare Model Cutoff # # #
+        ################################
+
+        # Get model and descriptor cutoffs
+        model_cutoff = self.model_calculator.model_cutoff
+        if hasattr(self.model_calculator.input_module, 'input_radial_cutoff'):
+            input_cutoff = (
+                self.model_calculator.input_module.input_radial_cutoff)
+            if input_cutoff != model_cutoff:
+                cutoff = [input_cutoff, model_cutoff]
+        else:
+            cutoff = [model_cutoff]
+
+        # Set model and descriptor cutoffs for neighbor list calculation
+        self.data_train.init_neighbor_list(
+            cutoff=cutoff,
+            device=self.device,
+            dtype=self.dtype)
+        self.data_valid.init_neighbor_list(
+            cutoff=cutoff,
+            device=self.device,
+            dtype=self.dtype)
+
+        ####################################
+        # # # Prepare Property Scaling # # #
+        ####################################
+
         # Set model property scaling for newly initialized model calculators
         if self.model_calculator.checkpoint_loaded and not reset_energy_shift:
 
@@ -540,7 +569,7 @@ class Trainer:
                 set_scaling_factor=False)
 
 
-        else:
+        elif not skip_property_scaling:
 
             self.logger.info(
                 "No Model calculator checkpoint file loaded!\n"
@@ -558,9 +587,9 @@ class Trainer:
                 set_shift_term=True,
                 set_scaling_factor=True)
 
-        ####################################
-        # # # Prepare Model and Metric # # #
-        ####################################
+        #############################################
+        # # # Prepare Model Training and Metric # # #
+        #############################################
 
         # Initialize training mode for calculator
         self.model_calculator.train()
@@ -579,26 +608,6 @@ class Trainer:
 
         # Initialize training time estimation per epoch
         train_time_estimation = torch.tensor(0.0, dtype=torch.float64)
-
-        # Get model and descriptor cutoffs
-        model_cutoff = self.model_calculator.model_cutoff
-        if hasattr(self.model_calculator.input_module, 'input_radial_cutoff'):
-            input_cutoff = (
-                self.model_calculator.input_module.input_radial_cutoff)
-            if input_cutoff != model_cutoff:
-                cutoff = [input_cutoff, model_cutoff]
-        else:
-            cutoff = [model_cutoff]
-
-        # Set model and descriptor cutoffs for neighbor list calculation
-        self.data_train.init_neighbor_list(
-            cutoff=cutoff,
-            device=self.device,
-            dtype=self.dtype)
-        self.data_valid.init_neighbor_list(
-            cutoff=cutoff,
-            device=self.device,
-            dtype=self.dtype)
 
         ##########################
         # # # Start Training # # #

@@ -49,6 +49,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         else:
             self.cutoff = torch.tensor(
                 cutoff, device=self.device, dtype=self.dtype)
+
         self.max_cutoff = torch.max(self.cutoff)
 
         return

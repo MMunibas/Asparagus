@@ -365,8 +365,9 @@ class Tester:
 
             # Prepare dictionary for property values and number of atoms per
             # system
-            test_prediction = {}
-            test_reference = {}
+            test_prediction = {prop: [] for prop in eval_properties}
+            test_reference = {prop: [] for prop in eval_properties}
+            test_prediction['atoms_number'] = []
 
             # Reset property metrics
             metrics_test = self.reset_metrics(eval_properties)
@@ -396,7 +397,10 @@ class Tester:
                     data_reference = batch[prop].detach().cpu().numpy()
 
                     # If data are atom resolved
-                    if data_prediction.shape[0] == Natoms:
+                    if not data_prediction.shape:
+                        data_prediction = [data_prediction]
+                        data_reference = list(data_reference)
+                    elif data_prediction.shape[0] == Natoms:
                         data_prediction = [
                             list(data_prediction[batch['sys_i'] == isys])
                             for isys in range(Nsys)]
@@ -418,11 +422,11 @@ class Tester:
                         data_reference = list(data_reference)
 
                     # Assign prediction and reference data
-                    test_prediction[prop] = data_prediction
-                    test_reference[prop] = data_reference
+                    test_prediction[prop] += data_prediction
+                    test_reference[prop] += data_reference
 
                 # Store atom numbers
-                test_prediction['atoms_number'] = (
+                test_prediction['atoms_number'] += list(
                     batch['atoms_number'].cpu().numpy())
 
             # Print metrics

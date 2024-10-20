@@ -20,7 +20,7 @@ flag_datareader = True
 
 flag_sampler_all = True
 flag_sampler_shell = True
-flag_sampler_slurm = True
+flag_sampler_slurm = False
 flag_sampler_shell_case = True
 
 flag_model_physnet = True
@@ -34,6 +34,7 @@ flag_train_painn = True
 flag_transfer_learning = True
 
 flag_train_cuda = False
+
 
 # ==============================================================================
 #  Test Asparagus Main Class Initialization

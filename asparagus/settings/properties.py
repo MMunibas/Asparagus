@@ -11,7 +11,11 @@ _default_property_labels = [
 
 # Valid property labels
 _valid_properties = [
+    'atoms_number',
+    'atomic_numbers',
     'positions',
+    'cell',
+    'pbc',
     'energy',
     'atomic_energies',
     'forces',
@@ -55,6 +59,8 @@ _ase_units = {
     'atoms_number':     '',
     'atomic_numbers':   '',
     'positions':        'Ang',
+    'cell':             'Ang',
+    'pbc':              '',
     'energy':           'eV',
     'atomic_energies':  'eV',
     'forces':           'eV/Ang',
