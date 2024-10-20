@@ -124,7 +124,7 @@ class Trainer:
         'trainer_train_batch_size':     None,
         'trainer_valid_batch_size':     None,
         'trainer_test_batch_size':      None,
-        'trainer_num_batch_workers':    1,
+        'trainer_num_batch_workers':    0,
         'trainer_optimizer':            'AMSgrad',
         'trainer_optimizer_args':       {'lr': 0.001, 'weight_decay': 1.e-5},
         'trainer_scheduler':            'ExponentialLR',
@@ -1448,7 +1448,7 @@ class Trainer:
         
         # Loop over training batches
         for ib, batch in enumerate(data_loader):
-            
+            print("batch: ", ib)
             # Predict model properties from data batch
             prediction = self.model_calculator(
                 batch, no_derivation=True)
