@@ -475,7 +475,6 @@ class DMC:
         self.logger.log_end()
         self.logger.close_files()
 
-        exit()
         return
 
     def optimize_atoms(
