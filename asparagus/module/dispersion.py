@@ -95,7 +95,7 @@ class D3_dispersion(torch.nn.Module):
         
         # Maximum number of coordination complexes
         self.d3_maxc = 5
-        
+
         # Initialize global dispersion correction parameters 
         # (default values for HF)
         if d3_s6 is None:
@@ -128,21 +128,26 @@ class D3_dispersion(torch.nn.Module):
         self.d3_k1 = torch.tensor([16.000], device=device, dtype=dtype)
         self.d3_k2 = torch.tensor([4./3.], device=device, dtype=dtype)
         self.d3_k3 = torch.tensor([-4.000], device=device, dtype=dtype)
-        
+
+        # Unit conversion factors
+        self.set_unit_properties(unit_properties)
+
         # Prepare interaction switch-off range
-        self.cutoff = torch.tensor([cutoff], device=device, dtype=dtype)
+        self.cutoff = (
+            torch.tensor([cutoff], device=device, dtype=dtype)
+            * self.distances_model2Bohr)
         if cuton is None or cuton == cutoff:
             self.cuton = None
             self.switchoff_range = None
             self.use_switch = False
         else:
-            self.cuton = torch.tensor([cuton], device=device, dtype=dtype)
-            self.switchoff_range = torch.tensor(
-                [cutoff - cuton], device=device, dtype=dtype)
+            self.cuton = (
+                torch.tensor([cuton], device=device, dtype=dtype)
+                * self.distances_model2Bohr)
+            self.switchoff_range = (
+                torch.tensor([cutoff - cuton], device=device, dtype=dtype)
+                * self.distances_model2Bohr)
             self.use_switch = True
-
-        # Unit conversion factors
-        self.set_unit_properties(unit_properties)
 
         return
         
@@ -259,12 +264,12 @@ class D3_dispersion(torch.nn.Module):
         
         # Gather the relevant table entries
         c6ab_ = utils.gather_nd(self.d3_c6ab, atomic_pair_numbers)
-        #.type(nci.dtype)
         
         # Calculate c6 coefficients
-        c6mem = -1.0e99 * torch.ones_like(nci, device=self.device)
-        r_save = 1.0e99 * torch.ones_like(nci, device=self.device)
-        
+        dtype_max = torch.finfo(self.dtype).max
+        c6mem = -dtype_max*torch.ones_like(nci, device=self.device)
+        r_save = dtype_max*torch.ones_like(nci, device=self.device)
+
         rsum = torch.zeros_like(nci, device=self.device)
         csum = torch.zeros_like(nci, device=self.device)
         
@@ -275,23 +280,20 @@ class D3_dispersion(torch.nn.Module):
                 cn1 = c6ab_[:, i, j, 1]
                 cn2 = c6ab_[:, i, j, 2]
 
-                r = (cn1 - nci) ** 2 + (cn2 - ncj) ** 2
-                r_save = torch.where(r < r_save, r, r_save)
-
+                r = (cn1 - nci)**2 + (cn2 - ncj)**2
                 c6mem = torch.where(r < r_save, cn0, c6mem)
-
+                r_save = torch.where(r < r_save, r, r_save)
                 tmp1 = torch.exp(self.d3_k3 * r)
                 rsum = rsum + torch.where(
-                    cn0 > 0.0, 
-                    tmp1, 
+                    cn0 > 0.0,
+                    tmp1,
                     torch.zeros_like(tmp1, device=self.device))
                 csum = csum + torch.where(
-                    cn0 > 0.0, 
-                    tmp1*cn0, 
+                    cn0 > 0.0,
+                    tmp1*cn0,
                     torch.zeros_like(tmp1, device=self.device))
-                
+
         c6 = torch.where(rsum > 0.0, csum/rsum, c6mem)
-        
         return c6
 
     def forward(
