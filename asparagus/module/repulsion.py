@@ -176,14 +176,14 @@ class ZBL_repulsion(torch.nn.Module):
         """
         
         # Convert distances from model unit to Angstrom
-        distances_ang = distances*self.distances_model2Bohr
+        distances_bohr = distances*self.distances_model2Bohr
         
         # Compute atomic number dependent function
         za = atomic_numbers**torch.abs(self.a_exponent)
         a_ij = torch.abs(self.a_coefficient)/(za[idx_i] + za[idx_j])
         
         # Compute screening function
-        arguments = distances_ang/a_ij
+        arguments = distances_bohr/a_ij
         coefficients = torch.nn.functional.normalize(
             torch.abs(self.phi_coefficients), p=1.0, dim=0)
         exponents = torch.abs(self.phi_exponents)
@@ -195,7 +195,7 @@ class ZBL_repulsion(torch.nn.Module):
         # Compute nuclear repulsion potential
         repulsion = (
             self.ke
-            * atomic_numbers[idx_i]*atomic_numbers[idx_j]/distances_ang
+            * atomic_numbers[idx_i]*atomic_numbers[idx_j]/distances_bohr
             * phi
             * cutoffs)
 
