@@ -235,6 +235,7 @@ class Tester:
     def test(
         self,
         model_calculator: torch.nn.Module,
+        model_conversion: Optional[Dict[str, float]] = None,
         test_properties: Optional[Union[str, List[str]]] = None,
         test_directory: Optional[str] = None,
         test_plot_correlation: Optional[bool] = True,
@@ -260,6 +261,8 @@ class Tester:
             NNP model calculator to predict test properties. The prediction
             are done with the given state of parametrization, no checkpoint
             files will be loaded.
+        model_conversion: dict(str, float), optional, default None
+            Model prediction to reference data unit conversion.
         test_properties: (str, list(str)), optional, default None
             Model properties to evaluate which must be available in the
             model prediction and the reference test data set. If None, model
@@ -314,6 +317,14 @@ class Tester:
             test_properties = self.check_test_properties(
                 test_properties,
                 self.data_properties)
+
+        # Check test properties model to reference data conversion
+        test_conversion = {}
+        for prop in test_properties:
+            if model_conversion is None or model_conversion.get(prop) is None:
+                test_conversion[prop] = 1.0
+            else:
+                test_conversion[prop] = model_conversion.get(prop)
 
         # Check test output directory
         if test_directory is None:
@@ -380,7 +391,7 @@ class Tester:
 
                 # Compute metrics for test properties
                 metrics_batch = self.compute_metrics(
-                    prediction, batch, eval_properties)
+                    prediction, batch, eval_properties, test_conversion)
 
                 # Update average metrics
                 self.update_metrics(
@@ -395,6 +406,9 @@ class Tester:
                     # Detach prediction and reference data
                     data_prediction = prediction[prop].detach().cpu().numpy()
                     data_reference = batch[prop].detach().cpu().numpy()
+
+                    # Apply unit conversion of model prediction
+                    data_prediction *= test_conversion[prop]
 
                     # If data are atom resolved
                     if not data_prediction.shape:
@@ -657,6 +671,7 @@ class Tester:
         prediction: Dict[str, Any],
         reference: Dict[str, Any],
         test_properties: List[str],
+        test_conversion: Dict[str, float],
     ) -> Dict[str, float]:
         """
         Compute the metrics mean absolute error (MAE) and mean squared error
@@ -670,6 +685,8 @@ class Tester:
             Dictionary of the reference data
         test_properties: list(str)
             List of properties to evaluate.
+        test_conversion: dict(str, float)
+            Model prediction to test data unit conversion.
 
         Returns
         -------
@@ -695,10 +712,12 @@ class Tester:
 
             # Compute MAE and MSE
             metrics[prop]['mae'] = mae_fn(
-                torch.flatten(prediction[prop]),
+                torch.flatten(prediction[prop])
+                * test_conversion[prop],
                 torch.flatten(reference[prop]))
             metrics[prop]['mse'] = mse_fn(
-                torch.flatten(prediction[prop]),
+                torch.flatten(prediction[prop])
+                * test_conversion[prop],
                 torch.flatten(reference[prop]))
 
         return metrics

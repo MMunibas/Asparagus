@@ -9,7 +9,22 @@ from ase.io.trajectory import Trajectory
 from ase.md.langevin import Langevin
 
 class EnsembleLearning:
-    def __init__(self, model_name, source, properties, train_size, validation_size, test_size, epoch_step, num_epochs, par_mod, reag, temperature, interval, trajname, num_steps_md):
+    def __init__(
+        self,
+        model_name,
+        source,
+        properties,
+        train_size,
+        validation_size,
+        test_size,
+        epoch_step,
+        num_epochs,
+        par_mod,
+        reag,
+        temperature,
+        interval,trajname,
+        num_steps_md
+    ):
         self.model_name = model_name
         self.source = source
         self.properties = properties

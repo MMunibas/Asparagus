@@ -551,6 +551,7 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
+        train_ensemble: Optional[bool] = False,
         **kwargs,
     ) -> training.Trainer:
         """
@@ -563,6 +564,9 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
+        train_ensemble: bool, optional, default False
+            If True, an ensemble of model calculators are trained.
+            Number of models are defined by 'ensemble_number'.
 
         Returns:
         --------
@@ -665,6 +669,7 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
+        train_ensemble: Optional[bool] = False,
         **kwargs,
     ):
         """
@@ -677,6 +682,9 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
+        train_ensemble: bool, optional, default False
+            If True, an ensemble of model calculators are trained.
+            Number of models are defined by 'ensemble_number'.
 
         """
 
@@ -687,6 +695,7 @@ class Asparagus():
         trainer = self.get_trainer(
             config=config,
             config_file=config_file,
+            train_ensemble=train_ensemble,
             **kwargs)
 
         ########################################

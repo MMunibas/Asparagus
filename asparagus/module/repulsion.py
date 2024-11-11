@@ -183,7 +183,7 @@ class ZBL_repulsion(torch.nn.Module):
         a_ij = torch.abs(self.a_coefficient)/(za[idx_i] + za[idx_j])
         
         # Compute screening function
-        arguments = distances/a_ij
+        arguments = distances_ang/a_ij
         coefficients = torch.nn.functional.normalize(
             torch.abs(self.phi_coefficients), p=1.0, dim=0)
         exponents = torch.abs(self.phi_exponents)

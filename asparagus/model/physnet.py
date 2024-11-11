@@ -478,7 +478,8 @@ class Model_PhysNet(model.BaseModel):
     def forward(
         self,
         batch: Dict[str, torch.Tensor],
-        no_derivation: Optional[bool] = False
+        no_derivation: Optional[bool] = False,
+        verbose_results: Optional[bool] = False,
     ) -> Dict[str, torch.Tensor]:
 
         """
@@ -515,8 +516,12 @@ class Model_PhysNet(model.BaseModel):
                     Atom j pair index pointer from image atom to respective
                     primary atom index in a supercluster
         no_derivation: bool, optional, default False
-            If False, predict all properties even if backwards derivation is
-            required such as forces. Else, only predict non-derived properties.
+            If True, only predict non-derived properties.
+            Else, predict all properties even if backwards derivation is
+            required (e.g. forces).
+        verbose_results: bool, optional, default False
+            If True, store extended model property contributions in the result
+            dictionary.
 
         Returns
         -------
@@ -578,20 +583,30 @@ class Model_PhysNet(model.BaseModel):
         results = self.output_module(
             features_list,
             atomic_numbers=atomic_numbers)
+        if verbose_results:
+            for prop in self.output_module.output_properties:
+                verbose_prop = f"output_{prop:s}"
+                results[verbose_prop] = results[prop].detach()
 
         # Add repulsion model contribution
         if self.model_repulsion:
+            repulsion_atomic_energies = self.repulsion_module(
+                atomic_numbers, distances, cutoffs, idx_i, idx_j)
             results['atomic_energies'] = (
-                results['atomic_energies']
-                + self.repulsion_module(
-                    atomic_numbers, distances, cutoffs, idx_i, idx_j))
+                results['atomic_energies'] + repulsion_atomic_energies)
+            if verbose_results:
+                results['repulsion_atomic_energies'] = (
+                    repulsion_atomic_energies.detach())
 
         # Add dispersion model contributions
         if self.model_dispersion:
+            dispersion_atomic_energies = self.dispersion_module(
+                atomic_numbers, distances_uv, idx_u, idx_v)
             results['atomic_energies'] = (
-                results['atomic_energies']
-                + self.dispersion_module(
-                    atomic_numbers, distances_uv, idx_u, idx_v))
+                results['atomic_energies'] + dispersion_atomic_energies)
+            if verbose_results:
+                results['dispersion_atomic_energies'] = (
+                    dispersion_atomic_energies.detach())
 
         # Scale atomic charges to ensure correct total charge
         if self.model_atomic_charges:
@@ -604,19 +619,33 @@ class Model_PhysNet(model.BaseModel):
 
         # Add electrostatic model contribution
         if self.model_electrostatic:
-            # Apply electrostatic model
+            electrostatic_atomic_energies = self.electrostatic_module(
+                results, distances_uv, idx_u, idx_v)
             results['atomic_energies'] = (
-                results['atomic_energies']
-                + self.electrostatic_module(
-                    results, distances_uv, idx_u, idx_v))
+                results['atomic_energies'] + electrostatic_atomic_energies)
+            if verbose_results:
+                results['electrostatic_atomic_energies'] = (
+                    electrostatic_atomic_energies.detach())
 
         # Compute property - Energy
         if self.model_energy:
             results['energy'] = torch.squeeze(
                 utils.scatter_sum(
-                        results['atomic_energies'], sys_i, dim=0,
-                        shape=atoms_number.shape)
+                    results['atomic_energies'], sys_i, dim=0,
+                    shape=atoms_number.shape)
             )
+            if verbose_results:
+                atomic_energies_properies = [
+                    prop for prop in results
+                    if 'atomic_energies' in prop[-len('atomic_energies'):]]
+                for prop in atomic_energies_properies:
+                    verbose_prop = (
+                        f"{prop[:-len('atomic_energies')]:s}energy")
+                    results[verbose_prop] = torch.squeeze(
+                        utils.scatter_sum(
+                            results[prop], sys_i, dim=0,
+                            shape=atoms_number.shape)
+                    )
 
         # Compute gradients and Hessian if demanded
         if self.model_forces and not no_derivation:
@@ -656,21 +685,19 @@ class Model_PhysNet(model.BaseModel):
             else:
                 positions_dipole = positions[pbc_atoms]
 
-            # For non-zero system charges, shift origin to center of mass
-            if torch.any(charge):
-                atomic_masses = self.atomic_masses[atomic_numbers]
-                system_mass = utils.scatter_sum(
-                        atomic_masses, sys_i, dim=0,
-                        shape=atoms_number.shape)
-                system_com = (
-                    utils.scatter_sum(
-                        atomic_masses[..., None]*positions_dipole,
-                        sys_i, dim=0, shape=(*atoms_number.shape, 3)
-                        ).reshape(-1, 3)
-                    )/system_mass[..., None]
-                positions_com = positions_dipole - system_com[sys_i]
-            else:
-                positions_com = positions_dipole
+            # In case of non-zero system charges, shift origin to center of
+            # mass
+            atomic_masses = self.atomic_masses[atomic_numbers]
+            system_mass = utils.scatter_sum(
+                atomic_masses, sys_i, dim=0,
+                shape=atoms_number.shape)
+            system_com = (
+                utils.scatter_sum(
+                    atomic_masses[..., None]*positions_dipole,
+                    sys_i, dim=0, shape=(*atoms_number.shape, 3)
+                    ).reshape(-1, 3)
+                )/system_mass[..., None]
+            positions_com = positions_dipole - system_com[sys_i]
 
             # Compute molecular dipole moment from atomic charges
             results['dipole'] = utils.scatter_sum(

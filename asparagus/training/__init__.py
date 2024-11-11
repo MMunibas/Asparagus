@@ -19,3 +19,7 @@ from .optimizer import (
 from .scheduler import (
     get_scheduler
 )
+
+from .scaling import (
+    set_property_scaling_estimation
+)

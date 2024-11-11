@@ -7,11 +7,11 @@ import torch
 import numpy as np
 
 import asparagus
+from asparagus import training
 from asparagus import settings
 from asparagus import utils
 from asparagus import data
 from asparagus import model
-from asparagus import training
 
 from .optimizer import get_optimizer
 from .scheduler import get_scheduler
@@ -38,9 +38,9 @@ class Trainer:
         Reference data container object providing training, validation and
         test data for the model training.
     model_calculator: torch.nn.Module, optional, default None
-        Model calculator to train matching training and validation
-        data in the reference data set. If not provided, the model
-        calculator will be initialized according to config input.
+        Model calculator to train matching model properties with the reference
+        data set. If not provided, the model calculator will be initialized
+        according to config input.
     trainer_restart: bool, optional, default False
         Restart the model training from state in config['model_directory']
     trainer_max_epochs: int, optional, default 10000
@@ -555,19 +555,14 @@ class Trainer:
                 if prop in ['energy', 'atomic_energies']:
                     properties_scaleable.append(prop)
 
-            # Get model property scaling
-            model_property_scaling = self.prepare_property_scaling(
+            # Get model energy scaling
+            training.set_property_scaling_estimation(
+                model_calculator=self.model_calculator,
                 data_loader=self.data_train,
                 properties=properties_scaleable,
-                energy_only=True)
-
-            # Set model property shift terms to the model calculator output
-            # module
-            self.model_calculator.set_property_scaling(
-                property_scaling=model_property_scaling,
                 set_shift_term=True,
-                set_scaling_factor=False)
-
+                set_scaling_factor=False,
+                )
 
         elif not skip_property_scaling:
 
@@ -576,16 +571,10 @@ class Trainer:
                 "Model property scaling parameter will be set.")
 
             # Get model property scaling
-            model_property_scaling = self.prepare_property_scaling(
+            training.set_property_scaling_estimation(
+                model_calculator=self.model_calculator,
                 data_loader=self.data_train,
                 properties=self.model_calculator.get_scaleable_properties())
-
-            # Set model property scaling parameter to the model calculator
-            # output module
-            self.model_calculator.set_property_scaling(
-                property_scaling=model_property_scaling,
-                set_shift_term=True,
-                set_scaling_factor=True)
 
         #############################################
         # # # Prepare Model Training and Metric # # #
@@ -621,6 +610,7 @@ class Trainer:
         if self.trainer_evaluate_testset:
             self.tester.test(
                 self.model_calculator,
+                model_conversion=self.model_conversion,
                 test_directory=self.filemanager.best_dir,
                 test_plot_correlation=True,
                 test_plot_histogram=True,
@@ -802,6 +792,7 @@ class Trainer:
                     if self.trainer_evaluate_testset:
                         self.tester.test(
                             self.model_calculator,
+                            model_conversion=self.model_conversion,
                             test_directory=self.filemanager.best_dir,
                             test_plot_correlation=True,
                             test_plot_histogram=True,
@@ -1193,374 +1184,3 @@ class Trainer:
 
         return metrics
 
-    def prepare_property_scaling(
-        self,
-        data_loader: data.DataLoader,
-        properties: List[str],
-        use_model_prediction: Optional[bool] = True,
-        guess_atomic_energies_shift: Optional[bool] = True,
-        energy_only: Optional[bool] = False,
-    ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
-        """
-        Compute model property scaling parameters and prepare respective
-        dictionaries.
-        
-        Parameters
-        ----------
-        data_loader: data.Dataloader
-            Reference data loader to provide reference system data
-        properties: list(str)
-            Properties list generally predicted by the output module
-            where the property scaling is usually applied.
-        use_model_prediction: bool, optional, default True
-            Use the current prediction by the model calculator of the model
-            properties to enhance the guess of the scaling parameter.
-            If not, predictions are expected to be zero.
-        guess_atomic_energies_shift: bool, optional, default True
-            In case atomic energies are not available by the reference data
-            set, which is normally the case, predict anyways from a guess of
-            the difference between total reference energy and predicted energy.
-        energy_only: bool, optional, default False
-            Compute model property scaling parameter only for directly energy
-            related properties such as 'enery' or 'atomic_energies'.
-
-        Returns
-        -------
-        dict(str, (list(float), dict(int, float))
-            Model property or atomic resolved scaling parameter [shift, scale]
-        
-        """
-        
-        # Check if scaling parameter for a requested property can be estimated
-        # from the available data
-        properties_available = []
-        for prop in properties:
-            # If requested, only regard energy related properties
-            if energy_only and prop not in ['energy', 'atomic_energies']:
-                continue
-            # Else continue property check
-            if (
-                prop in data_loader.data_properties 
-                and prop not in properties_available
-            ):
-                properties_available.append(prop)
-            elif (
-                prop == 'atomic_energies'
-                and guess_atomic_energies_shift
-                and 'energy' in data_loader.data_properties
-                and 'energy' not in properties_available
-            ):
-                properties_available.append('energy')
-
-        # Return empty result dictionary if no property scaling parameter guess
-        # can be computed
-        if not properties_available:
-            return {}
-
-        # If requested, predict just non-derived model property predictions 
-        # from the data loader systems to support properties
-        if use_model_prediction:
-
-            self.logger.info(
-                "Reference property data and model property prediction will "
-                + "be collected.\nThis might take a moment.")
-
-            # Compute and get model prediction and reference data
-            properties_reference, properties_prediction = (
-                self.get_model_prediction_and_reference(
-                    data_loader,
-                    self.model_calculator,
-                    properties_available,
-                    self.model_conversion)
-                )
-
-            # Get current property scaling parameter
-            model_scaling = self.model_calculator.get_property_scaling()
-
-        else:
-
-            self.logger.info(
-                "Reference property data will be collected.\n"
-                + "This might take a moment.")
-
-            # Compute and get model prediction and reference data
-            properties_reference = (
-                self.get_reference(
-                    data_loader,
-                    properties_available,
-                    self.model_conversion)
-                )
-            properties_prediction = {}
-            model_scaling = {}
-        
-        # Compute model property scaling parameters
-        properties_scaling = self.compute_property_scaling(
-            properties_reference,
-            properties_prediction,
-            model_scaling,
-            guess_atomic_energies_shift=guess_atomic_energies_shift)
-
-        return properties_scaling
-
-    def compute_property_scaling(
-        self,
-        properties_reference: Dict[str, np.ndarray],
-        properties_prediction: Dict[str, np.ndarray],
-        model_scaling: Dict[str, Union[List[float], Dict[int, List[float]]]],
-        guess_atomic_energies_shift: Optional[bool] = True,
-    ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
-        """
-        Compute guess of property scaling parameters either from the reference
-        data or even the deviation between reference and prediction.
-
-        Parameters
-        ----------
-        properties_reference: dict(str, numpy.ndarray)
-            Reference system and property data
-        properties_prediction: dict(str, numpy.ndarray)
-            Model calculator property prediction
-        model_scaling: dict(str, (list(float), dict(int, float))
-            Current Model property or atomic resolved scaling parameters
-        guess_atomic_energies_shift: bool, optional, default True
-            Predict atomic energies scaling parameter eventually from the
-            total system energy data.
-
-        Returns
-        -------
-        dict(str, (list(float), dict(int, float))
-            Model property or atomic resolved scaling parameter [shift, scale]
-
-        """
-
-        # Initialize property scaling parameters dictionary
-        properties_scaling = {}
-
-        # Iterate over property data
-        properties_system = ['atoms_number', 'atomic_numbers', 'sys_i']
-        for prop in properties_reference:
-            
-            # Skip system properties
-            if prop in properties_system:
-                continue
-            
-            # If model prediction is available scale with respect to the
-            # difference between reference and model prediction
-            if (
-                properties_prediction is not None
-                and prop in properties_prediction
-            ):
-
-                values = (
-                    properties_reference[prop]
-                    - properties_prediction[prop])
-
-            # Else only scale to reference data
-            else:
-
-                values = properties_reference[prop]
-
-            # Compute properties average and standard deviation, eventually
-            # even atom resolved
-            if values.shape[0] == properties_reference['sys_i'].shape[0]:
-
-                # Compute atom result properties average and standard
-                # deviation
-                properties_scaling[prop] = (
-                    data.compute_atomic_property_scaling(
-                        values, properties_reference['atomic_numbers']))
-
-            else:
-
-                # Compute system result properties average and standard
-                # deviation
-                properties_scaling[prop] = (
-                    data.compute_system_property_scaling(values))
-
-                # Special case: Atomic energies scaling guess
-                if guess_atomic_energies_shift and prop == 'energy':
-
-                    properties_scaling['atomic_energies'] = (
-                        data.compute_atomic_property_sum_scaling(
-                            values,
-                            properties_reference['atoms_number'],
-                            properties_reference['atomic_numbers'],
-                            properties_reference['sys_i'])
-                        )
-
-        # Combine with model property scaling parameters
-        for prop in model_scaling:
-            if prop in properties_scaling:
-                if utils.is_dictionary(properties_scaling[prop]):
-                    for ai in properties_scaling[prop]:
-                        properties_scaling[prop][ai][0] += (
-                            model_scaling[prop][ai][0])
-                        properties_scaling[prop][ai][1] *= (
-                            model_scaling[prop][ai][1])
-                else:
-                    properties_scaling[prop][0] += model_scaling[prop][0]
-                    properties_scaling[prop][1] *= model_scaling[prop][1]
-
-        return properties_scaling
-
-    def get_model_prediction_and_reference(
-        self,
-        data_loader: data.DataLoader,
-        model_calculator: model.BaseModel,
-        properties_available: List[str],
-        model_conversion: Dict[str, float]
-    ) -> (Dict[str, np.ndarray], Dict[str, np.ndarray]):
-        """
-        Compute and provide model prediction and reference data.
-        
-        Parameters
-        ----------
-        data_loader: data.Dataloader
-            Reference data loader to provide reference system data
-        model_calculator: model.BaseModel
-            Asparagus model calculator object
-        properties_available: list(str)
-            Properties list generally predicted by the output module
-            where the property scaling is usually applied.
-        model_conversion: dict(str, float)
-            Dictionary of model to data property unit conversion factors
-
-        Returns
-        -------
-        dict(str, numpy.ndarray)
-            Reference system and property data 
-        dict(str, numpy.ndarray)
-            Model property prediction
-
-        """
-        
-        # Prepare reference dictionary
-        properties_reference = {}
-        properties_system = ['atoms_number', 'atomic_numbers', 'sys_i']
-        for prop in properties_system:
-            properties_reference[prop] = []
-        for prop in properties_available:
-            properties_reference[prop] = []
-    
-        # Prepare prediction dictionary
-        properties_prediction = {}
-        for prop in properties_available:
-            properties_prediction[prop] = []
-        
-        # Loop over training batches
-        for ib, batch in enumerate(data_loader):
-
-            # Predict model properties from data batch
-            prediction = self.model_calculator(
-                batch, no_derivation=True)
-
-            # Append prediction to library
-            for prop in properties_available:
-                if prop in prediction:
-                    properties_prediction[prop].append(
-                        prediction[prop].cpu().detach())
-
-            # Append system information and reference properties
-            for prop in properties_system + properties_available:
-                properties_reference[prop].append(
-                    batch[prop].cpu().detach())
-
-        # Concatenate prediction and reference results
-        for prop in properties_available:
-            if ib:
-                properties_prediction[prop] = torch.cat(
-                    properties_prediction[prop]
-                    ).numpy()
-            else:
-                properties_prediction[prop] = (
-                    properties_prediction[prop][0].numpy())
-
-        for prop in properties_system + properties_available:
-            if ib:
-                if prop == 'sys_i':
-                    sys_i = []
-                    next_sys_i = 0
-                    for batch_sys_i in properties_reference[prop]:
-                        sys_i.append(batch_sys_i + next_sys_i)
-                        next_sys_i = sys_i[-1][-1] + 1
-                    properties_reference[prop] = torch.cat(sys_i).numpy()
-                else:
-                    properties_reference[prop] = torch.cat(
-                        properties_reference[prop]
-                        ).numpy()
-            else:
-                properties_reference[prop] = (
-                    properties_reference[prop][0].numpy())
-
-            # Apply reference to model property unit conversion factor
-            if prop in model_conversion:
-                properties_reference[prop] = (
-                    properties_reference[prop]/model_conversion[prop])
-
-        return properties_reference, properties_prediction
-
-    def get_reference(
-        self,
-        data_loader: data.DataLoader,
-        properties: List[str],
-        model_conversion: Dict[str, float]
-    ) -> (Dict[str, np.ndarray], Dict[str, np.ndarray]):
-        """
-        Provide reference data of properties.
-        
-        Parameters
-        ----------
-        data_loader: data.Dataloader
-            Reference data loader to provide reference system data
-        properties: list(str)
-            Properties list generally predicted by the output module
-            where the property scaling is usually applied.
-        model_conversion: dict(str, float)
-            Dictionary of model to data property unit conversion factors
-
-        Returns
-        -------
-        dict(str, numpy.ndarray)
-            Reference system and property data 
-
-        """
-        
-        # Prepare reference dictionary
-        properties_reference = {}
-        properties_system = ['atoms_number', 'atomic_numbers', 'sys_i']
-        for prop in properties_system:
-            properties_reference[prop] = []
-        for prop in properties_available:
-            properties_reference[prop] = []
-        
-        # Loop over training batches
-        for ib, batch in enumerate(data_loader):
-            
-            # Append system information and reference properties
-            for prop in properties_system + properties_available:
-                properties_reference[prop].append(
-                    batch[prop].cpu().detach())
-
-        # Concatenate reference results
-        for prop in properties_system + properties_available:
-            if ib:
-                if prop == 'sys_i':
-                    sys_i = []
-                    next_sys_i = 0
-                    for batch_sys_i in properties_reference[prop]:
-                        sys_i.append(batch_sys_i + next_sys_i)
-                        next_sys_i = sys_i[-1][-1] + 1
-                    properties_reference[prop] = torch.cat(sys_i).numpy()
-                else:
-                    properties_reference[prop] = torch.cat(
-                        properties_reference[prop]
-                        ).numpy()/conversion
-            else:
-                properties_reference[prop] = (
-                    properties_reference[prop].numpy()/conversion)
-        
-            # Apply reference to model property unit conversion factor
-            if prop in model_conversion:
-                properties_reference[prop] = (
-                    properties_reference[prop]/model_conversion[prop])
-            
-        return properties_reference
