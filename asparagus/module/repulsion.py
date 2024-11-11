@@ -119,18 +119,18 @@ class ZBL_repulsion(torch.nn.Module):
             unit_energy = settings._default_units.get('energy')
             unit_positions = settings._default_units.get('positions')
             factor_energy, _ = utils.check_units(unit_energy, 'Hartree')
-            factor_positions, _ = utils.check_units('Ang', unit_positions)
+            factor_positions, _ = utils.check_units('Bohr', unit_positions)
         else:
             factor_energy, _ = utils.check_units(
                 unit_properties.get('energy'), 'Hartree')
             factor_positions, _ = utils.check_units(
-                'Ang', unit_properties.get('positions'))
+                'Bohr', unit_properties.get('positions'))
 
         # Convert
         # Distances: model to Bohr
         # Energies: Hartree to model
         self.register_buffer(
-            "distances_model2Ang", 
+            "distances_model2Bohr", 
             torch.tensor([factor_positions], dtype=self.dtype))
         self.register_buffer(
             "energies_Hatree2model", 
@@ -176,7 +176,7 @@ class ZBL_repulsion(torch.nn.Module):
         """
         
         # Convert distances from model unit to Angstrom
-        distances_ang = distances*self.distances_model2Ang
+        distances_ang = distances*self.distances_model2Bohr
         
         # Compute atomic number dependent function
         za = atomic_numbers**torch.abs(self.a_exponent)
