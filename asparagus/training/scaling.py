@@ -284,9 +284,6 @@ def get_model_prediction_and_reference_properties(
             properties_reference[prop].append(
                 batch[prop].cpu().detach())
 
-        if ib > 5:
-            break
-
     # Concatenate prediction and reference results
     for prop, item in properties_prediction.items():
         if ib:
