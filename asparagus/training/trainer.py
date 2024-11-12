@@ -496,6 +496,10 @@ class Trainer:
                 else:
                     best_loss = latest_checkpoint['best_loss']
 
+        # Skip if max epochs are already reached
+        if trainer_epoch_start > self.trainer_max_epochs:
+            return
+
         ################################
         # # # Prepare Model Cutoff # # #
         ################################
@@ -601,10 +605,6 @@ class Trainer:
         ##########################
         # # # Start Training # # #
         ##########################
-
-        # Skip if max epochs are already reached
-        if trainer_epoch_start > self.trainer_max_epochs:
-            return
 
         # Initial evaluation of the test set if requested
         if self.trainer_evaluate_testset:

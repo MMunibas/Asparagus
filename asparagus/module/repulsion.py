@@ -130,16 +130,16 @@ class ZBL_repulsion(torch.nn.Module):
         # Distances: model to Bohr
         # Energies: Hartree to model
         self.register_buffer(
-            "distances_model2Bohr", 
+            "distances_model2Bohr",
             torch.tensor([factor_positions], dtype=self.dtype))
         self.register_buffer(
-            "energies_Hatree2model", 
+            "energies_Hatree2model",
             torch.tensor([factor_energy], dtype=self.dtype))
 
-        # Convert e**2/(4*pi*epsilon) from 1/eV/Ang to model units
-        ke_ase = 1./(4.*np.pi*5.526349406e-3)
+        # Convert e**2/(4*pi*epsilon) = 1 from 1/Hartree/Bohr to model units
+        ke_au = 1.
         ke = torch.tensor(
-            [ke_ase/factor_energy/factor_positions],
+            [ke_au*self.energies_Hatree2model/self.distances_model2Bohr],
             device=self.device, dtype=self.dtype)
         self.register_buffer('ke', ke)
 
@@ -194,7 +194,7 @@ class ZBL_repulsion(torch.nn.Module):
 
         # Compute nuclear repulsion potential
         repulsion = (
-            self.ke
+            0.5*self.ke
             * atomic_numbers[idx_i]*atomic_numbers[idx_j]/distances_bohr
             * phi
             * cutoffs)

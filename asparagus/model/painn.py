@@ -408,28 +408,6 @@ class Model_PaiNN(model.BaseModel):
 
         return model_properties
 
-    #def set_property_scaling(
-        #self,
-        #scaling_parameter: Optional[Dict[str, List[float]]] = None,
-        #atomic_energies_shifts: Optional[Dict[Union[int, str], float]] = None
-    #):
-        #"""
-        #Prepare property scaling factor and shift terms and set atomic type
-        #energies shift.
-
-        #"""
-
-        ## Set property scaling factors and shift terms
-        #if scaling_parameter is not None:
-            #self.output_module.set_property_scaling(scaling_parameter)
-
-        ## Set atomic type energies shift
-        #if atomic_energies_shifts is not None:
-            #self.output_module.set_atomic_energies_shift(
-                #atomic_energies_shifts)
-
-        #return
-
     def set_model_unit_properties(
         self,
         model_unit_properties: Dict[str, str],
