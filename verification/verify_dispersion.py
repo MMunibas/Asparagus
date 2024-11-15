@@ -26,6 +26,9 @@ class D3_dispersion(torch.nn.Module):
     of density functional dispersion correction (DFT-D) for the 94 elements
     H-Pu." The Journal of Chemical Physics 132, 15 (2010): 154104.
 
+    Update of the implementation according with respect to the tad-dftd3 module
+    on git: https://github.com/dftd3/tad-dftd3 (15.11.2024)
+
     Parameters
     ----------
     cutoff: float
