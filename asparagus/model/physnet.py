@@ -51,7 +51,7 @@ class Model_PhysNet(model.BaseModel):
         prediction.
     model_dispersion: bool, optional, default True
         Use Grimme's D3 dispersion model for energy prediction.
-    model_dispersion_trainable: bool, optional, default True
+    model_dispersion_trainable: bool, optional, default False
         If True, empirical parameter in the D3 dispersion model are
         trainable. If False, empirical parameter are fixed to default
     model_num_threads: int, optional, default None
@@ -79,7 +79,7 @@ class Model_PhysNet(model.BaseModel):
         'model_repulsion_trainable':    True,
         'model_electrostatic':          None,
         'model_dispersion':             True,
-        'model_dispersion_trainable':   True,
+        'model_dispersion_trainable':   False,
         'model_num_threads':            None,
         }
 
