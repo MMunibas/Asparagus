@@ -204,7 +204,7 @@ class Trainer:
         trainer_debug_mode: Optional[bool] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize Model Calculator Trainer.
@@ -614,7 +614,8 @@ class Trainer:
                 test_directory=self.filemanager.best_dir,
                 test_plot_correlation=True,
                 test_plot_histogram=True,
-                test_plot_residual=True)
+                test_plot_residual=True,
+                **kwargs)
 
         # Loop over epochs
         for epoch in torch.arange(
@@ -796,7 +797,8 @@ class Trainer:
                             test_directory=self.filemanager.best_dir,
                             test_plot_correlation=True,
                             test_plot_histogram=True,
-                            test_plot_residual=True)
+                            test_plot_residual=True,
+                            **kwargs)
 
                     # Add process to training summary writer
                     if self.trainer_summary_writer:

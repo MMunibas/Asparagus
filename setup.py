@@ -6,30 +6,31 @@ with open('README.md','r') as fh:
 
 setup(
     name='Asparagus',
-    version='0.3.1',
+    version='0.4.0',
     description='Function Bundle from Sampling, Training to Application of NN Potentials',
     author=(
         'L.I.Vazquez-Salazar, Silvan Kaeser, '
         + 'Valerii Andreichev and Kai Toepfer'),
     long_description=long_description,
     author_email='luisitza.vazquezsalazar@unibas.ch',
-    url='https://github.com/LIVazquezS/Asparagus/tree/main',
+    url='https://github.com/MMunibas/Asparagus/releases',
     license='MIT',
     packages=find_packages(include=['asparagus']),
     include_package_data=True,
     install_requires=[
-        'ase', 
+        'ase>=3.21.0',
         'numpy',
         'scipy',
         'ctype',
-        'torch',
+        'torch>2.1',
         'torchvision',
         'torchaudio',
-        'torch-ema',
+        'torch-ema>=0.3',
         'tensorboard',
         'pandas',
         'h5py',
-        #'xtb',
-        ]
+        'matplotlib',
+        'seaborn',
+        'pytest']
     #TODO: Add more dependencies and option to be read from a file
 )

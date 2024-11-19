@@ -16,6 +16,7 @@ __all__ = ["D3_dispersion"]
 #======================================
 
 
+
 class D3_dispersion(torch.nn.Module):
     """
     Torch implementation of Grimme's D3 method (only Becke-Johnson damping is
@@ -24,6 +25,9 @@ class D3_dispersion(torch.nn.Module):
     Grimme, Stefan, et al. "A consistent and accurate ab initio parametrization
     of density functional dispersion correction (DFT-D) for the 94 elements
     H-Pu." The Journal of Chemical Physics 132, 15 (2010): 154104.
+
+    Update of the implementation according with respect to the tad-dftd3 module
+    on git: https://github.com/dftd3/tad-dftd3 (15.11.2024)
 
     Parameters
     ----------
@@ -38,8 +42,19 @@ class D3_dispersion(torch.nn.Module):
     dtype: dtype object
         Model variables data type
     unit_properties: dict, optional, default {}
-        Dictionary with the units of the model properties to initialize correct
-        conversion factors.
+        Dictionary with the units of the model properties to initialize
+        correct conversion factors.
+    truncation: str, optional, default 'force'
+        Truncation method of the Dispersion potential at the cutoff range:
+            None, 'None':
+                No Dispersion potential shift applied
+            'potential':
+                Apply shifted Dispersion potential method
+                    V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
+            'force', 'forces':
+                Apply shifted Dispersion force method
+                    V_shifted(r) = V_Dispersion(r) - V_Dispersion(r_cutoff)
+                        - (dV_Dispersion/dr)|r_cutoff  * (r - r_cutoff)
     d3_s6: float, optional, default 1.0000
         d3_s6 dispersion parameter
     d3_s8: float, optional, default 0.9171
@@ -59,6 +74,7 @@ class D3_dispersion(torch.nn.Module):
         device: str,
         dtype: 'dtype',
         unit_properties: Optional[Dict[str, str]] = None,
+        truncation: Optional[str] = 'force',
         d3_s6: Optional[float] = None,
         d3_s8: Optional[float] = None,
         d3_a1: Optional[float] = None,
@@ -67,7 +83,7 @@ class D3_dispersion(torch.nn.Module):
     ):
         """
         Initialize Grimme D3 dispersion model.
-        
+
         """
 
         super(D3_dispersion, self).__init__()
@@ -80,23 +96,35 @@ class D3_dispersion(torch.nn.Module):
         self.device = device
 
         # Load tables with reference values
-        self.d3_c6ab = torch.from_numpy(
-            np.load(os.path.join(package_directory, "grimme_d3", "c6ab.npy"))
-            ).to(dtype).to(device)
-        self.d3_r0ab = torch.from_numpy(
-            np.load(os.path.join(package_directory, "grimme_d3", "r0ab.npy"))
-            ).to(dtype).to(device)
         self.d3_rcov = torch.from_numpy(
             np.load(os.path.join(package_directory, "grimme_d3", "rcov.npy"))
+            ).to(dtype).to(device)
+        self.d3_rcn = torch.from_numpy(
+            np.genfromtxt(
+                os.path.join(package_directory, "grimme_d3", "refcn.csv"),
+                delimiter=',')
+            ).to(dtype).to(device)
+        self.d3_rc6 = torch.from_numpy(
+            np.load(os.path.join(package_directory, "grimme_d3", "rc6.npy"))
             ).to(dtype).to(device)
         self.d3_r2r4 = torch.from_numpy(
             np.load(os.path.join(package_directory, "grimme_d3", "r2r4.npy"))
             ).to(dtype).to(device)
-        
-        # Maximum number of coordination complexes
-        self.d3_maxc = 5
 
-        # Initialize global dispersion correction parameters 
+        # Assign truncation method
+        if truncation is None or truncation.lower() == 'none':
+            self.potential_fn = self.dispersion_fn
+        elif truncation.lower() == 'potential':
+            self.potential_fn = self.dispersion_sp_fn
+        elif truncation.lower() in ['force', 'forces']:
+            self.potential_fn = self.dispersion_sf_fn
+        else:
+            raise SyntaxError(
+                "Truncation method of the Dispersion potential "
+                + f"'{truncation:}' is unknown!\n"
+                + "Available are 'None', 'potential', 'force'.")
+
+        # Initialize global dispersion correction parameters
         # (default values for HF)
         if d3_s6 is None:
             d3_s6 = 1.0000
@@ -106,7 +134,7 @@ class D3_dispersion(torch.nn.Module):
             d3_a1 = 0.3385
         if d3_a2 is None:
             d3_a2 = 2.8830
-        
+
         if trainable:
             self.d3_s6 = torch.nn.Parameter(
                 torch.tensor([d3_s6], device=device, dtype=dtype))
@@ -129,28 +157,29 @@ class D3_dispersion(torch.nn.Module):
         self.d3_k2 = torch.tensor([4./3.], device=device, dtype=dtype)
         self.d3_k3 = torch.tensor([-4.000], device=device, dtype=dtype)
 
+        # Assign cutoff radii
+        self.cutoff = cutoff
+        self.cuton = cuton
+
         # Unit conversion factors
         self.set_unit_properties(unit_properties)
 
         # Prepare interaction switch-off range
-        self.cutoff = (
-            torch.tensor([cutoff], device=device, dtype=dtype)
-            * self.distances_model2Bohr)
-        if cuton is None or cuton == cutoff:
-            self.cuton = None
-            self.switchoff_range = None
-            self.use_switch = False
-        else:
-            self.cuton = (
-                torch.tensor([cuton], device=device, dtype=dtype)
-                * self.distances_model2Bohr)
-            self.switchoff_range = (
-                torch.tensor([cutoff - cuton], device=device, dtype=dtype)
-                * self.distances_model2Bohr)
-            self.use_switch = True
+        self.set_switch_of_range(cutoff, cuton)
+
+        # Auxiliary parameter
+        self.d3_rcn_max = torch.max(self.d3_rcn, dim=-1, keepdim=True)[0]
+        self.zero_dtype = torch.tensor(0.0, device=device, dtype=dtype)
+        self.zero_double = torch.tensor(
+            0.0, device=device, dtype=torch.float64)
+        self.small_double = torch.tensor(
+            1e-300, device=device, dtype=torch.float64)
+        self.one_dtype = torch.tensor(1.0, device=device, dtype=dtype)
+        self.max_dtype = torch.tensor(
+            torch.finfo(dtype).max, device=device, dtype=dtype)
 
         return
-        
+
     def __str__(self):
         return "D3 Dispersion"
 
@@ -169,15 +198,15 @@ class D3_dispersion(torch.nn.Module):
         Set unit conversion factors for compatibility between requested
         property units and applied property units (for physical constants)
         of the module.
-        
+
         Parameters
         ----------
         unit_properties: dict
-            Dictionary with the units of the model properties to initialize 
+            Dictionary with the units of the model properties to initialize
             correct conversion factors.
-        
+
         """
-        
+
         # Get conversion factors
         if unit_properties is None:
             unit_energy = settings._default_units.get('energy')
@@ -194,28 +223,60 @@ class D3_dispersion(torch.nn.Module):
         # Distances: model to Bohr
         # Energies: Hartree to model
         self.register_buffer(
-            "distances_model2Bohr", 
+            "distances_model2Bohr",
             torch.tensor(
                 [factor_positions], device=self.device, dtype=self.dtype))
         self.register_buffer(
-            "energies_Hatree2model", 
+            "energies_Hatree2model",
             torch.tensor(
                 [factor_energy], device=self.device, dtype=self.dtype))
 
+        # Update interaction switch-off range units
+        self.set_switch_of_range(self.cutoff, self.cuton)
+
         return
 
-    def _smootherstep(
+    def set_switch_of_range(
+        self,
+        cutoff: float,
+        cuton: float,
+    ):
+        """
+        Prepare switch-off parameters
+
+        """
+
+        self.cutoff = (
+            torch.tensor([cutoff], device=self.device, dtype=self.dtype)
+            * self.distances_model2Bohr)
+        if cuton is None or cuton == cutoff:
+            self.cuton = None
+            self.switchoff_range = None
+            self.use_switch = False
+        else:
+            self.cuton = (
+                torch.tensor([cuton], device=self.device, dtype=self.dtype)
+                * self.distances_model2Bohr)
+            self.switchoff_range = (
+                torch.tensor(
+                    [cutoff - cuton], device=self.device, dtype=self.dtype)
+                * self.distances_model2Bohr)
+            self.use_switch = True
+
+        return
+
+    def switch_fn(
         self,
         distances: torch.Tensor
     ) -> torch.Tensor:
         """
-        Computes a smooth step from 1 to 0 in the range from 'cuton to 
-        'cutoff'.
-        
+        Computes a smooth switch factors from 1 to 0 in the range from 'cuton'
+        to 'cutoff'.
+
         """
-        
+
         x = (self.cutoff - distances) / self.switchoff_range
-        
+
         return torch.where(
             distances < self.cuton,
             torch.ones_like(x),
@@ -226,85 +287,222 @@ class D3_dispersion(torch.nn.Module):
                 )
             )
 
-    def _ncoord(
+    def get_cn(
         self,
         atomic_numbers: torch.Tensor,
         atomic_numbers_i: torch.Tensor,
-        atomic_numbers_j: torch.Tensor, 
-        distances: torch.Tensor, 
+        atomic_numbers_j: torch.Tensor,
+        distances: torch.Tensor,
+        switch_off: torch.Tensor,
         idx_i: torch.Tensor,
         idx_j: torch.Tensor
     ) -> torch.Tensor:
         """
         Compute coordination numbers by adding an inverse damping function.
-        
+
         """
-        
-        rco = (
-            torch.gather(self.d3_rcov, 0, atomic_numbers_i) 
+
+        # Compute atom pairs covalent radii
+        rcov_ij = (
+            torch.gather(self.d3_rcov, 0, atomic_numbers_i)
             + torch.gather(self.d3_rcov, 0, atomic_numbers_j))
 
-        damp = 1.0/(1.0 + torch.exp(-self.d3_k1 * (rco/distances - 1.0)))
+        cn_ij = (
+            1.0/(1.0 + torch.exp(-self.d3_k1 * (rcov_ij/distances - 1.0))))
         if self.use_switch:
-            damp = damp*self._smootherstep(distances)
+            cn_ij = cn_ij*switch_off
 
         return utils.scatter_sum(
-            damp, idx_i, dim=0, shape=atomic_numbers.shape)
+            cn_ij, idx_i, dim=0, shape=atomic_numbers.shape)
 
-    def _getc6(
+    def get_weights(
         self,
-        atomic_pair_numbers: torch.Tensor, 
-        nci: torch.Tensor,  
-        ncj: torch.Tensor
+        atomic_numbers: torch.Tensor,
+        cn: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Interpolate the c6 coefficient.
+        Compute dispersion weights
 
         """
-        
-        # Gather the relevant table entries
-        c6ab_ = utils.gather_nd(self.d3_c6ab, atomic_pair_numbers)
-        
-        # Calculate c6 coefficients
-        dtype_max = torch.finfo(self.dtype).max
-        c6mem = -dtype_max*torch.ones_like(nci, device=self.device)
-        r_save = dtype_max*torch.ones_like(nci, device=self.device)
 
-        rsum = torch.zeros_like(nci, device=self.device)
-        csum = torch.zeros_like(nci, device=self.device)
-        
-        for i in range(self.d3_maxc):
-            for j in range(self.d3_maxc):
-                
-                cn0 = c6ab_[:, i, j, 0]
-                cn1 = c6ab_[:, i, j, 1]
-                cn2 = c6ab_[:, i, j, 2]
+        # Get reference atomic coordination numbers of atom pairs ij
+        rcn = self.d3_rcn[atomic_numbers]
 
-                r = (cn1 - nci)**2 + (cn2 - ncj)**2
-                c6mem = torch.where(r < r_save, cn0, c6mem)
-                r_save = torch.where(r < r_save, r, r_save)
-                tmp1 = torch.exp(self.d3_k3 * r)
-                rsum = rsum + torch.where(
-                    cn0 > 0.0,
-                    tmp1,
-                    torch.zeros_like(tmp1, device=self.device))
-                csum = csum + torch.where(
-                    cn0 > 0.0,
-                    tmp1*cn0,
-                    torch.zeros_like(tmp1, device=self.device))
+        # Selection of non-zero reference coordination numbers
+        mask_rcn = rcn >= 0
 
-        c6 = torch.where(rsum > 0.0, csum/rsum, c6mem)
+        # Compute deviation between reference coordination number and actual
+        # coordination number
+        dcn = (rcn - cn.unsqueeze(-1)).type(torch.double)
+
+        # Compute and normalize coordination number Gaussian weights in double
+        # precision and convert back to dtype
+        gaussian_weights = torch.where(
+            mask_rcn,
+            torch.exp(self.d3_k3*dcn**2),
+            self.zero_double)
+        norm = torch.where(
+            mask_rcn,
+            torch.sum(gaussian_weights, dim=-1, keepdim=True),
+            self.small_double)
+        mask_norm = norm == 0
+        norm = torch.where(
+            mask_norm,
+            self.small_double,
+            norm)
+        gaussian_weights = (gaussian_weights/norm).type(self.dtype)
+
+        # Prevent exceptional values in the gaussian weights, either because
+        # the norm was zero or the weight is to large.
+        exceptional = torch.logical_or(
+            mask_norm, gaussian_weights > self.max_dtype)
+        if torch.any(exceptional):
+            rcn_max = self.d3_rcn_max[atomic_numbers]
+            gaussian_weights = torch.where(
+                exceptional,
+                torch.where(rcn == rcn_max, self.one_dtype, self.zero_dtype),
+                gaussian_weights)
+        gaussian_weights = torch.where(
+            mask_rcn,
+            gaussian_weights,
+            self.zero_dtype)
+
+        return gaussian_weights
+
+    def get_c6(
+        self,
+        atomic_numbers_i: torch.Tensor,
+        atomic_numbers_j: torch.Tensor,
+        weigths: torch.Tensor,
+        idx_i: torch.Tensor,
+        idx_j: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute atomic c6 dispersion coefficients
+
+        """
+
+        # Collect reference c6 dispersion coefficients of atom pairs ij
+        rc6 = self.d3_rc6[atomic_numbers_i, atomic_numbers_j]
+
+        # Collect atomic weights of atom pairs ij
+        weights_i = weigths[idx_i]
+        weights_j = weigths[idx_j]
+        weights_ij = weights_i.unsqueeze(-1)*weights_j.unsqueeze(-2)
+
+        # Compute atomic c6 dispersion coefficients
+        c6 = torch.sum(torch.sum(torch.mul(weights_ij, rc6), dim=-1), dim=-1)
+
         return c6
+
+    def dispersion_fn(
+        self,
+        distances: torch.Tensor,
+        distances6: torch.Tensor,
+        distances8: torch.Tensor,
+        switch_off: torch.Tensor,
+        c6: torch.Tensor,
+        c8: torch.Tensor,
+        fct6: torch.Tensor,
+        fct8: torch.Tensor,
+        damp_c6: torch.Tensor,
+        damp_c8: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute atomic D3 dispersion energy
+
+        """
+
+        # Compute atomic dispersion energy contributions
+        e6 = -0.5*self.d3_s6*c6*damp_c6
+        e8 = -0.5*self.d3_s8*c8*damp_c8
+
+        # Apply switch-off function
+        edisp = switch_off*(e6 + e8)
+
+        return edisp
+
+    def dispersion_sp_fn(
+        self,
+        distances: torch.Tensor,
+        distances6: torch.Tensor,
+        distances8: torch.Tensor,
+        switch_off: torch.Tensor,
+        c6: torch.Tensor,
+        c8: torch.Tensor,
+        fct6: torch.Tensor,
+        fct8: torch.Tensor,
+        damp_c6: torch.Tensor,
+        damp_c8: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute shifted potential atomic D3 dispersion energy
+
+        """
+
+        # Compute all required powers of the cutoff distance
+        cutoff2 = self.cutoff**2
+        cutoff6 = cutoff2**3
+        cutoff8 = cutoff6*cutoff2
+        denominator6 = cutoff6 + fct6
+        denominator8 = cutoff8 + fct8
+
+        # Compute force shifted atomic dispersion energy contributions
+        e6 = -0.5*self.d3_s6*c6*(damp_c6 - 1.0/denominator6)
+        e8 = -0.5*self.d3_s8*c8*(damp_c8 - 1.0/denominator8)
+
+        # Apply switch-off function
+        edisp = switch_off*(e6 + e8)
+
+        return edisp
+
+    def dispersion_sf_fn(
+        self,
+        distances: torch.Tensor,
+        distances6: torch.Tensor,
+        distances8: torch.Tensor,
+        switch_off: torch.Tensor,
+        c6: torch.Tensor,
+        c8: torch.Tensor,
+        fct6: torch.Tensor,
+        fct8: torch.Tensor,
+        damp_c6: torch.Tensor,
+        damp_c8: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute shifted force  atomic D3 dispersion energy
+
+        """
+
+        # Compute all required powers of the cutoff distance
+        cutoff2 = self.cutoff**2
+        cutoff6 = cutoff2**3
+        cutoff8 = cutoff6*cutoff2
+        denominator6 = cutoff6 + fct6
+        denominator8 = cutoff8 + fct8
+
+        # Compute force shifted atomic dispersion energy contributions
+        e6 = -0.5*self.d3_s6*c6*(
+            damp_c6 - 1.0/denominator6
+            + 6.0*cutoff6/denominator6**2*(distances/self.cutoff - 1.0))
+        e8 = -0.5*self.d3_s8*c8*(
+            damp_c8 - 1.0/denominator8
+            + 8.0*cutoff8/denominator8**2*(distances/self.cutoff - 1.0))
+
+        # Apply switch-off function
+        edisp = switch_off*(e6 + e8)
+
+        return edisp
 
     def forward(
         self,
-        atomic_numbers: torch.Tensor, 
-        distances: torch.Tensor, 
-        idx_i: torch.Tensor, 
-        idx_j: torch.Tensor, 
+        atomic_numbers: torch.Tensor,
+        distances: torch.Tensor,
+        idx_i: torch.Tensor,
+        idx_j: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Compute Grimme's D3 dispersion energy in Hartree with atom pair 
+        Compute Grimme's D3 dispersion energy in Hartree with atom pair
         distances in Bohr.
 
         Parameters
@@ -322,72 +520,80 @@ class D3_dispersion(torch.nn.Module):
         -------
         torch.Tensor
             Dispersion atom energy contribution
-        
+
         """
-        
+
         # Convert distances from model unit to Bohr
         distances_d3 = distances*self.distances_model2Bohr
 
-        # Compute all necessary quantities
-        atomic_numbers_i = atomic_numbers[idx_i]
-        atomic_numbers_j = atomic_numbers[idx_j]
-        atomic_pair_numbers = torch.stack(
-            [atomic_numbers_i, atomic_numbers_j], axis=1)
+        # Compute switch-off function
+        if self.use_switch:
+            switch_off = self.switch_fn(distances_d3)
+        else:
+            switch_off = torch.where(
+                distances_d3 < self.cutoff,
+                torch.ones_like(distances_d3),
+                torch.zeros_like(distances_d3),
+            )
 
-        # Compute coordination numbers
-        nc = self._ncoord(
+        # Gather atomic numbers of atom pairs ij
+        atomic_numbers_i = torch.gather(atomic_numbers, 0, idx_i)
+        atomic_numbers_j = torch.gather(atomic_numbers, 0, idx_j)
+
+        # Compute coordination numbers and of atom pairs ij
+        cn = self.get_cn(
             atomic_numbers,
             atomic_numbers_i,
             atomic_numbers_j,
             distances_d3,
+            switch_off,
             idx_i,
             idx_j)
-        nci = torch.gather(nc, 0, idx_i)
-        ncj = torch.gather(nc, 0, idx_j)
-        
-        # Compute C6 and C8 coefficients
-        c6 = self._getc6(atomic_pair_numbers, nci, ncj)
-        c8 = (
-            3.0*c6
-            *torch.gather(self.d3_r2r4, 0, atomic_numbers_i)
-            *torch.gather(self.d3_r2r4, 0, atomic_numbers_j))
 
-        # Compute all required powers of the distance
+        # Compute atomic weights
+        weights = self.get_weights(
+            atomic_numbers,
+            cn)
+
+        # Compute atomic C6 and C8 coefficients
+        c6 = self.get_c6(
+            atomic_numbers_i,
+            atomic_numbers_j,
+            weights,
+            idx_i,
+            idx_j)
+        qq = (
+            3.0
+            * torch.gather(self.d3_r2r4, 0, atomic_numbers_i)
+            * torch.gather(self.d3_r2r4, 0, atomic_numbers_j))
+        c8 = qq*c6
+
+        # Compute the powers of the atom pair distances
         distances2 = distances_d3**2
         distances6 = distances2**3
         distances8 = distances6*distances2
 
-        # Becke-Johnson damping only, because
-        # zero-damping introduces spurious repulsion and is therefore not 
-        # implemented.
-        tmp = self.d3_a1*torch.sqrt(c8/c6) + self.d3_a2
-        tmp2 = tmp**2
-        tmp6 = tmp2**3
-        tmp8 = tmp6*tmp2
-        
-        cut2 = self.cutoff**2
-        cut6 = cut2**3
-        cut8 = cut6*cut2
-        
-        cut6tmp6 = cut6 + tmp6
-        cut8tmp8 = cut8 + tmp8
-        
-        # Compute dispersion energy
-        e6 = (
-            1.0/(distances6 + tmp6) - 1.0/cut6tmp6 
-            + 6.0*cut6/cut6tmp6**2*(distances_d3/self.cutoff - 1.0))
-        e8 = (
-            1.0/(distances8 + tmp8) - 1.0/cut8tmp8 
-            + 8.0*cut8/cut8tmp8**2*(distances_d3/self.cutoff - 1.0))
+        # Apply rational Becke-Johnson damping.
+        fct = self.d3_a1*torch.sqrt(qq) + self.d3_a2
+        fct2 = fct**2
+        fct6 = fct2**3
+        fct8 = fct6*fct2
+        damp_c6 = 1.0/(distances6 + fct6)
+        damp_c8 = 1.0/(distances8 + fct8)
 
-        e6 = torch.where(distances_d3 < self.cutoff, e6, torch.zeros_like(e6))
-        e8 = torch.where(distances_d3 < self.cutoff, e8, torch.zeros_like(e8))
+        # Compute atomic dispersion energy contributions
+        Edisp = self.potential_fn(
+            distances_d3,
+            distances6,
+            distances8,
+            switch_off,
+            c6,
+            c8,
+            fct6,
+            fct8,
+            damp_c6,
+            damp_c8)
 
-        e6 = -0.5*self.d3_s6*c6*e6
-        e8 = -0.5*self.d3_s8*c8*e8
-
-        # Summarize and convert dispersion energy
-        Edisp = self.energies_Hatree2model*utils.scatter_sum(
-            e6 + e8, idx_i, dim=0, shape=atomic_numbers.shape)
-
-        return Edisp
+        # Return system dispersion energies and convert to model energy unit
+        return self.energies_Hatree2model*utils.scatter_sum(
+            Edisp, idx_i, dim=0, shape=atomic_numbers.shape)

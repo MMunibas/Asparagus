@@ -282,6 +282,7 @@ class Model_PaiNN(model.BaseModel):
                 self.device,
                 self.dtype,
                 unit_properties=self.model_unit_properties,
+                truncation='force',
                 d3_s6=d3_s6,
                 d3_s8=d3_s8,
                 d3_a1=d3_a1,

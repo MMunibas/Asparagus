@@ -422,7 +422,6 @@ class D3_dispersion(torch.nn.Module):
         
         return edisp
 
-
     def dispersion_sp_fn(
         self,
         distances: torch.Tensor,

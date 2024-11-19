@@ -241,7 +241,7 @@ class Tester:
         test_plot_correlation: Optional[bool] = True,
         test_plot_histogram: Optional[bool] = False,
         test_plot_residual: Optional[bool] = False,
-        test_plot_format: Optional[str] = 'pdf',
+        test_plot_format: Optional[str] = 'png',
         test_plot_dpi: Optional[int] = 300,
         test_save_csv: Optional[bool] = False,
         test_csv_file: Optional[str] = 'model_prediction.csv',
@@ -277,9 +277,9 @@ class Tester:
         test_plot_residual: bool, optional, default False
             Show evaluation in residual plots.
             (x-axis: reference property; y-axis: prediction error).
-        test_plot_format: str, optional, default 'pdf'
+        test_plot_format: str, optional, default 'png'
             Plot figure format (for options see matplotlib.pyplot.savefig()).
-        test_plot_format: int, optional, default 300
+        test_plot_dpi: int, optional, default 300
             Plot figure dpi.
         test_save_csv: bool, optional, default False
             Save all model prediction results in a csv file.

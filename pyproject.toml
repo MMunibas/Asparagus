@@ -14,10 +14,10 @@ dependencies = [
         'numpy',
         'scipy',
         'ctype',
-        'torch>2.0',
+        'torch>2.1',
         'torchvision',
         'torchaudio',
-        'torch-ema>=0.3',
+        'torch-ema',
         'tensorboard',
         'pandas',
         'h5py',
@@ -25,5 +25,5 @@ dependencies = [
         'seaborn',
         'pytest']
 [project.urls]
-homepage = "http://github.com/LIVazquez/Asparagus"
+homepage = "https://github.com/MMunibas/Asparagus/releases"
 documentation = "http://Asparagus-bundle.readthedocs.io/en/latest/"
