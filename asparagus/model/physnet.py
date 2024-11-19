@@ -42,7 +42,12 @@ class Model_PhysNet(model.BaseModel):
         Atom interaction cutoff switch range to switch of interaction to zero.
         If 'model_cuton' is defined, this input will be ignored.
     model_repulsion: bool, optional, default False
-        Use close-range atom repulsion model.
+        Use close-range nuclear repulsion model.
+    model_repulsion_cutoff: float, optional, default 1.0
+        Nuclear repulsion model cutoff range.
+    model_repulsion_cuton: float, optional, default 0.0
+        Nuclear repulsion model inner cutoff (cuton) radii to start
+        switch-off function.
     model_repulsion_trainable: bool, optional, default True
         If True, repulsion model parameter are trainable. Else, default
         parameter values are fix.
@@ -76,6 +81,8 @@ class Model_PhysNet(model.BaseModel):
         'model_cuton':                  None,
         'model_switch_range':           2.0,
         'model_repulsion':              False,
+        'model_repulsion_cutoff':       1.0,
+        'model_repulsion_cuton':        0.0,
         'model_repulsion_trainable':    True,
         'model_electrostatic':          None,
         'model_dispersion':             True,
@@ -91,6 +98,8 @@ class Model_PhysNet(model.BaseModel):
         'model_cuton':                  [utils.is_numeric, utils.is_None],
         'model_switch_range':           [utils.is_numeric],
         'model_repulsion':              [utils.is_bool],
+        'model_repulsion_cutoff':       [utils.is_numeric],
+        'model_repulsion_cuton':        [utils.is_numeric, utils.is_None],
         'model_repulsion_trainable':    [utils.is_bool],
         'model_electrostatic':          [utils.is_bool, utils.is_None],
         'model_dispersion':             [utils.is_bool],
@@ -124,6 +133,8 @@ class Model_PhysNet(model.BaseModel):
         model_cuton: Optional[float] = None,
         model_switch_range: Optional[float] = None,
         model_repulsion: Optional[bool] = None,
+        model_repulsion_cutoff: Optional[float] = None,
+        model_repulsion_cuton: Optional[float] = None,
         model_repulsion_trainable: Optional[bool] = None,
         model_electrostatic: Optional[bool] = None,
         model_dispersion: Optional[bool] = None,
@@ -256,8 +267,19 @@ class Model_PhysNet(model.BaseModel):
 
         # Assign atom repulsion module
         if self.model_repulsion:
+            # Check nuclear repulsion cutoff
+            input_radial_cutoff = config.get('input_radial_cutoff')
+            if (
+                input_radial_cutoff is not None
+                and self.model_repulsion_cutoff > input_radial_cutoff
+            ):
+                raise SyntaxError(
+                    "Nuclear repulsion cutoff radii is larger than the "
+                    + "input module radial cutoff!")
             # Get Ziegler-Biersack-Littmark style nuclear repulsion potential
             self.repulsion_module = module.ZBL_repulsion(
+                self.model_repulsion_cutoff,
+                self.model_repulsion_cuton,
                 self.model_repulsion_trainable,
                 self.device,
                 self.dtype,
@@ -592,7 +614,7 @@ class Model_PhysNet(model.BaseModel):
         # Add repulsion model contribution
         if self.model_repulsion:
             repulsion_atomic_energies = self.repulsion_module(
-                atomic_numbers, distances, cutoffs, idx_i, idx_j)
+                atomic_numbers, distances, idx_i, idx_j)
             results['atomic_energies'] = (
                 results['atomic_energies'] + repulsion_atomic_energies)
             if verbose_results:

@@ -13,13 +13,18 @@ __all__ = ["ZBL_repulsion"]
 # ======================================
 
 
+
 class ZBL_repulsion(torch.nn.Module):
     """
-    Torch implementation of a Ziegler-Biersack-Littmark style nuclear 
+    Torch implementation of a Ziegler-Biersack-Littmark style nuclear
     repulsion model.
 
     Parameters
     ----------
+    cutoff: float
+        Upper cutoff distance
+    cuton: float
+        Lower cutoff distance starting switch-off function
     trainable: bool
         If True, repulsion parameter are trainable. Else, default parameter
         values are fixed.
@@ -30,13 +35,13 @@ class ZBL_repulsion(torch.nn.Module):
     unit_properties: dict, optional, default {}
         Dictionary with the units of the model properties to initialize correct
         conversion factors.
-    **kwargs
-        Additional keyword arguments.
 
     """
 
     def __init__(
         self,
+        cutoff: float,
+        cuton: float,
         trainable: bool,
         device: str,
         dtype: 'dtype',
@@ -45,21 +50,41 @@ class ZBL_repulsion(torch.nn.Module):
     ):
         """
         Initialize Ziegler-Biersack-Littmark style nuclear repulsion model.
-        
+
         """
-        
+
         super(ZBL_repulsion, self).__init__()
-        
+
         # Assign variables
         self.dtype = dtype
         self.device = device
-        
+
+        # Assign cutoff radii and prepare switch-off parameters
+        self.cutoff = torch.tensor(
+            [cutoff], device=self.device, dtype=self.dtype)
+        if cuton is None:
+            self.cuton = torch.tensor(
+                [0.0], device=self.device, dtype=self.dtype)
+            self.switchoff_range = torch.tensor(
+                [cutoff], device=self.device, dtype=self.dtype)
+            self.use_switch = True
+        elif cuton < cutoff:
+            self.cuton = torch.tensor(
+                [cuton], device=self.device, dtype=self.dtype)
+            self.switchoff_range = torch.tensor(
+                [cutoff - cuton], device=self.device, dtype=self.dtype)
+            self.use_switch = True
+        else:
+            self.cuton = None
+            self.switchoff_range = None
+            self.use_switch = False
+
         # Initialize repulsion model parameters
-        a_coefficient = 0.8854 # Angstrom
+        a_coefficient = 0.8854 # Bohr
         a_exponent = 0.23
         phi_coefficients = [0.18175, 0.50986, 0.28022, 0.02817]
-        phi_exponents = [3.19980, 0.94229, 0.40290, 0.20162] # 1/Angstrom
-        
+        phi_exponents = [3.19980, 0.94229, 0.40290, 0.20162]
+
         if trainable:
             self.a_coefficient = torch.nn.Parameter(
                 torch.tensor([a_coefficient], device=device, dtype=dtype))
@@ -105,13 +130,13 @@ class ZBL_repulsion(torch.nn.Module):
         Set unit conversion factors for compatibility between requested
         property units and applied property units (for physical constants)
         of the module.
-        
+
         Parameters
         ----------
         unit_properties: dict
-            Dictionary with the units of the model properties to initialize 
+            Dictionary with the units of the model properties to initialize
             correct conversion factors.
-        
+
         """
 
         # Get conversion factors
@@ -145,12 +170,33 @@ class ZBL_repulsion(torch.nn.Module):
 
         return
 
+    def switch_fn(
+        self,
+        distances: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Computes a smooth switch factors from 1 to 0 in the range from 'cuton'
+        to 'cutoff'.
+
+        """
+
+        x = (self.cutoff - distances) / self.switchoff_range
+
+        return torch.where(
+            distances < self.cuton,
+            torch.ones_like(x),
+            torch.where(
+                distances >= self.cutoff,
+                torch.zeros_like(x),
+                ((6.0*x - 15.0)*x + 10.0)*x**3
+                )
+            )
+
     def forward(
         self,
-        atomic_numbers: torch.Tensor, 
-        distances: torch.Tensor, 
-        cutoffs: torch.Tensor, 
-        idx_i: torch.Tensor, 
+        atomic_numbers: torch.Tensor,
+        distances: torch.Tensor,
+        idx_i: torch.Tensor,
         idx_j: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -172,37 +218,44 @@ class ZBL_repulsion(torch.nn.Module):
         -------
         torch.Tensor
             Nuclear repulsion atom energy contribution
-        
+
         """
-        
-        # Convert distances from model unit to Angstrom
-        distances_bohr = distances*self.distances_model2Bohr
-        
+
+        # Compute switch-off function
+        if self.use_switch:
+            switch_off = self.switch_fn(distances)
+        else:
+            switch_off = torch.where(
+                distances < self.cutoff,
+                torch.ones_like(distances),
+                torch.zeros_like(distances),
+            )
+
         # Compute atomic number dependent function
         za = atomic_numbers**torch.abs(self.a_exponent)
-        a_ij = torch.abs(self.a_coefficient)/(za[idx_i] + za[idx_j])
-        
-        # Compute screening function
-        arguments = distances_bohr/a_ij
+        a_ij = (
+            torch.abs(self.a_coefficient/self.distances_model2Bohr)
+            / (za[idx_i] + za[idx_j]))
+
+        # Compute screening function phi
+        arguments = distances/a_ij
         coefficients = torch.nn.functional.normalize(
             torch.abs(self.phi_coefficients), p=1.0, dim=0)
         exponents = torch.abs(self.phi_exponents)
         phi = torch.sum(
             coefficients[None, ...]*torch.exp(
-                -exponents[None, ...]*arguments[..., None]), 
+                -exponents[None, ...]*arguments[..., None]),
             dim=1)
 
-        # Compute nuclear repulsion potential
+        # Compute nuclear repulsion potential in model energy unit
         repulsion = (
             0.5*self.ke
-            * atomic_numbers[idx_i]*atomic_numbers[idx_j]/distances_bohr
+            * atomic_numbers[idx_i]*atomic_numbers[idx_j]/distances
             * phi
-            * cutoffs)
+            * switch_off)
 
         # Summarize and convert repulsion potential
-        Erep = self.energies_Hatree2model*utils.scatter_sum(
+        Erep = utils.scatter_sum(
             repulsion, idx_i, dim=0, shape=atomic_numbers.shape)
 
         return Erep
-
-        
