@@ -415,15 +415,17 @@ class Tester:
                         data_prediction = [data_prediction]
                         data_reference = list(data_reference)
                     elif data_prediction.shape[0] == Natoms:
+                        sys_i = batch['sys_i'].cpu().numpy()
                         data_prediction = [
-                            list(data_prediction[batch['sys_i'] == isys])
+                            list(data_prediction[sys_i == isys])
                             for isys in range(Nsys)]
                         data_reference = [
-                            list(data_reference[batch['sys_i'] == isys])
+                            list(data_reference[sys_i == isys])
                             for isys in range(Nsys)]
                     # If data are atom pair resolved
                     elif data_prediction.shape[0] == Npairs:
-                        sys_pair_i = batch['sys_i'][batch['idx_i']]
+                        sys_pair_i = (
+                            batch['sys_i'][batch['idx_i']].cpu().numpy())
                         data_prediction = [
                             list(data_prediction[sys_pair_i == isys])
                             for isys in range(Nsys)]

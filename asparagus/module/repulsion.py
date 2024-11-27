@@ -87,26 +87,34 @@ class ZBL_repulsion(torch.nn.Module):
 
         if trainable:
             self.a_coefficient = torch.nn.Parameter(
-                torch.tensor([a_coefficient], device=device, dtype=dtype))
+                torch.tensor(
+                    [a_coefficient], device=self.device, dtype=self.dtype))
             self.a_exponent = torch.nn.Parameter(
-                torch.tensor([a_exponent], device=device, dtype=dtype))
+                torch.tensor(
+                    [a_exponent], device=self.device, dtype=self.dtype))
             self.phi_coefficients = torch.nn.Parameter(
-                torch.tensor(phi_coefficients, device=device, dtype=dtype))
+                torch.tensor(
+                    phi_coefficients, device=self.device, dtype=self.dtype))
             self.phi_exponents = torch.nn.Parameter(
-                torch.tensor(phi_exponents, device=device, dtype=dtype))
+                torch.tensor(
+                    phi_exponents, device=self.device, dtype=self.dtype))
         else:
             self.register_buffer(
                 "a_coefficient",
-                torch.tensor([a_coefficient], dtype=dtype))
+                torch.tensor(
+                    [a_coefficient], device=self.device, dtype=self.dtype))
             self.register_buffer(
                 "a_exponent",
-                torch.tensor([a_exponent], dtype=dtype))
+                torch.tensor(
+                    [a_exponent], device=self.device, dtype=self.dtype))
             self.register_buffer(
                 "phi_coefficients",
-                torch.tensor(phi_coefficients, dtype=dtype))
+                torch.tensor(
+                    phi_coefficients, device=self.device, dtype=self.dtype))
             self.register_buffer(
                 "phi_exponents",
-                torch.tensor(phi_exponents, dtype=dtype))
+                torch.tensor(
+                    phi_exponents, device=self.device, dtype=self.dtype))
 
         # Unit conversion factors
         self.set_unit_properties(unit_properties)
@@ -156,10 +164,12 @@ class ZBL_repulsion(torch.nn.Module):
         # Energies: Hartree to model
         self.register_buffer(
             "distances_model2Bohr",
-            torch.tensor([factor_positions], dtype=self.dtype))
+            torch.tensor(
+                [factor_positions], device=self.device, dtype=self.dtype))
         self.register_buffer(
             "energies_Hatree2model",
-            torch.tensor([factor_energy], dtype=self.dtype))
+            torch.tensor(
+                [factor_energy], device=self.device, dtype=self.dtype))
 
         # Convert e**2/(4*pi*epsilon) = 1 from 1/Hartree/Bohr to model units
         ke_au = 1.
