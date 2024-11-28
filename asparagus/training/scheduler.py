@@ -66,8 +66,9 @@ def get_scheduler(
         if trainer_scheduler.lower() in scheduler_avaiable.keys():
 
             if trainer_scheduler.lower() in scheduler_arguments.keys():
-                trainer_scheduler_args.update(
-                    scheduler_arguments[trainer_scheduler.lower()])
+                trainer_scheduler_args = {
+                    **scheduler_arguments[trainer_scheduler.lower()],
+                    **trainer_scheduler_args}
 
             try:
 

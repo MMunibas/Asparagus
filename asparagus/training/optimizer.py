@@ -76,8 +76,9 @@ def get_optimizer(
 
             # Set mandatory optimizer options if required
             if trainer_optimizer.lower() in optimizer_arguments.keys():
-                trainer_optimizer_args.update(
-                    optimizer_arguments[trainer_optimizer.lower()])
+                trainer_optimizer_args = {
+                    **optimizer_arguments[trainer_optimizer.lower()],
+                    **trainer_optimizer_args}
 
             # Prepare optimiizer input
             if utils.is_dictionary(model_parameter):
