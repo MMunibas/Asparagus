@@ -192,8 +192,7 @@ class DataContainer():
         )
 
         # Update global configuration dictionary
-        config.update(
-            config_update, config_from=self)
+        config.update(config_update, config_from=self)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -270,8 +269,9 @@ class DataContainer():
                 'data_unit_properties': self.data_unit_properties,
                 'data_source': self.data_source,
                 'data_source_unit_properties': self.data_source_unit_properties
-                },
-            config_from=self)
+            },
+            config_from=self
+        )
 
         return
 

@@ -125,9 +125,9 @@ class Trainer:
         'trainer_valid_batch_size':     None,
         'trainer_test_batch_size':      None,
         'trainer_num_batch_workers':    0,
-        'trainer_optimizer':            'AMSgrad',
-        'trainer_optimizer_args':       {'lr': 0.001, 'weight_decay': 1.e-5},
-        'trainer_scheduler':            'ExponentialLR',
+        'trainer_optimizer':            'Adam',
+        'trainer_optimizer_args':       {'lr': 0.001},
+        'trainer_scheduler':            'ReduceLROnPlateau',
         'trainer_scheduler_args':       {},
         'trainer_ema':                  True,
         'trainer_ema_decay':            0.99,
@@ -229,7 +229,7 @@ class Trainer:
         )
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(config_update, config_from=self)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -353,15 +353,21 @@ class Trainer:
         if hasattr(self.model_calculator, 'set_unit_properties'):
             self.model_calculator.set_unit_properties(self.model_units)
 
-        #############################
-        # # # Prepare Optimizer # # #
-        #############################
+        ###################################################################
+        # # # Prepare Optimizer, Scheduler and Gradient Normalization # # #
+        ###################################################################
 
         # Assign model parameter optimizer
-        self.trainer_optimizer = get_optimizer(
+        self.trainer_optimizer, trainer_optimizer_args = get_optimizer(
             self.trainer_optimizer,
             self.model_calculator.get_trainable_parameters(),
             self.trainer_optimizer_args)
+
+        # Assign learning rate scheduler
+        self.trainer_scheduler, trainer_scheduler_args = get_scheduler(
+            self.trainer_scheduler,
+            self.trainer_optimizer,
+            self.trainer_scheduler_args)
 
         # Check maximum gradient norm and value clipping input
         if self.trainer_max_gradient_norm is None:
@@ -373,15 +379,15 @@ class Trainer:
         else:
             self.gradient_clipping_value = True
 
-        #############################
-        # # # Prepare Scheduler # # #
-        #############################
-
-        # Assign learning rate scheduler
-        self.trainer_scheduler = get_scheduler(
-            self.trainer_scheduler,
-            self.trainer_optimizer,
-            self.trainer_scheduler_args)
+        # Update global configuration dictionary with optimizer and scheduler
+        # options
+        config.update(
+            {
+                "trainer_optimizer_args": trainer_optimizer_args,
+                "trainer_scheduler_args": trainer_scheduler_args,
+            },
+            config_from=self
+        )
 
         #######################
         # # # Prepare EMA # # #

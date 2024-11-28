@@ -17,7 +17,7 @@ from asparagus import Asparagus
 from asparagus import interface
 from asparagus import utils
 
-__all__ = ['DMC','Logger_DMC']
+__all__ = ['DMC', 'Logger_DMC']
 
 class DMC:
     """

@@ -104,8 +104,10 @@ def get_optimizer(
 
             try:
 
-                return optimizer_avaiable[trainer_optimizer.lower()](
-                    optimizer_input)
+                return (
+                    optimizer_avaiable[trainer_optimizer.lower()](
+                        optimizer_input),
+                    trainer_optimizer_args)
 
             except TypeError as error:
                 logger.error(error)
@@ -122,4 +124,4 @@ def get_optimizer(
 
     else:
 
-        return trainer_optimizer
+        return trainer_optimizer, trainer_optimizer_args

@@ -72,9 +72,12 @@ def get_scheduler(
 
             try:
 
-                return scheduler_avaiable[trainer_scheduler.lower()](
-                    optimizer=trainer_optimizer,
-                    **trainer_scheduler_args)
+                return (
+                    scheduler_avaiable[trainer_scheduler.lower()](
+                        optimizer=trainer_optimizer,
+                        **trainer_scheduler_args),
+                    trainer_scheduler_args
+                    )
 
             except TypeError as error:
 
@@ -93,4 +96,4 @@ def get_scheduler(
 
     else:
 
-        return trainer_scheduler
+        return trainer_scheduler, trainer_scheduler_args

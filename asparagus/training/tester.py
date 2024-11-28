@@ -127,7 +127,7 @@ class Tester:
         )
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(config_update, config_from=self)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
