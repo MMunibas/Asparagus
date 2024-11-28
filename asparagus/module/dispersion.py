@@ -352,7 +352,7 @@ class D3_dispersion(torch.nn.Module):
             norm)
         gaussian_weights = (gaussian_weights/norm).type(self.dtype)
 
-        # Prevent exceptional values in the gaussian weights, either because
+        # Prevent exceptional values in the Gaussian weights, either because
         # the norm was zero or the weight is to large.
         exceptional = torch.logical_or(
             mask_norm, gaussian_weights > self.max_dtype)

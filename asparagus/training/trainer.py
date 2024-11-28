@@ -4,6 +4,9 @@ from typing import Optional, List, Dict, Tuple, Union, Any, Callable
 
 import torch
 
+from torch.utils.tensorboard import SummaryWriter
+from torch_ema import ExponentialMovingAverage
+
 import numpy as np
 
 import asparagus
@@ -137,7 +140,7 @@ class Trainer:
         'trainer_validation_interval':  5,
         'trainer_evaluate_testset':     True,
         'trainer_max_checkpoints':      1,
-        'trainer_summary_writer':       False,
+        'trainer_summary_writer':       True,
         'trainer_print_progress_bar':   True,
         'trainer_debug_mode':           False,
         }
@@ -389,7 +392,6 @@ class Trainer:
 
         # Assign Exponential Moving Average model
         if self.trainer_ema:
-            from torch_ema import ExponentialMovingAverage
             self.trainer_ema_model = ExponentialMovingAverage(
                 self.model_calculator.parameters(),
                 decay=self.trainer_ema_decay)
@@ -405,7 +407,6 @@ class Trainer:
 
         # Initialize training summary writer
         if self.trainer_summary_writer:
-            from torch.utils.tensorboard import SummaryWriter
             self.summary_writer = SummaryWriter(
                 log_dir=self.filemanager.logs_dir)
 
@@ -733,6 +734,21 @@ class Trainer:
                         f"Loss: {metrics_train['loss']: 4.4f}   "),
                     length=42)
 
+            # Add process to training summary writer
+            if self.trainer_summary_writer:
+                for prop, value in metrics_train.items():
+                    if utils.is_dictionary(value):
+                        for metric, val in value.items():
+                            self.summary_writer.add_scalar(
+                                '_'.join(('test', prop, metric)),
+                                metrics_train[prop][metric],
+                                global_step=epoch)
+                    else:
+                        self.summary_writer.add_scalar(
+                            '_'.join(('test', prop)),
+                            metrics_train[prop],
+                            global_step=epoch)
+
             # Save current model each interval
             if not (epoch % self.trainer_save_interval):
                 self.filemanager.save_checkpoint(
@@ -767,6 +783,21 @@ class Trainer:
 
                 # Change back to training mode for calculator
                 self.model_calculator.train()
+
+                # Add process to training summary writer
+                if self.trainer_summary_writer:
+                    for prop, value in metrics_valid.items():
+                        if utils.is_dictionary(value):
+                            for metric, val in value.items():
+                                self.summary_writer.add_scalar(
+                                    '_'.join(('valid', prop, metric)),
+                                    metrics_valid[prop][metric],
+                                    global_step=epoch)
+                        else:
+                            self.summary_writer.add_scalar(
+                                '_'.join(('valid', prop)),
+                                metrics_valid[prop],
+                                global_step=epoch)
 
                 # Check for model improvement and save as best model eventually
                 if (
@@ -806,12 +837,13 @@ class Trainer:
                             if utils.is_dictionary(value):
                                 for metric, val in value.items():
                                     self.summary_writer.add_scalar(
-                                        prop + '_' + metric,
+                                        '_'.join(('best', prop, metric)),
                                         metrics_best[prop][metric],
                                         global_step=epoch)
                             else:
                                 self.summary_writer.add_scalar(
-                                    prop, metrics_best[prop],
+                                    '_'.join(('best', prop)),
+                                    metrics_best[prop],
                                     global_step=epoch)
 
                 # Print validation metrics summary
