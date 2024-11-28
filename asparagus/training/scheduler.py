@@ -18,10 +18,12 @@ __all__ = ['get_scheduler']
 scheduler_avaiable = {
     'ExponentialLR'.lower(): torch.optim.lr_scheduler.ExponentialLR,
     'LinearLR'.lower(): torch.optim.lr_scheduler.LinearLR,
+    'ReduceLROnPlateau'.lower(): torch.optim.lr_scheduler.ReduceLROnPlateau,
     }
-scheduler_argumens = {
-    'ExponentialLR'.lower(): {},
+scheduler_arguments = {
+    'ExponentialLR'.lower(): {'gamma': 0.99},
     'LinearLR'.lower(): {},
+    'ReduceLROnPlateau'.lower(): {},
     }
 
 
@@ -63,9 +65,9 @@ def get_scheduler(
 
         if trainer_scheduler.lower() in scheduler_avaiable.keys():
 
-            if trainer_scheduler.lower() in scheduler_argumens.keys():
+            if trainer_scheduler.lower() in scheduler_arguments.keys():
                 trainer_scheduler_args.update(
-                    scheduler_argumens[trainer_scheduler.lower()])
+                    scheduler_arguments[trainer_scheduler.lower()])
 
             try:
 
@@ -77,14 +79,15 @@ def get_scheduler(
 
                 logger.error(error)
                 raise TypeError(
-                    f"Scheduler '{trainer_scheduler}' does not accept " +
-                    "arguments in 'trainer_scheduler_args'")
+                    f"Scheduler '{trainer_scheduler}' does not accept one"
+                    + "of the arguments in 'trainer_scheduler_args':\n"
+                    + f"{list(trainer_scheduler_args.keys())}")
 
         else:
 
             raise ValueError(
-                f"Scheduler class '{trainer_scheduler}' is not valid!" +
-                "Choose from:\n" +
+                f"Scheduler class '{trainer_scheduler}' is not valid!"
+                + "Choose from:\n" +
                 str(scheduler_avaiable.keys()))
 
     else:

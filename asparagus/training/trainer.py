@@ -4,9 +4,6 @@ from typing import Optional, List, Dict, Tuple, Union, Any, Callable
 
 import torch
 
-from torch.utils.tensorboard import SummaryWriter
-from torch_ema import ExponentialMovingAverage
-
 import numpy as np
 
 import asparagus
@@ -131,7 +128,7 @@ class Trainer:
         'trainer_optimizer':            'AMSgrad',
         'trainer_optimizer_args':       {'lr': 0.001, 'weight_decay': 1.e-5},
         'trainer_scheduler':            'ExponentialLR',
-        'trainer_scheduler_args':       {'gamma': 0.99},
+        'trainer_scheduler_args':       {},
         'trainer_ema':                  True,
         'trainer_ema_decay':            0.99,
         'trainer_max_gradient_norm':    1.0,
@@ -392,6 +389,7 @@ class Trainer:
 
         # Assign Exponential Moving Average model
         if self.trainer_ema:
+            from torch_ema import ExponentialMovingAverage
             self.trainer_ema_model = ExponentialMovingAverage(
                 self.model_calculator.parameters(),
                 decay=self.trainer_ema_decay)
@@ -407,6 +405,7 @@ class Trainer:
 
         # Initialize training summary writer
         if self.trainer_summary_writer:
+            from torch.utils.tensorboard import SummaryWriter
             self.summary_writer = SummaryWriter(
                 log_dir=self.filemanager.logs_dir)
 
@@ -597,6 +596,10 @@ class Trainer:
         # Define loss function
         loss_fn = torch.nn.SmoothL1Loss(reduction='mean')
 
+        # Get scheduler argument list for correct parameter passing
+        scheduler_arguments = (
+            self.trainer_scheduler.step.__code__.co_varnames)
+
         # Count number of training batches
         Nbatch_train = torch.tensor(len(self.data_train), dtype=torch.int64)
 
@@ -717,7 +720,10 @@ class Trainer:
                             train_time_batch*(Nbatch_train - 1))
 
             # Increment scheduler step
-            self.trainer_scheduler.step()
+            if 'metrics' in scheduler_arguments:
+                self.trainer_scheduler.step(metrics_train['loss'])
+            else:
+                self.trainer_scheduler.step()
 
             # Stop epoch train timer
             train_time_epoch_end = time.time()
@@ -740,12 +746,12 @@ class Trainer:
                     if utils.is_dictionary(value):
                         for metric, val in value.items():
                             self.summary_writer.add_scalar(
-                                '_'.join(('test', prop, metric)),
+                                '_'.join(('train', prop, metric)),
                                 metrics_train[prop][metric],
                                 global_step=epoch)
                     else:
                         self.summary_writer.add_scalar(
-                            '_'.join(('test', prop)),
+                            '_'.join(('train', prop)),
                             metrics_train[prop],
                             global_step=epoch)
 
