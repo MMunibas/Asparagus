@@ -107,8 +107,8 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 For any questions, please open an issue in the repository.
 
 ## How to cite
-[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)]([https://arxiv.org/abs/2407.15175](https://arxiv.org/abs/2407.15175))
-[![Comp. Phys. Comm.](https://img.shields.io/badge/Paper-CompPhysComm-blue?logo=elsevier&link=https%3A%2F%2Fdoi.org%2F10.1016%2Fj.cpc.2024.109446)]([https://doi.org/10.1016/j.cpc.2024.109446](https://doi.org/10.1016/j.cpc.2024.109446))
+[![arXiv](https://img.shields.io/badge/arXiv-1234.56789-b31b1b.svg)](https://arxiv.org/abs/2407.15175)
+[![Comp. Phys. Comm.](https://img.shields.io/badge/Paper-CompPhysComm-blue?logo=elsevier&link=https%3A%2F%2Fdoi.org%2F10.1016%2Fj.cpc.2024.109446)](https://doi.org/10.1016/j.cpc.2024.109446)
 
 
 If you find this work useful in your research, please cite it as: 
