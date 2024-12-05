@@ -34,6 +34,9 @@ intersphinx_mapping = {
 autodoc_mock_imports = [
     'numpy',
     'ase',
+    'ctype',
+    'torchvision',
+    'torchaudio',
     'torch',
     'torch-ema',
     'tensorboard',
