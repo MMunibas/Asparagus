@@ -7,11 +7,6 @@ dependencies:
     # Base depends
   - python
   - pip
-  - sphinx
-  - sphinx-rtd-theme
-  - myst-parser
-  - sphinxemoji
-
   # Pip-only installs
   - pip:
     - -e ../
