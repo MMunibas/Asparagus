@@ -35,9 +35,9 @@ We are always looking for ways to improve Asparagus. If you have any suggestions
 Some of the things we are currently working on are:
 
 
-- Adding new architectures (SchNet or PaiNN) Maybe ANI or general Behler-Parinello.
+- Adding new architectures (MACE or Nequip) Maybe ANI or general Behler-Parinello.
 - Uncertainty Quantification methods (Ensemble, Deep Evidential Regression, Others)
-- Interface with other MD codes: LAMMPS, AMBER
+- Interface with other MD codes: LAMMPS
 - Solvation models for ML/MM simulations
 - Active learning cycles.
 - Automatize transfer learning

@@ -12,10 +12,11 @@ Subpackages
    asparagus.layer
    asparagus.model
    asparagus.module
-   asparagus.sample
+   asparagus.sampling
    asparagus.settings
+   asparagus.templates
    asparagus.tools
-   asparagus.train
+   asparagus.training
    asparagus.utils
 
 Submodules

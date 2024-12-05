@@ -1,7 +1,7 @@
 # Configuration file for the Sphinx documentation builder.
 import os
 import sys
-
+import asparagus
 sys.path.insert(0, os.path.abspath(os.path.join('.','..','..')))
 # -- Project information
 
@@ -9,8 +9,8 @@ project = 'Asparagus Bundle'
 copyright = '2024, L.I.Vazquez-Salazar, K. Toepfer & M. Meuwly'
 author = 'L.I.Vazquez-Salazar & K. Toepfer'
 
-release = '0.1'
-version = '0.2.1'
+release = '0.4'
+version = '0.4.2'
 
 # -- General configuration
 
@@ -43,8 +43,7 @@ autodoc_mock_imports = [
     'matplotlib',
     'seaborn',
     'scipy',
-    'pytest',
-    '.src',]
+    'pytest',]
 
 intersphinx_disabled_domains = ['std']
 

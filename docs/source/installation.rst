@@ -10,11 +10,13 @@ Dependencies
 
 Asparagus depends on the following packages, which will be (except for Python itself) automatically managed when installing Asparagus via ``pip`` or ``python setup.py install`` (see below):
 
-   * Python_ :math:`\geq` 3.8 (**DO NOT** (for the moment) use 3.9)
+   * Python_ :math:`\geq` 3.8
    * ASE_ (Atomic Simulation Environment)  :math:`\geq` 3.22
    * PyTorch_ :math:`\geq` 2.0
    * Torch-ema_ :math:`\geq` 0.3
    * TensorBoard_ :math:`\geq` 2.4
+   * Numpy, Scipy, Pandas, Mathplotlib, Seaborn
+
    
 
 .. _Python: https://www.python.org/
@@ -59,7 +61,7 @@ To install Asparagus first clone the repository:
 
 .. code-block:: bash
 
-      git clone https://github.com/LIVazquezS/Asparagus
+      git clone https://github.com/MMunibas/Asparagus.git
 
 Then, go to the folder where you cloned the repository and install via pip:
 
