@@ -8,6 +8,19 @@ from ase import units
 from ase.io.trajectory import Trajectory
 from ase.md.langevin import Langevin
 
+class EnsembleTrainer:
+    
+    def __init__(
+        self,
+    ):
+        """
+        
+        """
+        
+        return
+
+
+
 class EnsembleLearning:
     def __init__(
         self,

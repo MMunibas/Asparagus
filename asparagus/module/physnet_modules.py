@@ -85,6 +85,9 @@ class Input_PhysNet(torch.nn.Module):
         'input_n_maxatom':              [utils.is_integer],
         }
 
+    # Input type module
+    _input_type = 'PhysNet'
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -108,7 +111,6 @@ class Input_PhysNet(torch.nn.Module):
         """
 
         super(Input_PhysNet, self).__init__()
-        self.input_type = 'PhysNet'
 
         ####################################
         # # # Check Module Class Input # # #
@@ -179,7 +181,7 @@ class Input_PhysNet(torch.nn.Module):
         return
 
     def __str__(self):
-        return self.input_type
+        return self._input_type
 
     def get_info(self) -> Dict[str, Any]:
         """
@@ -187,7 +189,7 @@ class Input_PhysNet(torch.nn.Module):
         """
         
         return {
-            'input_type': self.input_type,
+            'input_type': self._input_type,
             'input_n_atombasis': self.input_n_atombasis,
             'input_radial_fn': str(self.input_radial_fn),
             'input_n_radialbasis': self.input_n_radialbasis,
@@ -197,7 +199,6 @@ class Input_PhysNet(torch.nn.Module):
             'input_n_maxatom': self.input_n_maxatom,
             }
 
-    #@profile
     def forward(
         self, 
         atomic_numbers: torch.Tensor,
@@ -321,6 +322,9 @@ class Graph_PhysNet(torch.nn.Module):
         'graph_activation_fn':          [utils.is_string, utils.is_callable],
         }
 
+    # Graph type module
+    _graph_type = 'PhysNet'
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -339,7 +343,6 @@ class Graph_PhysNet(torch.nn.Module):
         """
         
         super(Graph_PhysNet, self).__init__()
-        self.graph_type = 'PhysNet'
         
         ####################################
         # # # Check Module Class Input # # #
@@ -393,7 +396,7 @@ class Graph_PhysNet(torch.nn.Module):
         return
 
     def __str__(self):
-        return self.graph_type
+        return self._graph_type
 
     def get_info(self) -> Dict[str, Any]:
         """
@@ -401,14 +404,13 @@ class Graph_PhysNet(torch.nn.Module):
         """
         
         return {
-            'graph_type': self.graph_type,
+            'graph_type': self._graph_type,
             'graph_n_blocks': self.graph_n_blocks,
             'graph_n_residual_interaction': self.graph_n_residual_interaction,
             'graph_n_residual_features': self.graph_n_residual_features,
             'graph_activation_fn': self.graph_activation_fn,
             }
 
-    #@profile
     def forward(
         self, 
         features: torch.Tensor,
@@ -506,6 +508,9 @@ class Output_PhysNet(torch.nn.Module):
         'output_property_scaling':      [utils.is_dictionary, utils.is_None],
         }
     
+    # Output type module
+    _output_type = 'PhysNet'
+
     # Property exclusion lists for properties (keys) derived from other 
     # properties (items) but in the model class
     _property_exclusion = {
@@ -536,7 +541,6 @@ class Output_PhysNet(torch.nn.Module):
         """
 
         super(Output_PhysNet, self).__init__()
-        self.output_type = 'PhysNet'
 
         ####################################
         # # # Check Module Class Input # # #
@@ -715,7 +719,7 @@ class Output_PhysNet(torch.nn.Module):
         return
 
     def __str__(self):
-        return self.output_type
+        return self._output_type
     
     def get_info(self) -> Dict[str, Any]:
         """
@@ -723,7 +727,7 @@ class Output_PhysNet(torch.nn.Module):
         """
 
         return {
-            'output_type': self.output_type,
+            'output_type': self._output_type,
             'output_properties': self.output_properties,
             'output_n_residual': self.output_n_residual,
             'output_activation_fn': self.output_activation_fn,

@@ -13,8 +13,6 @@ from asparagus import data
 from asparagus import model
 from asparagus import training
 
-from .tester import Tester
-
 class EnsembleTrainer:
     """
     Wrapper for ensemle training of NNP models.
@@ -30,15 +28,13 @@ class EnsembleTrainer:
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
         Path to config json file (str)
-    data_container: data.DataContainer, optional, default None
-        Reference data container object providing training, validation and
-        test data for the model training.
-    model_calculator: torch.nn.Module, optional, default None
-        Model calculator to train matching model properties with the reference
-        data set. If not provided, the model calculator will be initialized
-        according to config input.
+    ensemble_model_trainer: training.Trainer, optional, default None
+        Single model Trainer class object which is used to train the model
+        potential. If None, a trainer will be initialized.
+        Here, the Trainer and assigned FileManager parameters will be
+        manipulated to train an ensemble of models under consistent conditions.
     ensemble_number: int, optional, default None
-        Number of NNP models in the model ensemble
+        Number of models potentials to train.
     ensemble_epoch_steps: int, optional, default None
         Number of epochs to train single NNP models each step before looping
         through the next until maximum number of epochs is reached
@@ -65,8 +61,7 @@ class EnsembleTrainer:
         self,
         config: Optional[Union[str, dict, object]] = None,
         config_file: Optional[str] = None,
-        data_container: Optional[data.DataContainer] = None,
-        model_calculator: Optional[torch.nn.Module] = None,
+        ensemble_model_trainer: Optional[training.Trainer] = None,
         ensemble_number: Optional[int] = None,
         ensemble_epoch_steps: Optional[int] = None,
         device: Optional[str] = None,
@@ -102,28 +97,53 @@ class EnsembleTrainer:
         self.device = utils.check_device_option(device, config)
         self.dtype = utils.check_dtype_option(dtype, config)
 
-        ################################
-        # # # Check Data Container # # #
-        ################################
-
-        # Assign DataContainer if not done already
-        if data_container is None:
-            self.data_container = data.DataContainer(
-                config=config,
-                **kwargs)
-
-        ##################################
-        # # # Check Model Calculator # # #
-        ##################################
+        ###############################
+        # # # Check Model Trainer # # #
+        ###############################
 
         # Assign model calculator model if not done already
-        if self.model_calculator is None:
-            self.model_calculator = asparagus.get_model_calculator(
+        if self.ensemble_model_trainer is None:
+            self.ensemble_model_trainer = training.Trainer(
                 config=config,
                 **kwargs)
 
-        # Manipulate model directory of the model calculator
-        model_directory = self.model_calculator.model_directory
-        print(model_directory)
+        #############################################
+        # # # Check Ensemble Trainer Parameters # # #
+        #############################################
+
+        # Get model directory as main directory in which to store multiple 
+        # models
+        self.model_directory = (
+            self.ensemble_model_trainer.filemanager.model_directory)
+
+        # Get Trainer checkpoint save interval to match with ensemble learning
+        # epoch steps
+        self.trainer_save_interval = (
+            self.ensemble_model_trainer.trainer_save_interval)
+
+        # Check that 'ensemble_epoch_steps' is a multiple of
+        # 'trainer_save_interval' and update in config if necessary.
+        ensemble_epoch_steps = int(
+            self.trainer_save_interval*
+            (self.ensemble_epoch_steps//self.trainer_save_interval)
+        )
+        if ensemble_epoch_steps != self.ensemble_epoch_steps:
+            self.logger.warning(
+                "Number of epochs per training step "
+                + f"({self.ensemble_epoch_steps:d}) is not a multiple of the "
+                + f"Trainer's checkpoint save interval "
+                + f"({self.trainer_save_interval:d})!\n"
+                + "Number of epochs per training step is changed to "
+                + f"({ensemble_epoch_steps:d}).")
+            self.ensemble_epoch_steps = ensemble_epoch_steps
+            config.update(
+                {"ensemble_epoch_steps": self.ensemble_epoch_steps},
+                config_from=self
+            )
+
+        
+
+
+        exit()
 
         return

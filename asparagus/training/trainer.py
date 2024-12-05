@@ -313,41 +313,8 @@ class Trainer:
                 self.data_units)
             )
 
-        # Show assigned property units and
-        message = (
-            f" {'Property ':<17s} |"
-            + f" {'Model Unit':<12s} |"
-            + f" {'Data Unit':<12s} |"
-            + f" {'Conv. fact.':<12s} |"
-            + f" {'Loss Metric':<12s} |"
-            + f" {'Loss Weight':<12s}\n")
-        message += "-"*len(message) + "\n"
-        for prop, model_unit in self.model_units.items():
-            if self.data_units.get(prop) is None:
-                data_unit = "None"
-            else:
-                data_unit = self.data_units.get(prop)
-            message += (
-                f" {prop:<17s} |"
-                + f" {model_unit:<12s} |"
-                + f" {data_unit:<12s} |")
-            if self.model_conversion.get(prop) is None:
-                message += f" {'None':<12s} |"
-            else:
-                message += f" {self.model_conversion.get(prop):>12.4e} |"
-            if prop in self.trainer_properties:
-                message += f" {self.trainer_properties_metrics[prop]:<12s} |"
-            else:
-                message += f" {'':<12s} |"
-            if prop in self.trainer_properties:
-                message += f" {self.trainer_properties_weights[prop]:> 11.4f}"
-            message += "\n"
-        self.logger.info(
-            "Model and data properties, and model to data conversion factors "
-            + "(model to data)."
-            + "\nError metric and weight are shown for the properties "
-            + "included in the training loss function.\n"
-            + message)
+        # Show assigned properties, their units and contribution to loss value
+        self.print_trainer_info()
 
         # Assign potentially new property units to the model
         if hasattr(self.model_calculator, 'set_unit_properties'):
@@ -444,6 +411,7 @@ class Trainer:
         reset_best_loss: Optional[bool] = False,
         reset_energy_shift: Optional[bool] = False,
         skip_property_scaling: Optional[bool] = False,
+        skip_initial_testing: Optional[bool] = False,
         verbose=True,
         **kwargs,
     ):
@@ -452,9 +420,25 @@ class Trainer:
 
         Parameters
         ----------
+        restart: bool, optional, default True
+            If True, restart the model training from the last checkpoint file,
+            if available. If False or no checkpoint file exist, start training
+            from scratch.
         reset_best_loss: bool, optional, default False
             If False, continue model potential validation from stored best
             loss value. Else, reset best loss value to None.
+        reset_energy_shift: bool, optional, default False
+            If True and a model checkpoint file is successfully loaded, only
+            the (atomic) energy shifts will be initially optimized to match
+            best the reference training set. This function is used, e.g., for
+            "transfer learning", when a trained model is retrained on a
+            different reference data set with a changed total energy shift.
+        skip_property_scaling: bool, optional, default False
+            Skip the initial model properties scaling factor and shift term
+            optimization to match best the reference training set.
+        skip_initial_testing: bool, optional, default False
+            Skip the initial model evaluation on the reference test set, if the
+            model evaluation is enabled anyways (see trainer_evaluate_testset).
         verbose: bool, optional, default True
             Show progress bar for the current epoch.
 
@@ -481,8 +465,8 @@ class Trainer:
             self.model_calculator.checkpoint_loaded = True
             self.model_calculator.checkpoint_file = checkpoint_file
 
-            # If restart training, assign optimizer, scheduler and epoch
-            # parameter if available
+            # If restart training enabled, assign optimizer, scheduler and
+            # epoch parameter if available
             if restart:
                 if latest_checkpoint.get('optimizer_state_dict') is not None:
                     self.trainer_optimizer.load_state_dict(
@@ -535,7 +519,7 @@ class Trainer:
         ####################################
 
         # Set model property scaling for newly initialized model calculators
-        if self.model_calculator.checkpoint_loaded and not reset_energy_shift:
+        if self.model_calculator.checkpoint_loaded and reset_energy_shift:
 
             # Get loaded checkpoint file path
             checkpoint_file = self.model_calculator.checkpoint_file
@@ -545,19 +529,7 @@ class Trainer:
             self.logger.info(
                 "Model calculator checkpoint file already loaded!\n"
                 + f"Checkpoint file: '{checkpoint_file:s}'\n"
-                + "No model property scaling parameter are set.")
-
-        elif self.model_calculator.checkpoint_loaded and reset_energy_shift:
-
-            # Get loaded checkpoint file path
-            checkpoint_file = self.model_calculator.checkpoint_file
-            if checkpoint_file is None:
-                checkpoint_file = "unknown(?)"
-
-            self.logger.info(
-                "Model calculator checkpoint file already loaded!\n"
-                + f"Checkpoint file: '{checkpoint_file:s}'\n"
-                + "Model energy shifts will be reevaluated.")
+                + "Model energy shifts will be re-evaluated.")
             
             # Get model energy properties
             properties_scaleable = []
@@ -573,6 +545,18 @@ class Trainer:
                 set_shift_term=True,
                 set_scaling_factor=False,
                 )
+
+        elif self.model_calculator.checkpoint_loaded:
+
+            # Get loaded checkpoint file path
+            checkpoint_file = self.model_calculator.checkpoint_file
+            if checkpoint_file is None:
+                checkpoint_file = "unknown(?)"
+
+            self.logger.info(
+                "Model calculator checkpoint file already loaded!\n"
+                + f"Checkpoint file: '{checkpoint_file:s}'\n"
+                + "No model property scaling parameter are set.")
 
         elif not skip_property_scaling:
 
@@ -617,7 +601,7 @@ class Trainer:
         ##########################
 
         # Initial evaluation of the test set if requested
-        if self.trainer_evaluate_testset:
+        if self.trainer_evaluate_testset and not skip_initial_testing:
             self.tester.test(
                 self.model_calculator,
                 model_conversion=self.model_conversion,
@@ -1230,3 +1214,45 @@ class Trainer:
 
         return metrics
 
+    def print_trainer_info(self):
+        """
+        Print trainer properties summary
+
+        """
+
+        message = (
+            f" {'Property ':<17s} |"
+            + f" {'Model Unit':<12s} |"
+            + f" {'Data Unit':<12s} |"
+            + f" {'Conv. fact.':<12s} |"
+            + f" {'Loss Metric':<12s} |"
+            + f" {'Loss Weight':<12s}\n")
+        message += "-"*len(message) + "\n"
+        for prop, model_unit in self.model_units.items():
+            if self.data_units.get(prop) is None:
+                data_unit = "None"
+            else:
+                data_unit = self.data_units.get(prop)
+            message += (
+                f" {prop:<17s} |"
+                + f" {model_unit:<12s} |"
+                + f" {data_unit:<12s} |")
+            if self.model_conversion.get(prop) is None:
+                message += f" {'None':<12s} |"
+            else:
+                message += f" {self.model_conversion.get(prop):>12.4e} |"
+            if prop in self.trainer_properties:
+                message += f" {self.trainer_properties_metrics[prop]:<12s} |"
+            else:
+                message += f" {'':<12s} |"
+            if prop in self.trainer_properties:
+                message += f" {self.trainer_properties_weights[prop]:> 11.4f}"
+            message += "\n"
+        self.logger.info(
+            "Model and data properties, and model to data conversion factors "
+            + "(model to data)."
+            + "\nError metric and weight are shown for the properties "
+            + "included in the training loss function.\n"
+            + message)
+
+        return

@@ -102,6 +102,9 @@ class Model_PaiNN(model.BaseModel):
         'model_num_threads':            [utils.is_integer],
         }
 
+    # Model type label
+    _model_type = 'PaiNN'
+
     # Default module types of the model calculator
     _default_modules = {
         'input_type':                   'PaiNN',
@@ -361,6 +364,7 @@ class Model_PaiNN(model.BaseModel):
 
         return {
             **info,
+            'model_type': self._model_type,
             'model_properties': self.model_properties,
             'model_unit_properties': self.model_unit_properties,
             'model_cutoff': self.model_cutoff,

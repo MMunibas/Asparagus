@@ -190,7 +190,7 @@ class Asparagus():
 
             # Get model calculator
             data_container = self._get_data_container(
-                config,
+                config=config,
                 **kwargs)
 
             # Assign data container
@@ -467,7 +467,7 @@ class Asparagus():
 
         # Get model calculator
         model_calculator = self._get_model_calculator(
-            config=config,
+            config,
             model_calculator=model_calculator,
             model_type=model_type,
             model_checkpoint=model_checkpoint,
@@ -522,7 +522,7 @@ class Asparagus():
         # Assign model calculator
         model_calculator, checkpoint, checkpoint_file = (
             model.get_model_calculator(
-                config,
+                config=config,
                 model_calculator=model_calculator,
                 model_type=model_type,
                 model_checkpoint=model_checkpoint,
@@ -602,9 +602,19 @@ class Asparagus():
 
         # Assign model calculator trainer
         if self.trainer is None:
+
+            # Get single model trainer
             trainer = self._get_trainer(
-                config,
-                **kwargs,)
+                config=config,
+                **kwargs)
+
+            # If requested, upgrade single model trainer to ensemble trainer
+            if train_ensemble:
+                trainer = training.EnsembleTrainer(
+                    config=config,
+                    ensemble_model_trainer=trainer,
+                    **kwargs)
+
         else:
             trainer = self.trainer
 
@@ -669,7 +679,6 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
-        train_ensemble: Optional[bool] = False,
         **kwargs,
     ):
         """
@@ -682,9 +691,6 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
-        train_ensemble: bool, optional, default False
-            If True, an ensemble of model calculators are trained.
-            Number of models are defined by 'ensemble_number'.
 
         """
 
@@ -695,7 +701,6 @@ class Asparagus():
         trainer = self.get_trainer(
             config=config,
             config_file=config_file,
-            train_ensemble=train_ensemble,
             **kwargs)
 
         ########################################

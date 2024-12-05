@@ -79,6 +79,9 @@ class Input_PaiNN(torch.nn.Module):
         'input_n_maxatom':              [utils.is_integer],
         }
 
+    # Input type module
+    _input_type = 'PaiNN'
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -176,7 +179,7 @@ class Input_PaiNN(torch.nn.Module):
         return
 
     def __str__(self):
-        return self.input_type
+        return self._input_type
 
     def get_info(self) -> Dict[str, Any]:
         """
@@ -184,7 +187,7 @@ class Input_PaiNN(torch.nn.Module):
         """
         
         return {
-            'input_type': self.input_type,
+            'input_type': self._input_type,
             'input_n_atombasis': self.input_n_atombasis,
             'input_radial_fn': str(self.input_radial_fn),
             'input_n_radialbasis': self.input_n_radialbasis,
@@ -312,7 +315,9 @@ class Graph_PaiNN(torch.nn.Module):
         'graph_activation_fn':          [utils.is_string, utils.is_callable],
         }
 
-    
+    # Graph type module
+    _graph_type = 'PaiNN'
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -399,7 +404,7 @@ class Graph_PaiNN(torch.nn.Module):
         return
 
     def __str__(self):
-        return self.graph_type
+        return self._graph_type
 
     def get_info(self) -> Dict[str, Any]:
         """
@@ -407,7 +412,7 @@ class Graph_PaiNN(torch.nn.Module):
         """
         
         return {
-            'graph_type': self.graph_type,
+            'graph_type': self._graph_type,
             'graph_n_blocks': self.graph_n_blocks,
             'graph_activation_fn': str(self.graph_activation_fn),
             'graph_stability_constant': self.graph_stability_constant,
@@ -573,7 +578,7 @@ class Output_PaiNN(torch.nn.Module):
         Additional arguments
 
     """
-    
+
     # Default arguments for graph module
     _default_args = {
         'output_properties':            None,
@@ -589,9 +594,9 @@ class Output_PaiNN(torch.nn.Module):
         'output_n_residual':            [utils.is_integer],
         'output_property_scaling':      [utils.is_dictionary, utils.is_None],
         }
-    
-    # Output module specially handled properties
-    #_property_special = ['energy', 'atomic_energies', 'atomic_charges']
+
+    # Output type module
+    _output_type = 'PaiNN'
     
     # Default output block options for atom-wise scalar properties such as, 
     # e.g., 'atomic_energies'.
@@ -906,7 +911,7 @@ class Output_PaiNN(torch.nn.Module):
         return
 
     def __str__(self):
-        return self.output_type
+        return self._output_type
     
     def get_info(self) -> Dict[str, Any]:
         """
@@ -914,7 +919,7 @@ class Output_PaiNN(torch.nn.Module):
         """
 
         return {
-            'output_type': self.output_type,
+            'output_type': self._output_type,
             'output_properties': self.output_properties,
             'output_properties_options': self.output_properties_options,
             }

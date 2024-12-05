@@ -107,6 +107,9 @@ class Model_PhysNet(model.BaseModel):
         'model_num_threads':            [utils.is_integer, utils.is_None],
         }
 
+    # Model type label
+    _model_type = 'PhysNet'
+
     # Default module types of the model calculator
     _default_modules = {
         'input_type':                   'PhysNet',
@@ -372,6 +375,7 @@ class Model_PhysNet(model.BaseModel):
 
         return {
             **info,
+            'model_type': self._model_type,
             'model_properties': self.model_properties,
             'model_unit_properties': self.model_unit_properties,
             'model_cutoff': self.model_cutoff,

@@ -8,6 +8,10 @@ from .trainer import (
     Trainer
 )
 
+from .ensemble import (
+    EnsembleTrainer
+)
+
 from .tester import (
     Tester
 )

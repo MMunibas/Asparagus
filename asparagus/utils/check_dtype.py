@@ -190,53 +190,6 @@ def is_integer(x: Any, verbose: Optional[bool] = False) -> bool:
     else:
         return result
 
-
-def is_callable(x: Any, verbose: Optional[bool] = False) -> bool:
-    """
-    Check if the input is a callable object
-
-    Parameters
-    ----------
-    x: Any
-        Input variable of which to check dtype
-    verbose: bool, optional, default False
-        If True, return the type of the input and the expected type
-
-    Returns
-    -------
-    bool
-        True, if input variable match dtype, else False.
-
-    """
-    if verbose:
-        return isinstance(x, Callable), type(x), "callable object"
-    else:
-        return isinstance(x, Callable)
-
-
-def is_object(x: Any, verbose: Optional[bool] = False) -> bool:
-    """
-    Check if the input is an object
-
-    Parameters
-    ----------
-    x: Any
-        Input variable of which to check dtype
-    verbose: bool, optional, default False
-        If True, return the type of the input and the expected type
-
-    Returns
-    -------
-    bool
-        True, if input variable match dtype, else False.
-
-    """
-    if verbose:
-        return isinstance(x, object), type(x), "object"
-    else:
-        return isinstance(x, object)
-
-
 def is_dictionary(x: Any, verbose=False):
     """
     Check if the input is a dictionary
@@ -666,6 +619,52 @@ def is_ase_atoms_array(
         return (result, xtype, f"({darr_all})[ase.Atoms]")
     else:
         return result
+
+
+def is_callable(x: Any, verbose: Optional[bool] = False) -> bool:
+    """
+    Check if the input is a callable object
+
+    Parameters
+    ----------
+    x: Any
+        Input variable of which to check dtype
+    verbose: bool, optional, default False
+        If True, return the type of the input and the expected type
+
+    Returns
+    -------
+    bool
+        True, if input variable match dtype, else False.
+
+    """
+    if verbose:
+        return isinstance(x, Callable), type(x), "callable object"
+    else:
+        return isinstance(x, Callable)
+
+
+def is_object(x: Any, verbose: Optional[bool] = False) -> bool:
+    """
+    Check if the input is an object (everything in python is an object ...)
+
+    Parameters
+    ----------
+    x: Any
+        Input variable of which to check dtype
+    verbose: bool, optional, default False
+        If True, return the type of the input and the expected type
+
+    Returns
+    -------
+    bool
+        True, if input variable match dtype, else False.
+
+    """
+    if verbose:
+        return isinstance(x, object), type(x), "object"
+    else:
+        return isinstance(x, object)
 
 # --------------- ** Checking torch data options ** ---------------
 
