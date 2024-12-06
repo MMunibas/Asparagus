@@ -18,6 +18,7 @@ def get_config(
         Union[str, Dict[str, Any], 'Configuration']] = None,
     config_file: Optional[str] = None,
     config_from: Optional[Union[str, 'Configuration']] = None,
+    verbose: Optional[bool] = True,
     **kwargs,
 ) -> 'Configuration':
     """
@@ -50,12 +51,16 @@ def get_config(
     if utils.is_callable(config):
 
         # If config file is defined - update config file path
-        config.set_config_file = (config_file)
+        if config_file is not None:
+            config.set_config_file(
+                config_file,
+                verbose=verbose)
 
         # Update configuration with keyword arguments
         config.update(
             kwargs,
-            config_from=config_from)
+            config_from=config_from,
+            verbose=verbose)
 
         return config
 
@@ -64,6 +69,7 @@ def get_config(
         config=config,
         config_file=config_file,
         config_from=config_from,
+        verbose=verbose,
         **kwargs)
 
 # ======================================
@@ -101,6 +107,7 @@ class Configuration():
         config: Optional[Union[str, dict]] = None,
         config_file: Optional[str] = None,
         config_from: Optional[Union[str, 'Configuration']] = None,
+        verbose: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -169,18 +176,16 @@ class Configuration():
         # defined as dictionary and string.
 
         # Set config file path to dictionary
-        self.set_config_file(self.config_file)
-
-        # Generate, eventually, the directory for the config file
-        config_dir = os.path.dirname(self.config_file)
-        if not os.path.isdir(config_dir) and len(config_dir):
-            os.makedirs(os.path.dirname(self.config_file))
+        self.set_config_file(
+            self.config_file,
+            verbose=verbose)
 
         # Update configuration dictionary with keyword arguments
         if len(kwargs):
             self.update(
                 kwargs,
                 config_from=config_from,
+                verbose=verbose,
                 )
 
         # Save current configuration dictionary to file
@@ -226,6 +231,7 @@ class Configuration():
     def set_config_file(
         self,
         config_file: str,
+        verbose: Optional[bool] = True,
     ):
 
         # Check input
@@ -238,17 +244,24 @@ class Configuration():
 
         # Set config file path to dictionary
         if self.config_dict.get('config_file') is None:
+            if verbose:
+                self.logger.info(
+                    "Configuration file path set to "
+                    + f"'{self.config_file:s}'!")
             self.config_dict['config_file'] = self.config_file
-            self.logger.info(
-                "Configuration file path set to "
-                + f"'{self.config_file:s}'!")
         else:
             if self.config_dict.get('config_file') != self.config_file:
-                self.logger.info(
-                    "Configuration file path will be changed from "
-                    + f"'{self.config_dict.get('config_file'):s}' to "
-                    + f"'{self.config_file:s}'!")
+                if verbose:
+                    self.logger.info(
+                        "Configuration file path will be changed from "
+                        + f"'{self.config_dict.get('config_file'):s}' to "
+                        + f"'{self.config_file:s}'!")
                 self.config_dict['config_file'] = self.config_file
+
+        # Generate, eventually, the directory for the config file
+        config_dir = os.path.dirname(self.config_file)
+        if not os.path.isdir(config_dir) and len(config_dir):
+            os.makedirs(os.path.dirname(self.config_file))
 
         return
 
@@ -407,9 +420,16 @@ class Configuration():
         # Convert config dictionary to json compatible dictionary
         config_dump = self.make_dumpable(self.config_dict)
 
-        # Dumb converted config dictionary
+        # Check config file
         if config_file is None:
             config_file = self.config_file
+
+        # Generate, eventually, the directory for the config file
+        config_dir = os.path.dirname(config_file)
+        if not os.path.isdir(config_dir) and len(config_dir):
+            os.makedirs(os.path.dirname(config_file))
+
+        # Dumb converted config dictionary
         with open(config_file, 'w') as f:
             json.dump(
                 config_dump, f,

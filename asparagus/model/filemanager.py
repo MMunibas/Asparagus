@@ -128,10 +128,10 @@ class FileManager():
 
     def save_checkpoint(
         self,
-        model_calc: "model.BaseModel",
-        optimizer: "torch.Optimizer",
-        scheduler: "torch.Scheduler",
-        epoch: int,
+        model_calculator: "model.BaseModel",
+        optimizer: Optional["torch.Optimizer"] = None,
+        scheduler: Optional["torch.Scheduler"] = None,
+        epoch: Optional[int] = 0,
         best: Optional[bool] = False,
         best_loss: Optional[float] = None,
         num_checkpoint: Optional[int] = None,
@@ -142,12 +142,14 @@ class FileManager():
 
         Parameters
         ----------
-        model_calc: model.BaseModel
+        model_calculator: model.BaseModel
             Torch calculator model
-        optimizer: torch.Optimizer
+        optimizer: torch.Optimizer, optional, default None
             Torch optimizer
-        scheduler: torch.Scheduler
+        scheduler: torch.Scheduler, optional, default None
             Torch scheduler
+        epoch: int, optional, default 0
+            Training epoch of calculator model 
         best: bool, optional, default False
             If True, save as best model checkpoint file.
         best_loss: float, optional, default None
@@ -165,22 +167,26 @@ class FileManager():
         # Check existence of the directories
         self.create_model_directory()
 
-        # For best model, just store model parameter
+        # Prepare state dictionary to store
+        state = {
+            'model_state_dict': model_calculator.state_dict(),
+            'best_loss': best_loss,
+            'epoch': epoch,
+        }
+
+        # For best model, just store model parameter, epoch and loss value
         if best:
-            state = {
-                'model_state_dict': model_calc.state_dict(),
-                'best_loss': best_loss,
-                'epoch': epoch,
-                }
-        # Else the complete current model training state
+            pass
+        # Else the complete current model training state if available
         else:
-            state = {
-                'model_state_dict': model_calc.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict(),
-                'epoch': epoch,
-                'best_loss': best_loss,
-                }
+            if optimizer is not None:
+                state.update(
+                    {'optimizer_state_dict': optimizer.state_dict()}
+                )
+            if scheduler is not None:
+                state.update(
+                    {'scheduler_state_dict': scheduler.state_dict()}
+                )
 
         # Checkpoint file name
         if best:
@@ -201,8 +207,8 @@ class FileManager():
         torch.save(state, ckpt_name)
 
         # Store latest checkpoint file in model calculator
-        model_calc.checkpoint_loaded = True
-        model_calc.checkpoint_file = ckpt_name
+        model_calculator.checkpoint_loaded = True
+        model_calculator.checkpoint_file = ckpt_name
 
         # Check number of epoch checkpoints
         if not best and num_checkpoint is None:
@@ -222,6 +228,8 @@ class FileManager():
         ----------
         checkpoint_label: (str, int)
             If None, load checkpoint file with best loss function value.
+            If string and a valid file path, load the respective checkpoint 
+            file.
             If string 'best' or 'last', load respectively the best checkpoint 
             file (as with None) or the with the highest epoch number.
             If integer, load the checkpoint file of the respective epoch 
@@ -235,6 +243,9 @@ class FileManager():
         Any
             Torch module checkpoint file
         """
+
+        # Check existence of the directories
+        self.create_model_directory()
 
         # Check checkpoint label input
         if checkpoint_label is None:
@@ -379,9 +390,6 @@ class FileManager():
             Maximum number of backup config files
 
         """
-
-        # Check existence of the directories
-        self.create_model_directory()
 
         # Config file path
         config_file = os.path.join(

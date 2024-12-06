@@ -279,7 +279,7 @@ class Trainer:
 
         # Assign model calculator model if not done already
         if self.model_calculator is None:
-            self.model_calculator = asparagus.get_model_calculator(
+            self.model_calculator, _, _ = model.get_model_calculator(
                 config=config,
                 **kwargs)
 
@@ -420,6 +420,13 @@ class Trainer:
 
         Parameters
         ----------
+        checkpoint: (str, int), optional, default 'last'
+            If string and a valid file path, load the respective checkpoint 
+            file.
+            If string 'best' or 'last', load respectively the best checkpoint 
+            file (as with None) or the with the highest epoch number for each.
+            If integer, load the checkpoint file of the respective epoch 
+            If None, load checkpoint file with best loss function value.
         restart: bool, optional, default True
             If True, restart the model training from the last checkpoint file,
             if available. If False or no checkpoint file exist, start training
@@ -449,17 +456,17 @@ class Trainer:
         #################################
 
         # Load checkpoint file
-        latest_checkpoint, checkpoint_file = self.filemanager.load_checkpoint(
+        loaded_checkpoint, checkpoint_file = self.filemanager.load_checkpoint(
             checkpoint_label=checkpoint,
             verbose=True)
 
         trainer_epoch_start = 1
         best_loss = None
-        if latest_checkpoint is not None:
+        if loaded_checkpoint is not None:
 
             # Assign model parameters
             self.model_calculator.load_state_dict(
-                latest_checkpoint['model_state_dict'])
+                loaded_checkpoint['model_state_dict'])
             self.logger.info(
                 f"Checkpoint file '{checkpoint_file:s}' loaded.")
             self.model_calculator.checkpoint_loaded = True
@@ -468,23 +475,23 @@ class Trainer:
             # If restart training enabled, assign optimizer, scheduler and
             # epoch parameter if available
             if restart:
-                if latest_checkpoint.get('optimizer_state_dict') is not None:
+                if loaded_checkpoint.get('optimizer_state_dict') is not None:
                     self.trainer_optimizer.load_state_dict(
-                        latest_checkpoint['optimizer_state_dict'])
-                if latest_checkpoint.get('scheduler_state_dict') is not None:
+                        loaded_checkpoint['optimizer_state_dict'])
+                if loaded_checkpoint.get('scheduler_state_dict') is not None:
                     self.trainer_scheduler.load_state_dict(
-                        latest_checkpoint['scheduler_state_dict'])
-                if latest_checkpoint.get('epoch') is not None:
-                    trainer_epoch_start = latest_checkpoint['epoch'] + 1
+                        loaded_checkpoint['scheduler_state_dict'])
+                if loaded_checkpoint.get('epoch') is not None:
+                    trainer_epoch_start = loaded_checkpoint['epoch'] + 1
 
                 # Initialize best total loss value of validation reference data
                 if (
                     reset_best_loss 
-                    or latest_checkpoint.get('best_loss') is None
+                    or loaded_checkpoint.get('best_loss') is None
                 ):
                     best_loss = None
                 else:
-                    best_loss = latest_checkpoint['best_loss']
+                    best_loss = loaded_checkpoint['best_loss']
 
         # Skip if max epochs are already reached
         if trainer_epoch_start > self.trainer_max_epochs:
@@ -518,7 +525,10 @@ class Trainer:
         # # # Prepare Property Scaling # # #
         ####################################
 
-        # Set model property scaling for newly initialized model calculators
+        # Either, if a model checkpoint file is loaded, re-optimize energy or
+        # atomic energy shifts if specifically requested.
+        # If no model checkpoint file is loaded or it is still the first epoch,
+        # run model property scaling for the model calculator.
         if self.model_calculator.checkpoint_loaded and reset_energy_shift:
 
             # Get loaded checkpoint file path
@@ -546,7 +556,10 @@ class Trainer:
                 set_scaling_factor=False,
                 )
 
-        elif self.model_calculator.checkpoint_loaded:
+        elif (
+            self.model_calculator.checkpoint_loaded
+            and not trainer_epoch_start == 1
+        ):
 
             # Get loaded checkpoint file path
             checkpoint_file = self.model_calculator.checkpoint_file
@@ -748,7 +761,7 @@ class Trainer:
             # Save current model each interval
             if not (epoch % self.trainer_save_interval):
                 self.filemanager.save_checkpoint(
-                    model_calc=self.model_calculator,
+                    model_calculator=self.model_calculator,
                     optimizer=self.trainer_optimizer,
                     scheduler=self.trainer_scheduler,
                     epoch=epoch,
@@ -809,7 +822,7 @@ class Trainer:
 
                     # Save model calculator state
                     self.filemanager.save_checkpoint(
-                        model_calc=self.model_calculator,
+                        model_calculator=self.model_calculator,
                         optimizer=self.trainer_optimizer,
                         scheduler=self.trainer_scheduler,
                         epoch=epoch,
