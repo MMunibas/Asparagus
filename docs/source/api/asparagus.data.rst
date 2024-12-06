@@ -68,6 +68,14 @@ asparagus.data.dataset module
    :undoc-members:
    :show-inheritance:
 
+asparagus.data.datastats module
+-------------------------------
+
+.. automodule:: asparagus.data.datastats
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Module contents
 ---------------
 

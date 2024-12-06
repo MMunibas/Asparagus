@@ -28,14 +28,6 @@ asparagus.settings.dtypes module
    :undoc-members:
    :show-inheritance:
 
-asparagus.settings.globl module
--------------------------------
-
-.. automodule:: asparagus.settings.globl
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 asparagus.settings.properties module
 ------------------------------------
 

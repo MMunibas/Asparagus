@@ -28,10 +28,10 @@ asparagus.utils.check\_units module
    :undoc-members:
    :show-inheritance:
 
-asparagus.utils.data module
----------------------------
+asparagus.utils.data\_ase module
+--------------------------------
 
-.. automodule:: asparagus.utils.data
+.. automodule:: asparagus.utils.data_ase
    :members:
    :undoc-members:
    :show-inheritance:
@@ -52,10 +52,10 @@ asparagus.utils.legacy module
    :undoc-members:
    :show-inheritance:
 
-asparagus.utils.neighborlist module
------------------------------------
+asparagus.utils.output module
+-----------------------------
 
-.. automodule:: asparagus.utils.neighborlist
+.. automodule:: asparagus.utils.output
    :members:
    :undoc-members:
    :show-inheritance:

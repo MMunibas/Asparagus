@@ -36,6 +36,14 @@ asparagus.module.input module
    :undoc-members:
    :show-inheritance:
 
+asparagus.module.neighborlist module
+------------------------------------
+
+.. automodule:: asparagus.module.neighborlist
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.module.output module
 ------------------------------
 
@@ -56,6 +64,14 @@ asparagus.module.physnet\_modules module
 ----------------------------------------
 
 .. automodule:: asparagus.module.physnet_modules
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+asparagus.module.repulsion module
+---------------------------------
+
+.. automodule:: asparagus.module.repulsion
    :members:
    :undoc-members:
    :show-inheritance:

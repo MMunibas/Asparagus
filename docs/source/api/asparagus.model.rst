@@ -4,6 +4,14 @@ asparagus.model package
 Submodules
 ----------
 
+asparagus.model.basemodel module
+--------------------------------
+
+.. automodule:: asparagus.model.basemodel
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.model.calculator module
 ---------------------------------
 

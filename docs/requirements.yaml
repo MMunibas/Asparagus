@@ -1,0 +1,16 @@
+name: docs_asparagus_bundle
+channels:
+  - conda-forge
+  - defaults
+  
+dependencies:
+    # Base depends
+  - python=3.11.2
+  - pip
+  # Pip-only installs
+  - pip:
+    - -e ../
+    - sphinx==7.1.2
+    - sphinx-rtd-theme==1.3.0rc1
+    - myst-parser
+    - sphinxemoji
