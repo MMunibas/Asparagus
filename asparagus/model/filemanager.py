@@ -244,9 +244,6 @@ class FileManager():
             Torch module checkpoint file
         """
 
-        # Check existence of the directories
-        self.create_model_directory()
-
         # Check checkpoint label input
         if checkpoint_label is None:
             checkpoint_label = 'best'
@@ -272,11 +269,12 @@ class FileManager():
 
             # Get highest index checkpoint file
             ckpt_max = -1
-            for ckpt_file in os.listdir(self.ckpt_dir):
-                ckpt_num = re.findall("model_(\d+).pt", ckpt_file)
-                ckpt_num = (int(ckpt_num[0]) if ckpt_num else -1)
-                if ckpt_max < ckpt_num:
-                    ckpt_max = ckpt_num
+            if os.path.exists(self.ckpt_dir):
+                for ckpt_file in os.listdir(self.ckpt_dir):
+                    ckpt_num = re.findall("model_(\d+).pt", ckpt_file)
+                    ckpt_num = (int(ckpt_num[0]) if ckpt_num else -1)
+                    if ckpt_max < ckpt_num:
+                        ckpt_max = ckpt_num
 
             # If no checkpoint files available return None
             if ckpt_max < 0:

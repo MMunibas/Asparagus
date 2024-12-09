@@ -3,14 +3,16 @@ import time
 import socket
 import logging
 
-from typing import Optional, Callable
+from typing import Optional, Union, Callable
 
+from asparagus import utils
 
 def set_logger(
     logger: logging.Logger,
     level: Optional[Callable] = None,
-    stream: Optional[Callable] = sys.stdout,
+    stream: Optional[Union[Callable, str]] = sys.stdout,
     verbose: Optional[bool] = True,
+    **kwargs
 ) -> logging.Logger:
     """
     Set logging parameters,
@@ -18,11 +20,11 @@ def set_logger(
     Parameters
     ----------
     logger: logging.Logger
-        Logger object to set paramerts
+        Logger object to set parameters
     level: callable, optional, default 'logging.INFO'
         Print level for output (e.g. logging.DEBUG, logging.INFO, ...)
-    stream: callable, optional, default 'sys.stdout'
-        Output channel to print
+    stream: (callable, str), optional, default 'sys.stdout'
+        Output channel to print or file path to write
     verbose: bool, optional, default True
         Start logger output with header for information
 
@@ -39,7 +41,12 @@ def set_logger(
     else:
         logger.setLevel(level)
 
-    handler = logging.StreamHandler(stream)
+    # Initialize output path
+    if utils.is_string(stream):
+        handler = logging.FileHandler(stream, mode='a')
+    else:
+        handler = logging.StreamHandler(stream)
+
     if verbose:
         handler.setFormatter(
             logging.Formatter(
@@ -142,4 +149,20 @@ def print_ProgressBar(
     if iteration == total:
         print()
 
+    return
+
+
+def print_Progress(
+    status: Optional[str] = '',
+):
+    """
+    Just print progress status
+
+    Parameters
+    ----------
+    status: str, optional, default ''
+        Status string
+
+    """
+    print(status)
     return

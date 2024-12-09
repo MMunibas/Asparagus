@@ -33,7 +33,7 @@ from .check_units import(
 )
 
 from .output import(
-    set_logger, get_header, print_ProgressBar
+    set_logger, get_header, print_ProgressBar, print_Progress
 )
 
 from .functions import(

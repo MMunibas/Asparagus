@@ -159,6 +159,18 @@ class EnsembleTrainer:
             os.path.join(self.model_directory, f"{imodel:d}")
             for imodel in range(self.ensemble_num_models)]
 
+        # Create model subdirectories
+        for model_directory in self.ensemble_model_subdirectories:
+            if not os.path.exists(model_directory):
+                os.makedirs(model_directory)
+
+        # Assign logger output files
+        self.ensemble_logger_files = [
+            os.path.join(
+                self.ensemble_model_subdirectories[imodel],
+                f"training_model_{imodel:d}.out")
+            for imodel in range(self.ensemble_num_models)]
+
         # Generate model configurations
         self.ensemble_model_configs = []
         for imodel, model_subdirectory in enumerate(
@@ -281,6 +293,14 @@ class EnsembleTrainer:
         # Initialize the multithreading lock
         self.lock = threading.Lock()
 
+        # Print ensemble training information
+        self.logger.info(
+            "Start model ensemble training:\n"
+            + f" Number of models: {self.ensemble_num_models:d}\n"
+            + f" Models directory: {self.model_directory:s}\n"
+            + f" Epochs per training step: {self.ensemble_epochs_step:d}\n"
+            + f" Number of training threads: {self.ensemble_num_threads:d}")
+
         # Run sampling over sample systems
         if self.ensemble_num_threads == 1:
 
@@ -363,22 +383,30 @@ class EnsembleTrainer:
             # Select next model and step
             imodel, istep = self.next_step()
 
+            # Print training thread information
             if ithread is None:
-                print("Start", imodel, istep, f"({0:d})")
+                self.logger.info(
+                    f"Start training of model {imodel:d} up to epoch "
+                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
             else:
-                print("Start", imodel, istep, f"({ithread + 1:d})")
+                self.logger.info(
+                    f"Start training of model {imodel:d} "
+                    + f"(thread {ithread:d}) up to epoch "
+                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
 
             # Initialize ensemble model potential
             model_calculator, _, _ = model.get_model_calculator(
                 config=self.ensemble_model_configs[imodel],
                 model_directory=self.ensemble_model_subdirectories[imodel])
-
+            
             # Initialize Trainer instance
             trainer = training.Trainer(
                 config=self.ensemble_model_configs[imodel],
                 data_container=self.data_container,
                 model_calculator=model_calculator,
-                trainer_max_epochs=self.ensemble_epoch_steps_list[istep])
+                trainer_max_epochs=self.ensemble_epoch_steps_list[istep],
+                trainer_evaluate_testset=False,
+                trainer_print_progress_bar=False)
 
             # Run training
             if istep:
@@ -403,11 +431,17 @@ class EnsembleTrainer:
                 self.ensemble_model_is_training[imodel] = False
                 self.ensemble_model_step[imodel] += 1
 
+
+            # Print training thread information
             if ithread is None:
-                print("Done", imodel, istep, f"({0:d})")
+                self.logger.info(
+                    f"Done training of model {imodel:d} up to epoch "
+                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
             else:
-                print("Done", imodel, istep, f"({ithread + 1:d})")
-            print("Model step overview", self.ensemble_model_step)
+                self.logger.info(
+                    f"Done training of model {imodel:d} "
+                    + f"(thread {ithread:d}) up to epoch "
+                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
 
         return
         
@@ -453,7 +487,12 @@ class EnsembleTrainer:
                     idle_models,
                     self.ensemble_model_step == min_step
                 )
-            )[0][0]
+            )[0]
+            if len(imodel):
+                imodel = imodel[0]
+            else:
+                raise SyntaxError(
+                    "No inactive model found!")
 
             # Get next epoch step of the selected model
             istep = self.ensemble_model_step[imodel]

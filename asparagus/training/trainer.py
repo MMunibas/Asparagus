@@ -1,3 +1,4 @@
+import sys
 import time
 import logging
 from typing import Optional, List, Dict, Tuple, Union, Any, Callable
@@ -642,7 +643,7 @@ class Trainer:
                 train_time_batch_start = time.time()
 
                 # Eventually show training progress
-                if verbose:
+                if verbose and self.trainer_print_progress_bar:
                     utils.print_ProgressBar(
                         ib, Nbatch_train,
                         prefix=f"Epoch {epoch: 5d}",
@@ -733,15 +734,20 @@ class Trainer:
             train_time_epoch = train_time_epoch_end - train_time_epoch_start
 
             # Eventually show final training progress
-            if verbose:
+            if verbose and self.trainer_print_progress_bar:
                 utils.print_ProgressBar(
                     Nbatch_train, Nbatch_train,
                     prefix=f"Epoch {epoch: 5d}",
                     suffix=(
-                        "Done - Epoch Time: " +
-                        f"{train_time_epoch: 4.1f} s, " +
-                        f"Loss: {metrics_train['loss']: 4.4f}   "),
+                        "Done - Epoch Time: "
+                        + f"{train_time_epoch: 4.1f} s, "
+                        + f"Loss: {metrics_train['loss']: 4.4f}   "),
                     length=42)
+            elif verbose:
+                utils.print_Progress(
+                    f"Done Epoch {epoch: 5d}, "
+                    + f"Epoch Time: {train_time_epoch: 4.1f} s, "
+                    + f"Loss: {metrics_train['loss']: 4.4f}   ")
 
             # Add process to training summary writer
             if self.trainer_summary_writer:
@@ -1267,5 +1273,35 @@ class Trainer:
             + "\nError metric and weight are shown for the properties "
             + "included in the training loss function.\n"
             + message)
+
+        return
+
+    def reset_logger(
+        self,
+        level: Optional[Callable] = None,
+        stream: Optional[Union[Callable, str]] = sys.stdout,
+        verbose: Optional[bool] = True,
+    ):
+        """
+        Reset Training class logger, e.g, in model ensemble training to stream
+        model training to model specific output files.
+
+        Parameters
+        ----------
+        level: callable, optional, default 'logging.INFO'
+            Print level for output (e.g. logging.DEBUG, logging.INFO, ...)
+        stream: (callable, str), optional, default 'sys.stdout'
+            Output channel to print or file path to write
+        verbose: bool, optional, default True
+            Start logger output with header for information
+
+        """
+
+        # Set logger options
+        self.logger = utils.set_logger(
+            logging.getLogger(self.name),
+            level=level,
+            stream=stream,
+            verbose=verbose)
 
         return
