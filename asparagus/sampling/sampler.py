@@ -798,6 +798,7 @@ class Sampler:
             sample index.
         ithread: int, optional, default None
             Thread number
+
         """
         
         # Initialize stored sample counter

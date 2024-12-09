@@ -291,6 +291,7 @@ class BaseModel(torch.nn.Module):
     def base_modules_setup(
         self,
         config: settings.Configuration,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -322,6 +323,7 @@ class BaseModel(torch.nn.Module):
                 config=config,
                 device=self.device,
                 dtype=self.dtype,
+                verbose=verbose,
                 **kwargs)
 
         # Check for graph module object in configuration input,
@@ -341,6 +343,7 @@ class BaseModel(torch.nn.Module):
                 config=config,
                 device=self.device,
                 dtype=self.dtype,
+                verbose=verbose,
                 **kwargs)
 
         # Check for output module object in input,
@@ -360,6 +363,7 @@ class BaseModel(torch.nn.Module):
                 config=config,
                 device=self.device,
                 dtype=self.dtype,
+                verbose=verbose,
                 **kwargs)
         
         return input_module, graph_module, output_module

@@ -103,6 +103,7 @@ class Input_PhysNet(torch.nn.Module):
         input_n_maxatom: Optional[int] = None,
         device: Optional[str] = None,
         dtype: Optional['device'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -130,7 +131,9 @@ class Input_PhysNet(torch.nn.Module):
         )
             
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
         
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -335,6 +338,7 @@ class Graph_PhysNet(torch.nn.Module):
         graph_activation_fn: Optional[Union[str, object]] = None,
         device: Optional[str] = None,
         dtype: Optional['device'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -362,7 +366,9 @@ class Graph_PhysNet(torch.nn.Module):
         )
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -533,6 +539,7 @@ class Output_PhysNet(torch.nn.Module):
             Dict[str, Union[List[float], Dict[int, List[float]]]]] = None,
         device: Optional[str] = None,
         dtype: Optional['device'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -560,7 +567,9 @@ class Output_PhysNet(torch.nn.Module):
         )
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -604,7 +613,9 @@ class Output_PhysNet(torch.nn.Module):
         self.output_properties = properties_list
         config_update = {
             'output_properties': self.output_properties}
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         #####################################
         # # # Output Module Class Setup # # #

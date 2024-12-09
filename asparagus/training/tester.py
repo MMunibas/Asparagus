@@ -102,6 +102,7 @@ class Tester:
         test_directory: Optional[str] = None,
         device: Optional[str] = None,
         dtype: Optional[object] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -127,7 +128,10 @@ class Tester:
         )
 
         # Update global configuration dictionary
-        config.update(config_update, config_from=self)
+        config.update(
+            config_update,
+            config_from=self,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)

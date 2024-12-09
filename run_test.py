@@ -1093,6 +1093,9 @@ if flag_train_physnet_sql:
             'data/h2co_B3LYP_cc-pVDZ_4001.npz'
             ],
         data_overwrite=True,
+        data_num_train=200,
+        data_num_valid=40,
+        data_num_test=40,
         model_directory='test/physnet_sql',
         model_num_threads=2,
         trainer_max_epochs=10,

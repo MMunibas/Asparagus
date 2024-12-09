@@ -164,10 +164,14 @@ class Configuration():
             # If config is actually a file path - read config dict and update
             # self.config_dict
             if utils.is_string(config):
-                self.update(self.read(config))
+                self.update(
+                    self.read(config),
+                    verbose=verbose)
             # If config is a dictionary - update self.config_dict
             elif utils.is_dictionary(config):
-                self.update(config)
+                self.update(
+                    config,
+                    verbose=verbose)
             else:
                 raise SyntaxError(
                     "Config input 'config' is neither a dictionary nor a "
@@ -555,7 +559,8 @@ class Configuration():
 
         # Check arguments to skip
         default_argsskip = [
-            'self', 'config', 'config_file', 'logger', 'kwargs', '__class__']
+            'self', 'config', 'config_file', 'logger', 'verbose', 'kwargs',
+            '__class__']
         if argsskip is None:
             argsskip = default_argsskip
         else:

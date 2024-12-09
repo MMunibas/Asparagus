@@ -68,6 +68,7 @@ def get_model_calculator(
     model_calculator: Optional[torch.nn.Module] = None,
     model_type: Optional[str] = None,
     model_checkpoint: Optional[Union[int, str]] = None,
+    verbose: Optional[bool] = True,
     **kwargs,
 ) -> (torch.nn.Module, Any):
     """
@@ -112,18 +113,23 @@ def get_model_calculator(
         # Initialize model calculator
         model_calculator = model_calculator_class(
             config=config,
+            verbose=verbose,
             **kwargs)
 
     # Add calculator info to configuration dictionary
     if hasattr(model_calculator, "get_info"):
         config.update(
             model_calculator.get_info(), 
-            config_from=utils.get_function_location())
+            config_from=utils.get_function_location(),
+            verbose=verbose)
 
     # Initialize checkpoint file manager and load best or specific model 
     # parameter checkpoint file
-    filemanager = model.FileManager(config, **kwargs)
-    
+    filemanager = model.FileManager(
+        config,
+        verbose=verbose,
+        **kwargs)
+
     # Get checkpoint file
     if model_checkpoint is None and config.get('model_checkpoint') is None:
         model_checkpoint = 'best'
@@ -131,6 +137,7 @@ def get_model_calculator(
         model_checkpoint = config.get('model_checkpoint')
     checkpoint, checkpoint_file = filemanager.load_checkpoint(
         model_checkpoint,
-        verbose=True)
+        return_name=True,
+        verbose=verbose)
 
     return model_calculator, checkpoint, checkpoint_file

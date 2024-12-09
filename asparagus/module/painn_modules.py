@@ -98,6 +98,7 @@ class Input_PaiNN(torch.nn.Module):
         input_atom_features_range: Optional[float] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -126,7 +127,9 @@ class Input_PaiNN(torch.nn.Module):
         )
             
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
         
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -327,6 +330,7 @@ class Graph_PaiNN(torch.nn.Module):
         graph_stability_constant: Optional[float] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -355,7 +359,9 @@ class Graph_PaiNN(torch.nn.Module):
         )
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -668,6 +674,7 @@ class Output_PaiNN(torch.nn.Module):
             Dict[str, Union[List[float], Dict[int, List[float]]]]] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -696,7 +703,9 @@ class Output_PaiNN(torch.nn.Module):
         )
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -811,7 +820,9 @@ class Output_PaiNN(torch.nn.Module):
         config_update = {
             'output_properties': self.output_properties,
             'output_properties_options': self.output_properties_options}
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
         
         #####################################
         # # # Output Module Class Setup # # #

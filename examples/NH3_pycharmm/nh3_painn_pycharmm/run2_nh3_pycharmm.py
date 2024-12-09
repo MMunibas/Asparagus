@@ -305,7 +305,7 @@ if False:
 # Step 6: NVE - CHARMM, PhysNet
 #-----------------------------------------------------------
 
-if False:
+if True:
     
     timestep = 0.00025   # 0.2 fs
     nsteps = 50.*1./timestep # 50 ps
@@ -338,7 +338,7 @@ if False:
         'iunrea': str_file.file_unit,
         'iunwri': res_file.file_unit,
         'iuncrd': dcd_file.file_unit,
-        'nprint': 100, # Frequency to write to output
+        'nprint': 10,  # Frequency to write to output
         'iprfrq': 500, # Frequency to calculate averages
         'isvfrq': 1000, # Frequency to save restart file
         'ntrfrq': 0,

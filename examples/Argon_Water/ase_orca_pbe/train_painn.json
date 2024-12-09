@@ -1,0 +1,156 @@
+{
+  "config_file": "train_painn.json",
+  "data_file": "ar_water.db",
+  "model_directory": "model_painn",
+  "model_type": "PaiNN",
+  "model_properties": [
+    "energy",
+    "forces",
+    "dipole",
+    "atomic_energies",
+    "atomic_charges",
+    "atomic_dipoles"
+  ],
+  "trainer_max_epochs": 5000,
+  "trainer_debug_mode": true,
+  "data_file_format": "db.sql",
+  "data_source": [],
+  "data_source_format": [],
+  "data_alt_property_labels": {},
+  "data_unit_positions": "Ang",
+  "data_load_properties": [
+    "energy",
+    "forces",
+    "dipole"
+  ],
+  "data_unit_properties": {
+    "positions": "Ang",
+    "charge": "e",
+    "energy": "eV",
+    "forces": "eV/Ang",
+    "dipole": "eAng",
+    "atomic_charges": "e",
+    "atomic_energies": "eV",
+    "atomic_dipoles": "e*Ang"
+  },
+  "data_num_train": 0.8,
+  "data_num_valid": 0.1,
+  "data_train_batch_size": 32,
+  "data_valid_batch_size": 32,
+  "data_test_batch_size": 32,
+  "data_num_workers": 1,
+  "data_overwrite": false,
+  "data_seed": 448567,
+  "model_cutoff": 12.0,
+  "model_switch_range": 2.0,
+  "model_repulsion": false,
+  "model_repulsion_trainable": true,
+  "model_dispersion": true,
+  "model_dispersion_trainable": true,
+  "model_num_threads": 4,
+  "model_unit_properties": {
+    "positions": "Ang",
+    "charge": "e",
+    "energy": "eV",
+    "forces": "eV/Ang",
+    "dipole": "e*Ang",
+    "atomic_energies": "eV",
+    "atomic_charges": "e",
+    "atomic_dipoles": "e*Ang"
+  },
+  "model_cuton": 10.0,
+  "input_n_atombasis": 128,
+  "input_radial_fn": "GaussianRBF",
+  "input_n_radialbasis": 64,
+  "input_cutoff_fn": "Poly6",
+  "input_radial_cutoff": 8.0,
+  "input_rbf_center_start": 1.0,
+  "input_rbf_trainable": true,
+  "input_n_maxatom": 94,
+  "device": "cpu",
+  "dtype": null,
+  "input_type": "PaiNN",
+  "graph_n_blocks": 5,
+  "graph_activation_fn": "silu",
+  "graph_stability_constant": 1e-08,
+  "graph_type": "PaiNN",
+  "output_properties_options": {
+    "atomic_energies": {
+      "output_type": "scalar",
+      "n_property": 1,
+      "n_layer": 2,
+      "activation_fn": "silu",
+      "bias_layer": true,
+      "bias_last": true
+    },
+    "atomic_charges": {
+      "output_type": "tensor",
+      "properties": [
+        "atomic_charges",
+        "atomic_dipoles"
+      ],
+      "n_property": 1,
+      "n_layer": 2,
+      "scalar_activation_fn": "silu",
+      "hidden_activation_fn": "silu",
+      "bias_layer": true,
+      "bias_last": true
+    },
+    "atomic_dipoles": {
+      "output_type": "tensor",
+      "properties": [
+        "atomic_charges",
+        "atomic_dipoles"
+      ],
+      "n_property": 1,
+      "n_layer": 2,
+      "scalar_activation_fn": "silu",
+      "hidden_activation_fn": "silu",
+      "bias_layer": true,
+      "bias_last": true
+    }
+  },
+  "output_type": "PaiNN",
+  "output_properties": [
+    "atomic_energies",
+    "atomic_charges",
+    "atomic_dipoles"
+  ],
+  "model_electrostatic": true,
+  "model_max_checkpoints": 1,
+  "trainer_restart": false,
+  "trainer_properties_metrics": {
+    "else": "mse",
+    "energy": "mse",
+    "forces": "mse",
+    "dipole": "mse"
+  },
+  "trainer_properties_weights": {
+    "energy": 1.0,
+    "forces": 50.0,
+    "dipole": 25.0,
+    "else": 1.0
+  },
+  "trainer_optimizer": "AMSgrad",
+  "trainer_optimizer_args": {
+    "lr": 0.001,
+    "weight_decay": 1e-05,
+    "amsgrad": true
+  },
+  "trainer_scheduler": "ExponentialLR",
+  "trainer_scheduler_args": {
+    "gamma": 0.99
+  },
+  "trainer_ema": true,
+  "trainer_ema_decay": 0.99,
+  "trainer_max_gradient_norm": 1000.0,
+  "trainer_save_interval": 5,
+  "trainer_validation_interval": 5,
+  "trainer_evaluate_testset": true,
+  "trainer_max_checkpoints": 1,
+  "trainer_summary_writer": false,
+  "trainer_print_progress_bar": true,
+  "trainer_guess_shifts": true,
+  "test_datasets": "test",
+  "test_directory": "."
+}

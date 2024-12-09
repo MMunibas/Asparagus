@@ -397,8 +397,9 @@ class EnsembleTrainer:
             # Initialize ensemble model potential
             model_calculator, _, _ = model.get_model_calculator(
                 config=self.ensemble_model_configs[imodel],
-                model_directory=self.ensemble_model_subdirectories[imodel])
-            
+                model_directory=self.ensemble_model_subdirectories[imodel],
+                verbose=False)
+
             # Initialize Trainer instance
             trainer = training.Trainer(
                 config=self.ensemble_model_configs[imodel],
@@ -406,7 +407,8 @@ class EnsembleTrainer:
                 model_calculator=model_calculator,
                 trainer_max_epochs=self.ensemble_epoch_steps_list[istep],
                 trainer_evaluate_testset=False,
-                trainer_print_progress_bar=False)
+                trainer_print_progress_bar=False,
+                verbose=False)
 
             # Run training
             if istep:
@@ -416,7 +418,9 @@ class EnsembleTrainer:
                     reset_best_loss=False,
                     reset_energy_shift=False,
                     skip_property_scaling=True,
-                    skip_initial_testing=True)
+                    skip_initial_testing=True,
+                    ithread=ithread,
+                    verbose=False)
             else:
                 trainer.run(
                     checkpoint=checkpoint_list[imodel],
@@ -424,13 +428,14 @@ class EnsembleTrainer:
                     reset_best_loss=reset_best_loss,
                     reset_energy_shift=reset_energy_shift,
                     skip_property_scaling=skip_property_scaling,
-                    skip_initial_testing=skip_initial_testing)
+                    skip_initial_testing=skip_initial_testing,
+                    ithread=ithread,
+                    verbose=False)
 
             # Set model training status to idle
             with self.lock:
                 self.ensemble_model_is_training[imodel] = False
                 self.ensemble_model_step[imodel] += 1
-
 
             # Print training thread information
             if ithread is None:

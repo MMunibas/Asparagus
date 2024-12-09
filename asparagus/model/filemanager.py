@@ -59,6 +59,7 @@ class FileManager():
         config_file: Optional[str] = None,
         model_directory: Optional[str] = None,
         model_max_checkpoints: Optional[int] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -82,7 +83,9 @@ class FileManager():
             check_dtype=utils.get_dtype_args(self, None))
         
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
         
         ###################################
         # # # Prepare Model Directory # # #
@@ -219,7 +222,8 @@ class FileManager():
     def load_checkpoint(
         self,
         checkpoint_label: Union[str, int],
-        verbose: Optional[bool] = False
+        return_name: Optional[bool] = False,
+        verbose: Optional[bool] = True,
     ) -> Dict[str, Any]:
         """
         Load model parameters and training state from checkpoint file.
@@ -234,7 +238,7 @@ class FileManager():
             file (as with None) or the with the highest epoch number.
             If integer, load the checkpoint file of the respective epoch 
             number.
-        verbose: bool, optional, default False
+        return_name: bool, optional, default False
             If True, return checkpoint state and checkpoint file batch.
             Else, only return checkpoint state
 
@@ -257,10 +261,11 @@ class FileManager():
 
             # Check if best checkpoint file exists or return None
             if not os.path.exists(ckpt_name):
-                self.logger.info(
-                    "No best checkpoint file found in "
-                    + f"{self.best_dir:s}.")
                 ckpt_name = None
+                if verbose:
+                    self.logger.info(
+                        "No best checkpoint file found in "
+                        + f"{self.best_dir:s}.")
 
         elif (
             utils.is_string(checkpoint_label)
@@ -278,10 +283,11 @@ class FileManager():
 
             # If no checkpoint files available return None
             if ckpt_max < 0:
-                self.logger.info(
-                    "No latest checkpoint file found in "
-                    + f"{self.ckpt_dir:s}.")
                 ckpt_name = None
+                if verbose:
+                    self.logger.info(
+                        "No latest checkpoint file found in "
+                        + f"{self.ckpt_dir:s}.")
             else:
                 ckpt_name = os.path.join(
                     self.ckpt_dir, f'model_{ckpt_max:d}.pt')
@@ -317,10 +323,11 @@ class FileManager():
             checkpoint = None
         else:
             checkpoint = torch.load(ckpt_name, weights_only=False)
-            self.logger.info(
-                f"Checkpoint file '{ckpt_name:s}' will be loaded.")
+            if verbose:
+                self.logger.info(
+                    f"Checkpoint file '{ckpt_name:s}' will be loaded.")
 
-        if verbose:
+        if return_name:
             return checkpoint, ckpt_name
         else:
             return checkpoint

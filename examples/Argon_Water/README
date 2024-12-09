@@ -1,0 +1,75 @@
+Argon - Water +
+
+orca_pbe:
+
+Run cationic Argon + Water sampling using ORCA ASE calculator.
+This requires addition to the bashrc, where you need to adopt
+the ORCADIR variable pointing to your ORCA directory that has
+the exectubles
+
+  # ORCA
+  export ORCADIR=/home/toepfer/programs/orca5
+  export PATH=$ORCADIR:$PATH
+  export LD_LIBRARY_PATH=$ORCADIR:$LD_LIBRARY_PATH
+  export ORCA_COMMAND="$ORCADIR/orca"
+  export ASE_ORCA_COMMAND="$ORCADIR/orca PREFIX.inp > PREFIX.out"
+
+
+Now you can run the 'python run_orca.py' in the directory to
+start the sampling and the PhysNet training. Note that the
+you adopt the path of the Asparagus package at the top of
+run_orca.py or add the path to the PYTHONPATH variable.
+
+
+
+
+shell_orca_pbe:
+
+This directory using the template based 'shell' calculator.
+Here a shell file '../templates/shell/run_orca.sh' will be
+executed after the input file '../templates/shell/run_orca.inp'
+is copied to the working directory and the flags within are
+changed to the input of the current sample to compute.
+After the ORCA commmand in the run_orca.sh file finished
+it runs the python file '../templates/shell/run_orca.py' to
+read the respective data from the output file.
+
+Important is here to adopt '../templates/shell/run_orca.sh'
+to your system by adopting the orca executable file path if
+not added to the PATH variable.
+However, when running on multiple cores (change number next to
+'nproc' in the '../templates/shell/run_orca.inp' file from 1
+to, e.g., 4) than you need to change 'orca' with the absolute
+file path, e.g., '/home/toepfer/Programs/orca5/orca' (that is
+an ORCA thing).
+
+If everything is set up well, run again 'python run_arh2o.py'
+(the python file is named different than in orca_pbe to avoid
+confusion with the template file names).
+
+
+
+slurm_molpro_mp2:
+
+This directory using the template based 'shell' calculator.
+Here a shell file '../templates/shell/run_molprp.sh' will be
+executed with 'sbatch' after the input file 
+'../templates/shell/run_molpro.inp' is copied to the working
+directory and the flags within are changed to the input of 
+the current sample to compute.
+The molpro input file is written to run a MP2 calculation.
+
+CURRENTLY, the reading script '../templates/slurm/run_molpro.py'
+does not work, as the XML file written by MOLPRO has changed
+and the '../templates/slurm/run_molpro.y' cannot correctly read
+the result data.
+This need to be adopted.
+
+
+
+ensemble_training:
+
+This directory contains the ORCA database and an example script
+for the trainning of a ensemble of models.
+
+

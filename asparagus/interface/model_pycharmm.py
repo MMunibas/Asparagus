@@ -392,7 +392,7 @@ class PyCharmm_Calculator:
                 results[prop]*self.model2charmm_unit_conversion[prop])
 
         # Apply dtype conversion
-        E = self.results['energy'].detach().numpy()
+        ml_Epot = self.results['energy'].detach().numpy()
         ml_F = self.results['forces'].detach().numpy().ctypes.data_as(
             ctypes.POINTER(ctypes.c_double))
 
@@ -402,6 +402,7 @@ class PyCharmm_Calculator:
             dx[ai] -= ml_F[ii]
             dy[ai] -= ml_F[ii+1]
             dz[ai] -= ml_F[ii+2]
+
         # Calculate electrostatic energy and force contribution
         if self.electrostatics_calc is not None:
             
@@ -412,12 +413,13 @@ class PyCharmm_Calculator:
                 mlmm_idxv,
                 mlmm_idxup,
                 mlmm_idxvp)
-            
+
             # Add electrostatic interaction potential to ML energy
-            E += (
+            self.mlmm_Eele = (
                 mlmm_Eele*self.mlmm_lambda
                 * self.model2charmm_unit_conversion['energy']
                 ).detach().numpy()
+            ml_Epot += self.mlmm_Eele
 
             # Apply dtype conversion
             mlmm_F = (
@@ -434,7 +436,10 @@ class PyCharmm_Calculator:
                 dy[ai] -= mlmm_F[ii+1]
                 dz[ai] -= mlmm_F[ii+2]
 
-        return E
+        return ml_Epot
+
+    def mlmm_elec(self):
+        return self.mlmm_Eele
 
 
 class Electrostatic_shift:

@@ -145,6 +145,7 @@ class Model_PhysNet(model.BaseModel):
         model_num_threads: Optional[int] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
+        verbose: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -172,7 +173,9 @@ class Model_PhysNet(model.BaseModel):
             check_dtype=utils.get_dtype_args(self, model))
 
         # Update global configuration dictionary
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -220,7 +223,9 @@ class Model_PhysNet(model.BaseModel):
             'model_cutoff': self.model_cutoff,
             'model_cuton': self.model_cuton,
             'model_switch_range': self.model_switch_range}
-        config.update(config_update)
+        config.update(
+            config_update,
+            verbose=verbose)
 
         #################################
         # # # PhysNet Modules Setup # # #
@@ -230,6 +235,7 @@ class Model_PhysNet(model.BaseModel):
         self.input_module, self.graph_module, self.output_module = (
             self.base_modules_setup(
                 config,
+                verbose=verbose,
                 **kwargs)
             )
 

@@ -205,6 +205,7 @@ class Trainer:
         trainer_debug_mode: Optional[bool] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
+        verbose: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -230,7 +231,10 @@ class Trainer:
         )
 
         # Update global configuration dictionary
-        config.update(config_update, config_from=self)
+        config.update(
+            config_update,
+            config_from=self,
+            verbose=verbose)
 
         # Assign module variable parameters from configuration
         self.device = utils.check_device_option(device, config)
@@ -315,7 +319,8 @@ class Trainer:
             )
 
         # Show assigned properties, their units and contribution to loss value
-        self.print_trainer_info()
+        if verbose:
+            self.print_trainer_info()
 
         # Assign potentially new property units to the model
         if hasattr(self.model_calculator, 'set_unit_properties'):
@@ -354,7 +359,8 @@ class Trainer:
                 "trainer_optimizer_args": trainer_optimizer_args,
                 "trainer_scheduler_args": trainer_scheduler_args,
             },
-            config_from=self
+            config_from=self,
+            verbose=verbose
         )
 
         #######################
@@ -375,7 +381,8 @@ class Trainer:
         # Initialize checkpoint file manager and summary writer
         self.filemanager = model.FileManager(
             config=config,
-            max_checkpoints=self.trainer_max_checkpoints)
+            max_checkpoints=self.trainer_max_checkpoints,
+            verbose=verbose)
 
         # Initialize training summary writer
         if self.trainer_summary_writer:
@@ -413,7 +420,9 @@ class Trainer:
         reset_energy_shift: Optional[bool] = False,
         skip_property_scaling: Optional[bool] = False,
         skip_initial_testing: Optional[bool] = False,
-        verbose=True,
+        print_progress: Optional[bool] = True,
+        ithread: Optional[int] = None,
+        verbose: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -447,8 +456,10 @@ class Trainer:
         skip_initial_testing: bool, optional, default False
             Skip the initial model evaluation on the reference test set, if the
             model evaluation is enabled anyways (see trainer_evaluate_testset).
-        verbose: bool, optional, default True
-            Show progress bar for the current epoch.
+        print_progress: bool, optional, default True
+            Show  progress report.
+        ithread: int, optional, default None
+            Thread number
 
         """
 
@@ -459,7 +470,8 @@ class Trainer:
         # Load checkpoint file
         loaded_checkpoint, checkpoint_file = self.filemanager.load_checkpoint(
             checkpoint_label=checkpoint,
-            verbose=True)
+            return_name=True,
+            verbose=verbose)
 
         trainer_epoch_start = 1
         best_loss = None
@@ -468,10 +480,12 @@ class Trainer:
             # Assign model parameters
             self.model_calculator.load_state_dict(
                 loaded_checkpoint['model_state_dict'])
-            self.logger.info(
-                f"Checkpoint file '{checkpoint_file:s}' loaded.")
+            
             self.model_calculator.checkpoint_loaded = True
             self.model_calculator.checkpoint_file = checkpoint_file
+            if verbose:
+                self.logger.info(
+                    f"Checkpoint file '{checkpoint_file:s}' loaded.")
 
             # If restart training enabled, assign optimizer, scheduler and
             # epoch parameter if available
@@ -537,10 +551,11 @@ class Trainer:
             if checkpoint_file is None:
                 checkpoint_file = "unknown(?)"
 
-            self.logger.info(
-                "Model calculator checkpoint file already loaded!\n"
-                + f"Checkpoint file: '{checkpoint_file:s}'\n"
-                + "Model energy shifts will be re-evaluated.")
+            if verbose:
+                self.logger.info(
+                    "Model calculator checkpoint file already loaded!\n"
+                    + f"Checkpoint file: '{checkpoint_file:s}'\n"
+                    + "Model energy shifts will be re-evaluated.")
             
             # Get model energy properties
             properties_scaleable = []
@@ -567,16 +582,18 @@ class Trainer:
             if checkpoint_file is None:
                 checkpoint_file = "unknown(?)"
 
-            self.logger.info(
-                "Model calculator checkpoint file already loaded!\n"
-                + f"Checkpoint file: '{checkpoint_file:s}'\n"
-                + "No model property scaling parameter are set.")
+            if verbose:
+                self.logger.info(
+                    "Model calculator checkpoint file already loaded!\n"
+                    + f"Checkpoint file: '{checkpoint_file:s}'\n"
+                    + "No model property scaling parameter are set.")
 
         elif not skip_property_scaling:
 
-            self.logger.info(
-                "No Model calculator checkpoint file loaded!\n"
-                "Model property scaling parameter will be set.")
+            if verbose:
+                self.logger.info(
+                    "No Model calculator checkpoint file loaded!\n"
+                    "Model property scaling parameter will be set.")
 
             # Get model property scaling
             training.set_property_scaling_estimation(
@@ -610,6 +627,12 @@ class Trainer:
         # Initialize training time estimation per epoch
         train_time_estimation = torch.tensor(0.0, dtype=torch.float64)
 
+        # Prepare progress status thread prefix
+        if ithread is None:
+            thread_prefix = ""
+        else:
+            thread_prefix = f"(Thread {ithread:d}) "
+                
         ##########################
         # # # Start Training # # #
         ##########################
@@ -643,10 +666,10 @@ class Trainer:
                 train_time_batch_start = time.time()
 
                 # Eventually show training progress
-                if verbose and self.trainer_print_progress_bar:
+                if print_progress and self.trainer_print_progress_bar:
                     utils.print_ProgressBar(
                         ib, Nbatch_train,
-                        prefix=f"Epoch {epoch: 5d}",
+                        prefix=f"{thread_prefix:s}Epoch {epoch: 5d}",
                         suffix=(
                             "Complete - Remaining Epoch Time: "
                             + f"{train_time_estimation: 4.1f} s     "
@@ -734,18 +757,18 @@ class Trainer:
             train_time_epoch = train_time_epoch_end - train_time_epoch_start
 
             # Eventually show final training progress
-            if verbose and self.trainer_print_progress_bar:
+            if print_progress and self.trainer_print_progress_bar:
                 utils.print_ProgressBar(
                     Nbatch_train, Nbatch_train,
-                    prefix=f"Epoch {epoch: 5d}",
+                    prefix=f"{thread_prefix:s}Epoch {epoch: 5d}",
                     suffix=(
                         "Done - Epoch Time: "
                         + f"{train_time_epoch: 4.1f} s, "
                         + f"Loss: {metrics_train['loss']: 4.4f}   "),
                     length=42)
-            elif verbose:
+            elif print_progress:
                 utils.print_Progress(
-                    f"Done Epoch {epoch: 5d}, "
+                    f"{thread_prefix:s}Done Epoch {epoch: 5d}, "
                     + f"Epoch Time: {train_time_epoch: 4.1f} s, "
                     + f"Loss: {metrics_train['loss']: 4.4f}   ")
 
@@ -844,6 +867,7 @@ class Trainer:
                             test_plot_correlation=True,
                             test_plot_histogram=True,
                             test_plot_residual=True,
+                            verbose=verbose,
                             **kwargs)
 
                     # Add process to training summary writer
@@ -862,23 +886,35 @@ class Trainer:
                                     global_step=epoch)
 
                 # Print validation metrics summary
-                msg = (
-                    f"Summary Epoch: {epoch:d}/" +
-                    f"{self.trainer_max_epochs:d}\n" +
-                    "  Loss   train / valid: " +
-                    f" {metrics_train['loss']:.2E} /" +
-                    f" {metrics_valid['loss']:.2E}" +
-                    f"  Best Loss valid: {metrics_best['loss']:.2E}\n"
-                    f"  Property Metrics (valid):\n")
-                for prop in self.trainer_properties:
-                    msg += (
-                        f"    {prop:10s}  MAE (Best) / RMSE (Best): " +
-                        f" {metrics_valid[prop]['mae']:.2E}" +
-                        f" ({metrics_best[prop]['mae']:.2E}) /" +
-                        f" {np.sqrt(metrics_valid[prop]['mse']):.2E}" +
-                        f" ({np.sqrt(metrics_best[prop]['mse']):.2E})" +
-                        f" {self.model_units[prop]:s}\n")
-                self.logger.info(msg)
+                if print_progress and verbose:
+                    
+                    msg = (
+                        f"{thread_prefix:s}Summary Epoch: {epoch:d}/"
+                        + f"{self.trainer_max_epochs:d}\n"
+                        + "  Loss   train / valid: "
+                        + f" {metrics_train['loss']:.2E} /"
+                        + f" {metrics_valid['loss']:.2E}"
+                        + f"  Best Loss valid: {metrics_best['loss']:.2E}\n"
+                        + f"  Property Metrics (valid):\n")
+                    for prop in self.trainer_properties:
+                        msg += (
+                            f"    {prop:10s}  MAE (Best) / RMSE (Best): "
+                            + f" {metrics_valid[prop]['mae']:.2E}"
+                            + f" ({metrics_best[prop]['mae']:.2E}) /"
+                            + f" {np.sqrt(metrics_valid[prop]['mse']):.2E}"
+                            + f" ({np.sqrt(metrics_best[prop]['mse']):.2E})"
+                            + f" {self.model_units[prop]:s}\n")
+                    self.logger.info(msg)
+
+                elif print_progress:
+
+                    utils.print_Progress(
+                        f"{thread_prefix:s}Summary Epoch: {epoch:d}/"
+                        + f"{self.trainer_max_epochs:d}: "
+                        + "  Loss   train / valid: "
+                        + f" {metrics_train['loss']:.2E} /"
+                        + f" {metrics_valid['loss']:.2E}"
+                        + f"  Best Loss valid: {metrics_best['loss']:.2E}")
 
         return
 
