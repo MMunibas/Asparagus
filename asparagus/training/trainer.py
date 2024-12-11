@@ -914,7 +914,7 @@ class Trainer:
                         + "  Loss   train / valid: "
                         + f" {metrics_train['loss']:.2E} /"
                         + f" {metrics_valid['loss']:.2E}"
-                        + f"  Best Loss valid: {metrics_best['loss']:.2E}")
+                        + f"  Best Loss valid: {metrics_best['loss']:.2E}\n")
 
         return
 

@@ -466,7 +466,7 @@ class EnsembleTrainer:
             idle_model_steps = self.ensemble_model_step[idle_models]
 
             if np.any(
-                idle_model_steps < self.ensemble_epoch_steps_number - 1
+                idle_model_steps < self.ensemble_epoch_steps_number
             ):
                 return True
             else:
