@@ -493,9 +493,15 @@ class Trainer:
                 if loaded_checkpoint.get('optimizer_state_dict') is not None:
                     self.trainer_optimizer.load_state_dict(
                         loaded_checkpoint['optimizer_state_dict'])
+                    optimizer_state = "Loaded"
+                else:
+                    optimizer_state = "None"
                 if loaded_checkpoint.get('scheduler_state_dict') is not None:
                     self.trainer_scheduler.load_state_dict(
                         loaded_checkpoint['scheduler_state_dict'])
+                    scheduler_state = "Loaded"
+                else:
+                    scheduler_state = "None"
                 if loaded_checkpoint.get('epoch') is not None:
                     trainer_epoch_start = loaded_checkpoint['epoch'] + 1
 
@@ -515,8 +521,32 @@ class Trainer:
                 else:
                     best_loss = loaded_checkpoint['best_loss']
 
+            # Print checkpoint file info
+            if verbose:               
+                if restart:
+                    message = "Restart"
+                else:
+                    message = "Start"
+                message += (
+                    "training from checkpoint file "
+                    + f"'{checkpoint_file:s}':\n"
+                    + f" Current Epoch: {trainer_epoch_start:d}\n")
+                if best_loss is None:
+                    message += " Best validation loss: None\n"
+                else:
+                    message += f" Best validation loss: {best_loss:.2E}\n"
+                message += (
+                    f" Optimizer state: {optimizer_state:s}\n"
+                    + f" Scheduler state: {scheduler_state:s}")
+                self.logger.info(message)
+
         # Skip if max epochs are already reached
         if trainer_epoch_start > self.trainer_max_epochs:
+            if verbose:
+                self.logger.info(
+                    f"Max Epochs ({self.trainer_max_epochs:d}) already reached "
+                    + f"in checkpoint file '{checkpoint_file:s}' "
+                    + f"({trainer_epoch_start:d}).")
             return
 
         ################################
@@ -618,8 +648,9 @@ class Trainer:
         if self.trainer_debug_mode:
             torch.autograd.set_detect_anomaly(True)
 
-        # Reset property metrics
+        # Reset best property metrics
         metrics_best = self.reset_metrics()
+        metrics_best['loss'] = best_loss
 
         # Define loss function
         loss_fn = torch.nn.SmoothL1Loss(reduction='mean')
@@ -710,10 +741,9 @@ class Trainer:
                 loss = metrics_batch['loss']
 
                 # Check for NaN loss value
-                if self.trainer_debug_mode:
-                    if torch.isnan(loss):
-                        raise SyntaxError(
-                            "Loss value of training batch is 'NaN'!")
+                if torch.isnan(loss):
+                    raise SyntaxError(
+                        "Loss value of training batch is 'NaN'!")
 
                 # Predict parameter gradients by backwards propagation
                 loss.backward()
@@ -1248,10 +1278,9 @@ class Trainer:
                 torch.flatten(reference[prop]))
 
             # Check for NaN loss value
-            if self.trainer_debug_mode:
-                if torch.isnan(metrics[prop]['loss']):
-                    raise SyntaxError(
-                        f"Loss value for property '{prop:s}' is 'NaN'!")
+            if torch.isnan(metrics[prop]['loss']):
+                raise SyntaxError(
+                    f"Loss value for property '{prop:s}' is 'NaN'!")
 
             # Weight and add to total loss
             if ip:
