@@ -544,9 +544,8 @@ class Trainer:
         if trainer_epoch_start > self.trainer_max_epochs:
             if verbose:
                 self.logger.info(
-                    f"Max Epochs ({self.trainer_max_epochs:d}) already reached "
-                    + f"in checkpoint file '{checkpoint_file:s}' "
-                    + f"({trainer_epoch_start:d}).")
+                    f"Max Epochs ({self.trainer_max_epochs:d}) already "
+                    + f"reached ({trainer_epoch_start:d}).")
             return
 
         ################################
@@ -924,7 +923,7 @@ class Trainer:
 
                 # Print validation metrics summary
                 if print_progress and verbose:
-                    
+
                     msg = (
                         f"{thread_prefix:s}Summary Epoch: {epoch:d}/"
                         + f"{self.trainer_max_epochs:d}\n"

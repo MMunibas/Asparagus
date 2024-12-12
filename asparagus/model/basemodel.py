@@ -63,6 +63,51 @@ class BaseModel(torch.nn.Module):
         """
         return {}
 
+    def load(
+        self,
+        checkpoint: Dict[str, Any],
+        checkpoint_file: Optional[str] = None,
+        verbose: Optional[bool] = True,
+        **kwargs
+    ):
+        """
+        Load model parameters from checkpoint file.
+
+        Parameters
+        ----------
+        checkpoint: dict(str, Any)
+            Torch module checkpoint file for the model calculator
+        checkpoint_file: str, optional, default None
+            Torch checkpoint file path for logger info
+
+        """
+
+        # Load model checkpoint file
+        if checkpoint is None and verbose:
+            
+            if checkpoint_file is None:
+                checkpoint_state = "."
+            else:
+                checkpoint_state = " from file '{checkpoint_file:s}'."
+            self.logger.info(
+                "No checkpoint file is loaded{checkpoint_state:s}")
+
+        else:
+
+            self.load_state_dict(
+                checkpoint['model_state_dict'])
+            self.checkpoint_loaded = True
+            self.checkpoint_file = checkpoint_file
+
+            if verbose:
+                if checkpoint_file is None:
+                    checkpoint_state = "."
+                else:
+                    checkpoint_state = " from file '{checkpoint_file:s}'."
+                self.logger.info("Checkpoint file{checkpoint_state:s}")
+
+        return
+
     def check_model_properties(
         self,
         config: settings.Configuration,

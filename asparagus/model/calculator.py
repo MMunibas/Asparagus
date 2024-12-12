@@ -67,6 +67,7 @@ def get_model_calculator(
     config: object,
     model_calculator: Optional[torch.nn.Module] = None,
     model_type: Optional[str] = None,
+    model_directory: Optional[str] = None,
     model_checkpoint: Optional[Union[int, str]] = None,
     verbose: Optional[bool] = True,
     **kwargs,
@@ -83,6 +84,8 @@ def get_model_calculator(
     model_type: str, optional, default None
         Model calculator type to initialize, e.g. 'PhysNet'. The default
         model is defined in settings.default._default_calculator_model.
+    model_directory: str, optional, default None
+        Model directory that contains checkpoint and log files.
     model_checkpoint: (str, int), optional, default None
         If None or 'best', load checkpoint file with best loss function value.
         If string is 'last', load respectively the best checkpoint file
@@ -127,6 +130,7 @@ def get_model_calculator(
     # parameter checkpoint file
     filemanager = model.FileManager(
         config,
+        model_directory=model_directory,
         verbose=verbose,
         **kwargs)
 

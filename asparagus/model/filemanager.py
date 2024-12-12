@@ -427,12 +427,18 @@ class FileManager():
             os.rename(config_file, backup_file)
 
             # If maximum number of back file reached, delete the oldest
-            if len(list_backups) >= max_backup:
-                for num_backup in list_backups[:-(max_backup - 1)]:
-                    backup_file = os.path.join(
-                        self.model_directory,
-                        f"{num_backup:d}_" + default_file)
-                    os.remove(backup_file)
+            #if len(list_backups) >= max_backup:
+                #for num_backup in list_backups[:-(max_backup - 1)]:
+                    #backup_file = os.path.join(
+                        #self.model_directory,
+                        #f"{num_backup:d}_" + default_file)
+                    #os.remove(backup_file)
+            while len(list_backups) >= max_backup:
+                backup_file = os.path.join(
+                    self.model_directory,
+                    f"{list_backups[0]:d}_" + default_file)
+                os.remove(backup_file)
+                del list_backups[0]
 
         # Dump config in file path
         config.dump(config_file=config_file)

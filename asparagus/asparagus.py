@@ -402,8 +402,10 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
-        model_calculator: Optional[torch.nn.Module] = None,
+        model_calculator: 
+            Optional[Union[List[torch.nn.Module], torch.nn.Module]] = None,
         model_type: Optional[str] = None,
+        model_directory: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = None,
         model_compile: Optional[bool] = None,
         **kwargs,
@@ -418,11 +420,20 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to json file (str)
-        model_calculator: torch.nn.Module, optional, default None
-            Model calculator object.
+        model_calculator: (torch.nn.Module, list(torch.nn.Module)),
+                optional, default None
+            Model calculator object or list of model calculator objects.
         model_type: str, optional, default None
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
+        model_directory: str, optional, default None
+            Model directory that contains checkpoint and log files.
+        model_ensemble: bool, optional, default None
+            Expect a model calculator ensemble. If None, check in 
+            'model_directory' for an ensemble or not
+        model_num_models: int, optional, default None
+            Number of model calculator in ensemble. If None and 
+            'model_ensemble' is True, take all available models found.
         model_checkpoint: (int, str), optional, default None
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
@@ -470,6 +481,7 @@ class Asparagus():
             config,
             model_calculator=model_calculator,
             model_type=model_type,
+            model_directory=model_directory,
             model_checkpoint=model_checkpoint,
             model_compile=model_compile,
             **kwargs,
@@ -480,8 +492,10 @@ class Asparagus():
     def _get_model_calculator(
         self,
         config: settings.Configuration,
-        model_calculator: Optional[torch.nn.Module] = None,
+        model_calculator: 
+            Optional[Union[List[torch.nn.Module], torch.nn.Module]] = None,
         model_type: Optional[str] = None,
+        model_directory: Optional[str] = None,
         model_checkpoint: Optional[Union[int, str]] = 'best',
         model_compile: Optional[bool] = False,
         **kwargs,
@@ -493,11 +507,14 @@ class Asparagus():
         ----------
         config: settings.Configuration
             Asparagus parameter settings.config class object
-        model_calculator: torch.nn.Module, optional, default None
-            Model calculator object.
+        model_calculator: (torch.nn.Module, list(torch.nn.Module)),
+                optional, default None
+            Model calculator object or list of model calculator objects.
         model_type: str, optional, default None
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
+        model_directory: str, optional, default None
+            Model directory that contains checkpoint and log files.
         model_checkpoint: int, optional, default 'best'
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
@@ -525,20 +542,16 @@ class Asparagus():
                 config=config,
                 model_calculator=model_calculator,
                 model_type=model_type,
+                model_directory=model_directory,
                 model_checkpoint=model_checkpoint,
                 **kwargs)
             )
 
-        # TODO put into a model function not main Asparagus
         # Load model checkpoint file
-        if checkpoint is None:
-            self.logger.info("No checkpoint file load.")
-        else:
-            model_calculator.load_state_dict(
-                checkpoint['model_state_dict'])
-            self.logger.info("Checkpoint file loaded.")
-            model_calculator.checkpoint_loaded = True
-            model_calculator.checkpoint_file = checkpoint_file
+        model_calculator.load(
+            checkpoint,
+            checkpoint_file=checkpoint_file,
+            **kwargs)
 
         # Compile model calculator if requested
         if model_compile:
