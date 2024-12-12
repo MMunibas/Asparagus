@@ -501,10 +501,17 @@ class Trainer:
 
                 # Initialize best total loss value of validation reference data
                 if (
-                    reset_best_loss 
+                    reset_best_loss
                     or loaded_checkpoint.get('best_loss') is None
                 ):
                     best_loss = None
+                elif loaded_checkpoint['best_loss'] == 0.0:
+                    best_loss = None
+                    self.logger.warning(
+                        "Loaded best loss value from the checkpoint file "
+                        + f"'{checkpoint_file:s}' is zero indicating an error "
+                        + "during generation of the checkpoint file.\n"
+                        + "The best loss value is reset!")
                 else:
                     best_loss = loaded_checkpoint['best_loss']
 
