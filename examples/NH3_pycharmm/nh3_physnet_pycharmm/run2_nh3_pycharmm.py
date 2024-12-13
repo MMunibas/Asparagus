@@ -289,7 +289,8 @@ if True:
         'iprfrq': 500, # Frequency to calculate averages
         'isvfrq': 1000, # Frequency to save restart file
         'ntrfrq': 1000,
-        'ihtfrq': 200,
+        'ihtfrq': 40,
+        'TEMINC': 1,
         'ieqfrq': 1000,
         'firstt': temp/2.,
         'finalt': temp,

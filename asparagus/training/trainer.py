@@ -841,16 +841,26 @@ class Trainer:
                 # Reset property metrics
                 metrics_valid = self.reset_metrics()
 
+                # If EMA is active
+                if self.trainer_ema:
+                    # Store last model parameter set
+                    self.trainer_ema_model.store(
+                        self.model_calculator.parameters())
+                    # Load EMA model parameter set
+                    self.trainer_ema_model.copy_to(
+                        self.model_calculator.parameters())
+    
                 # Loop over validation batches
                 for batch in self.data_valid:
 
                     # Predict model properties from data batch
                     prediction = self.model_calculator(batch)
 
-                    # Compute total and single loss values for training
-                    # properties
+                    # Compute total and single loss values for
+                    # validation properties
                     metrics_batch = self.compute_metrics(
-                        prediction, batch, loss_fn=loss_fn, loss_only=False)
+                        prediction, batch,
+                        loss_fn=loss_fn, loss_only=False)
 
                     # Update average metrics
                     self.update_metrics(metrics_valid, metrics_batch)
@@ -921,6 +931,12 @@ class Trainer:
                                     metrics_best[prop],
                                     global_step=epoch)
 
+                    # If EMA is active
+                    if self.trainer_ema:
+                        # Restore last model parameter set
+                        self.trainer_ema_model.restore(
+                            self.model_calculator.parameters())
+
                 # Print validation metrics summary
                 if print_progress and verbose:
 
@@ -950,7 +966,7 @@ class Trainer:
                         + "  Loss   train / valid: "
                         + f" {metrics_train['loss']:.2E} /"
                         + f" {metrics_valid['loss']:.2E}"
-                        + f"  Best Loss valid: {metrics_best['loss']:.2E}\n")
+                        + f"  Best Loss valid: {metrics_best['loss']:.2E}")
 
         return
 
