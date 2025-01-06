@@ -25,7 +25,6 @@ _default_args = {
     # Model
     'model_calculator':             None,
     'model_type':                   None,
-    'model_restart':                False,
     'model_seed':                   np.random.randint(1E6),
     # Input module
     'input_calculator':             None,

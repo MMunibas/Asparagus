@@ -259,6 +259,7 @@ class EnsembleModel(torch.nn.Module):
             and verbose
         ):
 
+            # Prepare and print loading info
             if (
                 checkpoint_file is None
                 or utils.is_None_array(checkpoint_file)
@@ -275,29 +276,44 @@ class EnsembleModel(torch.nn.Module):
 
         else:
 
+            # Prepare loading info
+            if checkpoint_file is None:
+                checkpoint_state = "."
+            else:
+                checkpoint_state = " from files:\n"
+
             # Iterate over number of model calculator
             for ickpt, (model_calculator, ckpt_i) in enumerate(zip(
                 self.model_calculator_list,
                 checkpoint
             )):
 
-                model_calculator.load_state_dict(
-                    ckpt_i['model_state_dict'])
-                model_calculator.checkpoint_loaded = True
-                if checkpoint_file is None:
-                    model_calculator.checkpoint_file = None
+                if ckpt_i is None:
+                    
+                    checkpoint_state += (f" Model {ickpt:d} - not loaded!\n")
+                
                 else:
-                    model_calculator.checkpoint_file = checkpoint_file[ickpt]
 
-            if verbose:
-                if checkpoint_file is None:
-                    checkpoint_state = "."
-                else:
-                    checkpoint_state = " from files:\n"
-                    for ickpt, ckpt_file in enumerate(checkpoint_file):
+                    model_calculator.load_state_dict(
+                        ckpt_i['model_state_dict'])
+                    model_calculator.checkpoint_loaded = True
+                    if (
+                        checkpoint_file is None 
+                        or checkpoint_file[ickpt] is None
+                    ):
+                        model_calculator.checkpoint_file = None
                         checkpoint_state += (
-                            f" Model {ickpt:d} - '{ckpt_file:s}'\n")
-                    checkpoint_state = checkpoint_state[:-1]
+                            f" Model {ickpt:d} - loaded!\n")
+                    else:
+                        model_calculator.checkpoint_file = (
+                            checkpoint_file[ickpt])
+                        checkpoint_state += (
+                            f" Model {ickpt:d} - "
+                            + f"'{checkpoint_file[ickpt]:s}' loaded!\n")
+
+            # Print loading info
+            if verbose:
+                checkpoint_state = checkpoint_state[:-1]
                 self.logger.info(
                     f"Checkpoint files are loaded{checkpoint_state:s}")
 

@@ -10,7 +10,9 @@ model = Asparagus(
     model_directory='model_ensemble',
     trainer_max_epochs=1000,)
 model.train(
-    train_ensemble=True,
+    model_ensemble=True,
+    model_ensemble_num=5,
+    model_num_threads=12,
     ensemble_num_models=5,
     ensemble_epochs_step=50,
     ensemble_num_threads=3)
