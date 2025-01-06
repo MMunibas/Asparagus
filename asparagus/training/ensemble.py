@@ -31,11 +31,6 @@ class EnsembleTrainer:
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
         Path to config json file (str)
-    ensemble_model_trainer: training.Trainer, optional, default None
-        Single model Trainer class object which is used to train the model
-        potential. If None, a trainer will be initialized.
-        Here, the Trainer and assigned FileManager parameters will be
-        manipulated to train an ensemble of models under consistent conditions.
     ensemble_num_models: int, optional, default None
         Number of models potentials to train.
     ensemble_epochs_step: int, optional, default None
@@ -43,6 +38,11 @@ class EnsembleTrainer:
         through the next until maximum number of epochs is reached.
     ensemble_num_threads: int, optional, default 1
         Number of model training threads for parallel model training.
+    trainer_max_epochs: int, optional, default 10000
+        Maximum number of training epochs
+    trainer_save_interval: int, optional, default 5
+        Interval between epoch to save current and best set of model
+        parameters.
 
     """
 
@@ -50,11 +50,13 @@ class EnsembleTrainer:
     name = f"{__name__:s} - {__qualname__:s}"
     logger = utils.set_logger(logging.getLogger(name))
 
-    # Default arguments for trainer class
+    # Default arguments for ensemble trainer class
     _default_args = {
         'ensemble_num_models':          5,
         'ensemble_epochs_step':         100,
-        'ensemble_num_threads':          1,
+        'ensemble_num_threads':         1,
+        'trainer_max_epochs':           10_000,
+        'trainer_save_interval':        5,
         }
 
     # Expected data types of input variables
@@ -62,16 +64,21 @@ class EnsembleTrainer:
         'ensemble_num_models':          [utils.is_integer],
         'ensemble_epochs_step':         [utils.is_integer],
         'ensemble_num_threads':         [utils.is_integer],
+        'trainer_max_epochs':           [utils.is_integer],
+        'trainer_save_interval':        [utils.is_integer],
         }
 
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
         config_file: Optional[str] = None,
-        ensemble_model_trainer: Optional[training.Trainer] = None,
+        data_container: Optional[data.DataContainer] = None,
+        model_calculator: Optional[torch.nn.Module] = None,
         ensemble_num_models: Optional[int] = None,
         ensemble_epochs_step: Optional[int] = None,
         ensemble_num_threads: Optional[int] = None,
+        trainer_max_epochs: Optional[int] = None,
+        trainer_save_interval: Optional[int] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
         **kwargs
@@ -105,34 +112,38 @@ class EnsembleTrainer:
         self.device = utils.check_device_option(device, config)
         self.dtype = utils.check_dtype_option(dtype, config)
 
-        #################################################
-        # # # Check Model Trainer and DataContainer # # #
-        #################################################
+        ################################
+        # # # Check Data Container # # #
+        ################################
 
-        # Initialize model Trainer once to catch parameter
-        if self.ensemble_model_trainer is None:
-            self.ensemble_model_trainer = training.Trainer(
+        # Assign DataContainer if not done already
+        if data_container is None:
+            self.data_container = data.DataContainer(
                 config=config,
                 **kwargs)
 
-        # Get DataContainer for model ensemble training
-        self.data_container = self.ensemble_model_trainer.data_container
+        ##################################
+        # # # Check Model Calculator # # #
+        ##################################
+
+        # Assign model calculator model if not done already
+        if self.model_calculator is None:
+            self.model_calculator, _, _ = model.get_model_calculator(
+                config=config,
+                **kwargs)
+
+        # Initialize checkpoint file manager
+        self.filemanager = model.FileManager(
+            config=config,
+            model_calculator=self.model_calculator)
+
+        # Get model directory as main directory in which to store multiple
+        # models
+        self.model_directory = self.filemanager.model_directory
 
         #############################################
         # # # Check Ensemble Trainer Parameters # # #
         #############################################
-
-        # Get model directory as main directory in which to store multiple 
-        # models
-        self.model_directory = (
-            self.ensemble_model_trainer.filemanager.model_directory)
-
-        # Get Trainer checkpoint save interval to match with ensemble learning
-        # epoch steps and max training epoch number
-        self.trainer_save_interval = (
-            self.ensemble_model_trainer.trainer_save_interval)
-        self.trainer_max_epochs = (
-            self.ensemble_model_trainer.trainer_max_epochs)
 
         # Check that 'ensemble_epochs_step' is a multiple of
         # 'trainer_save_interval' and update in config if necessary.
@@ -177,11 +188,18 @@ class EnsembleTrainer:
             self.ensemble_model_subdirectories
         ):
             
-            # Get a copy of the configuration instance
+            # Get a copy of the configuration dictionary
+            model_config = config.config_dict.copy()
+
+            # Reset ensemble flag in model configuration
+            model_config['model_ensemble'] = False
+            model_config['model_ensemble_num'] = None
+
+            # Store single model configuration
             model_config_file = os.path.join(model_subdirectory, "config.json")
             self.ensemble_model_configs.append(
                 settings.get_config(
-                    config=config.config_dict,
+                    config=model_config,
                     config_file=model_config_file,
                     config_from=f"Ensemble model {imodel:d}",
                     verbose=False,

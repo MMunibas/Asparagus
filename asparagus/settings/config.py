@@ -400,7 +400,7 @@ class Configuration():
             + f"{n_equal:d} equal, {n_overwrite:d} overwritten")
         # Show additional information output
         if verbose:
-            self.logger.info(msg)
+            self.logger.debug(msg)
 
         # Store changes in file
         self.dump()

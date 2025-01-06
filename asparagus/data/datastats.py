@@ -589,16 +589,6 @@ def compute_atomic_property_sum_scaling(
         property_scaling[int(atomic_number)] = [
             property_shift[iatom],
             property_scale[iatom]]
-    #
-    # if property_prediction_scaling is not None:
-    #     print("New scaling:")
-    #     for iatom, atomic_number in enumerate(atomic_numbers_list):
-    #         print(
-    #             atomic_number,
-    #             property_scaling[int(atomic_number)][0] +
-    #             property_prediction_scaling[int(atomic_number)][0],
-    #             property_scaling[int(atomic_number)][1] *
-    #             property_prediction_scaling[int(atomic_number)][1])
 
     if verbose:
         return property_scaling, fit_rmse, fit_complete

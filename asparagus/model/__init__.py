@@ -14,3 +14,7 @@ from .filemanager import (
 from .basemodel import (
     BaseModel
 )
+
+from .ensemble import (
+    EnsembleModel
+)

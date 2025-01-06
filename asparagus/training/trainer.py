@@ -288,6 +288,15 @@ class Trainer:
                 config=config,
                 **kwargs)
 
+        # Check for model ensemble calculator
+        if hasattr(self.model_calculator, 'model_ensemble'):
+            self.model_ensemble = self.model_calculator.model_ensemble
+        else:
+            self.model_ensemble = False
+        if self.model_ensemble:
+            raise SyntaxError(
+                "The Trainer class cannot handle model ensembles!")
+
         # Get model properties
         self.model_properties = self.model_calculator.model_properties
         self.model_units = self.model_calculator.model_unit_properties
@@ -378,9 +387,10 @@ class Trainer:
         # # # Prepare File Manager # # #
         ################################
 
-        # Initialize checkpoint file manager and summary writer
+        # Initialize checkpoint file manager
         self.filemanager = model.FileManager(
             config=config,
+            model_calculator=self.model_calculator,
             max_checkpoints=self.trainer_max_checkpoints,
             verbose=verbose)
 
@@ -411,6 +421,14 @@ class Trainer:
         self.filemanager.save_config(config)
 
         return
+
+    def __str__(self):
+        messgage = "Trainer"
+        if hasattr(self, 'model_calculator'):
+            messgage += f" of {str(self.model_calculator):s} model"
+        if hasattr(self, 'filemanager'):
+            messgage += f" in {str(self.filemanager):s}"
+        return messgage
 
     def run(
         self,
@@ -553,22 +571,15 @@ class Trainer:
         ################################
 
         # Get model and descriptor cutoffs
-        model_cutoff = self.model_calculator.model_cutoff
-        if hasattr(self.model_calculator.input_module, 'input_radial_cutoff'):
-            input_cutoff = (
-                self.model_calculator.input_module.input_radial_cutoff)
-            if input_cutoff != model_cutoff:
-                cutoff = [input_cutoff, model_cutoff]
-        else:
-            cutoff = [model_cutoff]
+        cutoffs = self.model_calculator.get_cutoff_ranges()
 
         # Set model and descriptor cutoffs for neighbor list calculation
         self.data_train.init_neighbor_list(
-            cutoff=cutoff,
+            cutoff=cutoffs,
             device=self.device,
             dtype=self.dtype)
         self.data_valid.init_neighbor_list(
-            cutoff=cutoff,
+            cutoff=cutoffs,
             device=self.device,
             dtype=self.dtype)
 

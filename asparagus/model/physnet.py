@@ -19,7 +19,7 @@ __all__ = ['Model_PhysNet']
 
 class Model_PhysNet(model.BaseModel): 
     """
-    PhysNet Calculator model
+    PhysNet model calculator
 
     Parameters
     ----------
@@ -73,7 +73,7 @@ class Model_PhysNet(model.BaseModel):
     name = f"{__name__:s} - {__qualname__:s}"
     logger = utils.set_logger(logging.getLogger(name))
 
-    # Default arguments for graph module
+    # Default arguments for PhysNet model
     _default_args = {
         'model_properties':             None,
         'model_unit_properties':        None,
@@ -356,7 +356,7 @@ class Model_PhysNet(model.BaseModel):
         # Initialize info dictionary
         info = {}
 
-        # Collect model info
+        # Collect module info
         if hasattr(self.input_module, "get_info"):
             info = {**info, **self.input_module.get_info()}
         if hasattr(self.graph_module, "get_info"):

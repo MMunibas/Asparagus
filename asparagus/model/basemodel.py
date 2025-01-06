@@ -11,7 +11,7 @@ from asparagus import module
 from asparagus import settings
 from asparagus import utils
 
-__all__ = ['Model_PhysNet']
+__all__ = ['BaseModel']
 
 #======================================
 # Calculator Models
@@ -104,7 +104,8 @@ class BaseModel(torch.nn.Module):
                     checkpoint_state = "."
                 else:
                     checkpoint_state = " from file '{checkpoint_file:s}'."
-                self.logger.info("Checkpoint file{checkpoint_state:s}")
+                self.logger.info(
+                    "Checkpoint file is loaded{checkpoint_state:s}")
 
         return
 
@@ -147,8 +148,8 @@ class BaseModel(torch.nn.Module):
         for prop in model_properties:
             if not utils.check_property_label(prop, return_modified=False):
                 raise SyntaxError(
-                    f"Model property label '{prop:s}' is not a valid property "
-                    + "label! Valid property labels are:\n"
+                    f"Model property label '{prop:s}' is not a valid "
+                    + "property label! Valid property labels are:\n"
                     + str(list(settings._valid_properties)))
         
         return list(model_properties)
@@ -332,6 +333,30 @@ class BaseModel(torch.nn.Module):
                 + f"({model_cuton:.2f})!")
         
         return model_cuton, model_switch_range
+
+    def get_cutoff_ranges(self) -> List[float]:
+        """
+        Get model cutoff or, eventually, short range descriptor and long
+        range cutoff list.
+
+        Return
+        ------
+        list(float)
+            List of the long range model and, eventually, short range
+            descriptor cutoff (if defined and not short range equal long range
+            cutoff).
+        """
+
+        long_range_cutoff = self.model_cutoff
+        if hasattr(self.input_module, 'input_radial_cutoff'):
+            short_range_cutoff = (
+                self.input_module.input_radial_cutoff)
+            if short_range_cutoff != long_range_cutoff:
+                cutoffs = [short_range_cutoff, long_range_cutoff]
+        else:
+            cutoffs = [long_range_cutoff]
+
+        return cutoffs
 
     def base_modules_setup(
         self,
@@ -550,7 +575,6 @@ class BaseModel(torch.nn.Module):
         self,
         batch: Dict[str, torch.Tensor]
     ) -> Dict[str, torch.Tensor]:
-
         """
         Forward pass of PhysNet Calculator model.
 
@@ -600,7 +624,7 @@ class BaseModel(torch.nn.Module):
     ) -> Dict[str, torch.Tensor]:
 
         """
-        Forward pass of PhysNet Calculator model from ASE Atoms object.
+        Forward pass of the calculator model with an ASE Atoms object.
 
         Parameters
         ----------
@@ -731,7 +755,7 @@ class BaseModel(torch.nn.Module):
         # Compute atom pair indices
         if not hasattr(self, 'neighbor_list'):
             self.neighbor_list = module.TorchNeighborListRangeSeparated(
-                self.model_cutoff,
+                self.get_cutoff_ranges(),
                 self.device,
                 self.dtype)
         batch = self.neighbor_list(batch)
@@ -884,7 +908,7 @@ class BaseModel(torch.nn.Module):
         # Compute atom pair indices
         if not hasattr(self, 'neighbor_list'):
             self.neighbor_list = module.TorchNeighborListRangeSeparated(
-                self.model_cutoff,
+                self.get_cutoff_ranges(),
                 self.device,
                 self.dtype)
         batch = self.neighbor_list(batch)

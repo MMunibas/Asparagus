@@ -73,10 +73,6 @@ class Asparagus():
         self.data_container = None
         # Model calculator
         self.model_calculator = None
-        # Model trainer
-        self.trainer = None
-        # Model testing
-        self.tester = None
 
         return
 
@@ -147,36 +143,7 @@ class Asparagus():
         # # # Assign Data Container # # #
         #################################
 
-        self._set_data_container(
-            config,
-            data_container=data_container,
-            **kwargs)
-
-        return
-
-    def _set_data_container(
-        self,
-        config: settings.Configuration,
-        data_container: Optional[data.DataContainer] = None,
-        **kwargs
-    ):
-        """
-        Initialize and set DataContainer as class variable
-
-        Parameter:
-        ----------
-        config: settings.Configuration
-            Asparagus parameter settings.config class object
-        data_container: data.DataContainer, optional, default None
-            DataContainer object to assign to the Asparagus object
-
-        """
-
-        #################################
-        # # # Assign Data Container # # #
-        #################################
-
-        # Check custom model calculator
+        # Check custom data container
         if data_container is not None:
 
             # Assign data container
@@ -188,9 +155,10 @@ class Asparagus():
 
         else:
 
-            # Get model calculator
+            # Get data container
             data_container = self._get_data_container(
-                config=config,
+                config,
+                data_container=data_container,
                 **kwargs)
 
             # Assign data container
@@ -288,9 +256,14 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
-        model_calculator: Optional[torch.nn.Module] = None,
+        model_calculator:
+            Optional[Union[List[torch.nn.Module], torch.nn.Module]] = None,
         model_type: Optional[str] = None,
-        model_checkpoint: Optional[Union[int, str]] = 'best',
+        model_directory: Optional[str] = None,
+        model_ensemble: Optional[bool] = None,
+        model_ensemble_num: Optional[int] = None,
+        model_checkpoint: Optional[Union[int, str]] = None,
+        model_compile: Optional[bool] = None,
         **kwargs,
     ):
         """
@@ -303,20 +276,28 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to json file (str)
-        model_calculator: torch.nn.Module, optional, default None
-            Model calculator object to assign as class model calculator.
+        model_calculator: (torch.nn.Module, list(torch.nn.Module)),
+                optional, default None
+            Model calculator object or list of model calculator objects.
         model_type: str, optional, default None
             Model calculator type to initialize, e.g. 'PhysNet'. The default
             model is defined in settings.default._default_calculator_model.
-        model_checkpoint: (int, str), optional, default 'best'
+        model_directory: str, optional, default None
+            Model directory that contains checkpoint and log files.
+        model_ensemble: bool, optional, default None
+            Expect a model calculator ensemble. If None, check config or
+            assume as False.
+        model_ensemble_num: int, optional, default None
+            Number of model calculator in ensemble.
+        model_checkpoint: (int, str), optional, default None
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
             checkpoint index number of the respective checkpoint file.
-
-        Returns
-        -------
-        torch.nn.Module
-            Asparagus calculator model object
+        model_compile: bool, optional, default None
+            If True, the model calculator will get compiled at the first
+            call to enhance the performance. Generally not applicable during
+            training where multiple backwards calls are done (e.g. energy
+            gradient and loss metrics gradient)
 
         """
 
@@ -344,53 +325,18 @@ class Asparagus():
         # # # Assign Model Calculator # # #
         ###################################
 
-        self._set_model_calculator(
-            config,
-            model_calculator=model_calculator,
-            model_type=model_type,
-            model_checkpoint=model_checkpoint,
-            **kwargs)
-
-        return
-
-    def _set_model_calculator(
-        self,
-        config: settings.Configuration,
-        model_calculator: Optional[torch.nn.Module] = None,
-        model_type: Optional[str] = None,
-        model_checkpoint: Optional[Union[int, str]] = 'best',
-        **kwargs,
-    ):
-        """
-        Initialize and set the calculator model class object
-
-        Parameters
-        ----------
-        config: settings.Configuration
-            Asparagus parameter settings.config class object
-        model_calculator: torch.nn.Module, optional, default None
-            Model calculator object to assign as class model calculator.
-        model_type: str, optional, default None
-            Model calculator type to initialize, e.g. 'PhysNet'. The default
-            model is defined in settings.default._default_calculator_model.
-        model_checkpoint: (int, str), optional, default 'best'
-            If None or 'best', load best model checkpoint.
-            Otherwise load latest checkpoint file with 'last' or define a
-            checkpoint index number of the respective checkpoint file.
-
-        """
-
-        ###################################
-        # # # Assign Model Calculator # # #
-        ###################################
-
         # Get model calculator
         model_calculator = self._get_model_calculator(
             config,
             model_calculator=model_calculator,
             model_type=model_type,
+            model_directory=model_directory,
+            model_ensemble=model_ensemble,
+            model_ensemble_num=model_ensemble_num,
             model_checkpoint=model_checkpoint,
-            **kwargs)
+            model_compile=model_compile,
+            **kwargs,
+            )
 
         # Assign model calculator
         self.model_calculator = model_calculator
@@ -406,6 +352,8 @@ class Asparagus():
             Optional[Union[List[torch.nn.Module], torch.nn.Module]] = None,
         model_type: Optional[str] = None,
         model_directory: Optional[str] = None,
+        model_ensemble: Optional[bool] = None,
+        model_ensemble_num: Optional[int] = None,
         model_checkpoint: Optional[Union[int, str]] = None,
         model_compile: Optional[bool] = None,
         **kwargs,
@@ -429,11 +377,10 @@ class Asparagus():
         model_directory: str, optional, default None
             Model directory that contains checkpoint and log files.
         model_ensemble: bool, optional, default None
-            Expect a model calculator ensemble. If None, check in 
-            'model_directory' for an ensemble or not
-        model_num_models: int, optional, default None
-            Number of model calculator in ensemble. If None and 
-            'model_ensemble' is True, take all available models found.
+            Expect a model calculator ensemble. If None, check config or
+            assume as False.
+        model_ensemble_num: int, optional, default None
+            Number of model calculator in ensemble.
         model_checkpoint: (int, str), optional, default None
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
@@ -482,6 +429,8 @@ class Asparagus():
             model_calculator=model_calculator,
             model_type=model_type,
             model_directory=model_directory,
+            model_ensemble=model_ensemble,
+            model_ensemble_num=model_ensemble_num,
             model_checkpoint=model_checkpoint,
             model_compile=model_compile,
             **kwargs,
@@ -496,7 +445,9 @@ class Asparagus():
             Optional[Union[List[torch.nn.Module], torch.nn.Module]] = None,
         model_type: Optional[str] = None,
         model_directory: Optional[str] = None,
-        model_checkpoint: Optional[Union[int, str]] = 'best',
+        model_ensemble: Optional[bool] = None,
+        model_ensemble_num: Optional[int] = None,
+        model_checkpoint: Optional[Union[int, str]] = None,
         model_compile: Optional[bool] = False,
         **kwargs,
     ) -> torch.nn.Module:
@@ -515,6 +466,11 @@ class Asparagus():
             model is defined in settings.default._default_calculator_model.
         model_directory: str, optional, default None
             Model directory that contains checkpoint and log files.
+        model_ensemble: bool, optional, default None
+            Expect a model calculator ensemble. If None, check config or
+            assume as False.
+        model_ensemble_num: int, optional, default None
+            Number of model calculator in ensemble.
         model_checkpoint: int, optional, default 'best'
             If None or 'best', load best model checkpoint.
             Otherwise load latest checkpoint file with 'last' or define a
@@ -543,6 +499,8 @@ class Asparagus():
                 model_calculator=model_calculator,
                 model_type=model_type,
                 model_directory=model_directory,
+                model_ensemble=model_ensemble,
+                model_ensemble_num=model_ensemble_num,
                 model_checkpoint=model_checkpoint,
                 **kwargs)
             )
@@ -564,7 +522,6 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
-        train_ensemble: Optional[bool] = False,
         **kwargs,
     ) -> training.Trainer:
         """
@@ -577,9 +534,6 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
-        train_ensemble: bool, optional, default False
-            If True, an ensemble of model calculators are trained.
-            Number of models are defined by 'ensemble_number'.
 
         Returns:
         --------
@@ -609,50 +563,6 @@ class Asparagus():
         # Update configuration dictionary
         config.update(config_update)
 
-        ###########################################
-        # # # Assign Model Calculator Trainer # # #
-        ###########################################
-
-        # Assign model calculator trainer
-        if self.trainer is None:
-
-            # Get single model trainer
-            trainer = self._get_trainer(
-                config=config,
-                **kwargs)
-
-            # If requested, upgrade single model trainer to ensemble trainer
-            if train_ensemble:
-                trainer = training.EnsembleTrainer(
-                    config=config,
-                    ensemble_model_trainer=trainer,
-                    **kwargs)
-
-        else:
-            trainer = self.trainer
-
-        return trainer
-
-    def _get_trainer(
-        self,
-        config: settings.Configuration,
-        **kwargs,
-    ) -> training.Trainer:
-        """
-        Initialize and return model calculator trainer.
-
-        Parameters
-        ----------
-        config: settings.Configuration
-            Asparagus parameter settings.config class object
-
-        Returns:
-        --------
-        train.Trainer
-            Model calculator trainer object
-
-        """
-
         #################################
         # # # Assign Reference Data # # #
         #################################
@@ -679,11 +589,77 @@ class Asparagus():
         # # # Assign Model Calculator Trainer # # #
         ###########################################
 
-        trainer = training.Trainer(
+        # Assign model calculator trainer
+        trainer = self._get_trainer(
             config=config,
             data_container=data_container,
             model_calculator=model_calculator,
             **kwargs)
+
+        return trainer
+
+    def _get_trainer(
+        self,
+        config: settings.Configuration,
+        data_container: Optional[data.DataContainer] = None,
+        model_calculator:
+            Optional[Union[model.BaseModel, model.EnsembleModel]] = None,
+        **kwargs,
+    ) -> training.Trainer:
+        """
+        Initialize and return model calculator trainer.
+
+        Parameters
+        ----------
+        config: settings.Configuration
+            Asparagus parameter settings.config class object
+        data_container: data.DataContainer, optional, default None
+            Reference data container object providing training, validation and
+            test data for the model training.
+        model_calculator: torch.nn.Module, optional, default None
+            Model or ensemble model calculator for property predictions.
+
+        Returns:
+        --------
+        train.Trainer
+            Model calculator trainer object
+
+        """
+
+        ###########################################
+        # # # Assign Model Calculator Trainer # # #
+        ###########################################
+
+        # Check for single model calculator or model ensemble calculator
+        if model_calculator is None:
+            if (
+                kwargs.get('model_ensemble') is None
+                and config.get('model_ensemble') is None
+            ):
+                model_ensemble = False
+            elif kwargs.get('model_ensemble') is None:
+                model_ensemble = config.get('model_ensemble')
+            else:
+                model_ensemble = kwargs.get('model_ensemble')
+        else:
+            if hasattr(model_calculator, 'model_ensemble'):
+                model_ensemble = model_calculator.model_ensemble
+            else:
+                model_ensemble = False
+
+        # Initialize single model or model ensemble trainer
+        if model_ensemble:
+            trainer = training.EnsembleTrainer(
+                config=config,
+                data_container=data_container,
+                model_calculator=model_calculator,
+                **kwargs)
+        else:
+            trainer = training.Trainer(
+                config=config,
+                data_container=data_container,
+                model_calculator=model_calculator,
+                **kwargs)
 
         return trainer
 
@@ -770,40 +746,6 @@ class Asparagus():
         # Update configuration dictionary
         config.update(config_update)
 
-        ##########################################
-        # # # Assign Model Calculator Tester # # #
-        ##########################################
-
-        # Assign model calculator trainer
-        if self.tester is None:
-            tester = self._get_tester(
-                config,
-                **kwargs)
-        else:
-            tester = self.tester
-
-        return tester
-
-    def _get_tester(
-        self,
-        config: settings.Configuration,
-        **kwargs,
-    ) -> training.Tester:
-        """
-        Initialize and return model calculator tester.
-
-        Parameters
-        ----------
-        config: settings.Configuration
-            Asparagus parameter settings.config class object
-
-        Returns:
-        --------
-        train.Tester
-            Model calculator tester object
-
-        """
-
         #################################
         # # # Assign Reference Data # # #
         #################################
@@ -814,6 +756,43 @@ class Asparagus():
                 **kwargs)
         else:
             data_container = self.data_container
+
+        ##########################################
+        # # # Assign Model Calculator Tester # # #
+        ##########################################
+
+        # Assign model calculator trainer
+        tester = self._get_tester(
+            config,
+            data_container=data_container,
+            **kwargs)
+
+        return tester
+
+    def _get_tester(
+        self,
+        config: settings.Configuration,
+        data_container: Optional[data.DataContainer] = None,
+        **kwargs,
+    ) -> training.Tester:
+        """
+        Initialize and return model calculator tester.
+
+        Parameters
+        ----------
+        config: settings.Configuration
+            Asparagus parameter settings.config class object
+        data_container: data.DataContainer, optional, default None
+            Reference data container object providing training, validation and
+            test data for the model training.
+
+
+        Returns:
+        --------
+        train.Tester
+            Model calculator tester object
+
+        """
 
         ###########################################
         # # # Assign Model Calculator Trainer # # #
