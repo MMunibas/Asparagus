@@ -88,9 +88,9 @@ class BaseModel(torch.nn.Module):
             if checkpoint_file is None:
                 checkpoint_state = "."
             else:
-                checkpoint_state = " from file '{checkpoint_file:s}'."
+                checkpoint_state = f" from file '{checkpoint_file:s}'."
             self.logger.info(
-                "No checkpoint file is loaded{checkpoint_state:s}")
+                f"No checkpoint file is loaded{checkpoint_state:s}")
 
         else:
 
@@ -103,9 +103,9 @@ class BaseModel(torch.nn.Module):
                 if checkpoint_file is None:
                     checkpoint_state = "."
                 else:
-                    checkpoint_state = " from file '{checkpoint_file:s}'."
+                    checkpoint_state = f" from file '{checkpoint_file:s}'."
                 self.logger.info(
-                    "Checkpoint file is loaded{checkpoint_state:s}")
+                    f"Checkpoint file is loaded{checkpoint_state:s}")
 
         return
 

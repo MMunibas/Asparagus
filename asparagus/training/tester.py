@@ -73,7 +73,7 @@ class Tester:
     # Default arguments for tester class
     _default_args = {
         'test_datasets':                ['test'],
-        'tester_properties':            None,
+        'test_properties':              None,
         'test_batch_size':              128,
         'test_num_batch_workers':       1,
         'test_directory':               '.',
@@ -83,7 +83,7 @@ class Tester:
     _dtypes_args = {
         'test_datasets':                [
             utils.is_string, utils.is_string_array],
-        'tester_properties':            [
+        'test_properties':            [
             utils.is_string, utils.is_string_array, utils.is_None],
         'test_batch_size':              [utils.is_integer],
         'test_num_batch_workers':       [utils.is_integer],
@@ -313,6 +313,12 @@ class Tester:
         else:
             raise AttributeError(
                 "Model calculator has no 'model_properties' attribute")
+        if hasattr(model_calculator, "model_ensemble"):
+            model_ensemble = model_calculator.model_ensemble
+            model_ensemble_num = model_calculator.model_ensemble_num
+        else:
+            model_ensemble = False
+            model_ensemble_num = None
 
         # Check test properties if defined or take initialized ones
         if test_properties is None:
@@ -356,50 +362,58 @@ class Tester:
         # # # Compute Properties # # #
         ##############################
 
-        # Change to evaluation mode for calculator
-        model_calculator.eval()
-
         # Loop over all requested data set
         for label, datasubset in self.test_data.items():
 
-            # Get model and descriptor cutoffs
-            model_cutoff = model_calculator.model_cutoff
-            if hasattr(model_calculator.input_module, 'input_radial_cutoff'):
-                input_cutoff = (
-                    model_calculator.input_module.input_radial_cutoff)
-                if input_cutoff != model_cutoff:
-                    cutoff = [input_cutoff, model_cutoff]
-            else:
-                cutoff = [model_cutoff]
-
+            # Get model cutoffs
+            cutoffs = model_calculator.get_cutoff_ranges()
+            
             # Set maximum model cutoff for neighbor list calculation
-            datasubset.init_neighbor_list(cutoff=cutoff)
-
-            # Set device
-            datasubset.device = self.device
+            datasubset.init_neighbor_list(
+                cutoff=cutoffs,
+                device=self.device,
+                dtype=self.dtype)
 
             # Prepare dictionary for property values and number of atoms per
             # system
             test_prediction = {prop: [] for prop in eval_properties}
+            if model_ensemble:
+                test_prediction.update(
+                    {
+                        imodel: {prop: [] for prop in eval_properties}
+                        for imodel in range(model_ensemble_num)
+                    })
             test_reference = {prop: [] for prop in eval_properties}
             test_prediction['atoms_number'] = []
 
             # Reset property metrics
-            metrics_test = self.reset_metrics(eval_properties)
+            metrics_test = self.reset_metrics(
+                eval_properties, model_ensemble, model_ensemble_num)
 
             # Loop over data batches
             for batch in datasubset:
 
                 # Predict model properties from data batch
-                prediction = model_calculator(batch)
+                prediction = model_calculator(
+                    batch,
+                    verbose_results=True)
 
                 # Compute metrics for test properties
                 metrics_batch = self.compute_metrics(
-                    prediction, batch, eval_properties, test_conversion)
+                    prediction,
+                    batch,
+                    eval_properties,
+                    test_conversion,
+                    model_ensemble,
+                    model_ensemble_num)
 
                 # Update average metrics
                 self.update_metrics(
-                    metrics_test, metrics_batch, eval_properties)
+                    metrics_test,
+                    metrics_batch,
+                    eval_properties,
+                    model_ensemble,
+                    model_ensemble_num)
 
                 # Store prediction and reference data system resolved
                 Nsys = len(batch['atoms_number'])
@@ -445,13 +459,53 @@ class Tester:
                     test_prediction[prop] += data_prediction
                     test_reference[prop] += data_reference
 
+                    if model_ensemble:
+                        
+                        for imodel in range(model_ensemble_num):
+                            
+                            # Detach prediction and reference data
+                            data_prediction = (
+                                prediction[imodel][prop].detach().cpu().numpy()
+                                )
+
+                            # Apply unit conversion of model prediction
+                            data_prediction *= test_conversion[prop]
+
+                            # If data are atom resolved
+                            if not data_prediction.shape:
+                                data_prediction = [data_prediction]
+                            elif data_prediction.shape[0] == Natoms:
+                                sys_i = batch['sys_i'].cpu().numpy()
+                                data_prediction = [
+                                    list(data_prediction[sys_i == isys])
+                                    for isys in range(Nsys)]
+                            # If data are atom pair resolved
+                            elif data_prediction.shape[0] == Npairs:
+                                sys_pair_i = (
+                                    batch['sys_i'][
+                                        batch['idx_i']].cpu().numpy())
+                                data_prediction = [
+                                    list(data_prediction[sys_pair_i == isys])
+                                    for isys in range(Nsys)]
+                            # Else, it is already system resolved
+                            else:
+                                data_prediction = list(data_prediction)
+
+                            # Assign prediction data
+                            test_prediction[imodel][prop] += data_prediction
+
                 # Store atom numbers
                 test_prediction['atoms_number'] += list(
                     batch['atoms_number'].cpu().numpy())
 
             # Print metrics
             if verbose:
-                self.print_metric(metrics_test, eval_properties, label)
+                self.print_metric(
+                    metrics_test,
+                    eval_properties,
+                    label,
+                    model_ensemble,
+                    model_ensemble_num)
 
             ###########################
             # # # Save Properties # # #
@@ -500,6 +554,23 @@ class Tester:
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
+                    if model_ensemble:
+                        for imodel in range(model_ensemble_num):
+                            test_directory_model = os.path.join(
+                                test_directory, f"{imodel:d}")
+                            if not os.path.exists(test_directory_model):
+                                os.makedirs(test_directory_model)
+                            self.plot_correlation(
+                                label,
+                                prop,
+                                self.plain_data(test_prediction[imodel][prop]),
+                                self.plain_data(test_reference[prop]),
+                                self.data_units[prop],
+                                metrics_test[prop][imodel],
+                                test_property_scaling[prop],
+                                test_directory_model,
+                                test_plot_format,
+                                test_plot_dpi)
 
             # Plot histogram of the prediction error
             if test_plot_histogram:
@@ -514,6 +585,23 @@ class Tester:
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
+                    if model_ensemble:
+                        for imodel in range(model_ensemble_num):
+                            test_directory_model = os.path.join(
+                                test_directory, f"{imodel:d}")
+                            if not os.path.exists(test_directory_model):
+                                os.makedirs(test_directory_model)
+                            self.plot_histogram(
+                                label,
+                                prop,
+                                self.plain_data(test_prediction[imodel][prop]),
+                                self.plain_data(test_reference[prop]),
+                                self.data_units[prop],
+                                metrics_test[prop][imodel],
+                                test_property_scaling[prop],
+                                test_directory_model,
+                                test_plot_format,
+                                test_plot_dpi)
 
             # Plot histogram of the prediction error
             if test_plot_residual:
@@ -529,9 +617,23 @@ class Tester:
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
-
-        # Change back to training mode for calculator
-        model_calculator.train()
+                    if model_ensemble:
+                        for imodel in range(model_ensemble_num):
+                            test_directory_model = os.path.join(
+                                test_directory, f"{imodel:d}")
+                            if not os.path.exists(test_directory_model):
+                                os.makedirs(test_directory_model)
+                            self.plot_residual(
+                                label,
+                                prop,
+                                self.plain_data(test_prediction[imodel][prop]),
+                                self.plain_data(test_reference[prop]),
+                                self.data_units[prop],
+                                metrics_test[prop][imodel],
+                                test_property_scaling[prop],
+                                test_directory_model,
+                                test_plot_format,
+                                test_plot_dpi)
 
         return
 
@@ -642,6 +744,8 @@ class Tester:
     def reset_metrics(
         self,
         test_properties: List[str],
+        model_ensemble: bool,
+        model_ensemble_num: int,
     ) -> Dict[str, float]:
         """
         Reset the metrics dictionary.
@@ -649,7 +753,11 @@ class Tester:
         Parameters
         ----------
         test_properties: list(str)
-            List of properties to restart.
+            List of properties to restart
+        model_ensemble: bool
+            Model calculator or model ensemble flag
+        model_ensemble_num: int
+            Model ensemble calculator number
 
         Returns
         -------
@@ -669,6 +777,12 @@ class Tester:
             metrics[prop] = {
                 'mae': 0.0,
                 'mse': 0.0}
+            if model_ensemble:
+                metrics[prop]['std'] = 0.0
+                for imodel in range(model_ensemble_num):
+                    metrics[prop][imodel] = {
+                        'mae': 0.0,
+                        'mse': 0.0}
 
         return metrics
 
@@ -678,6 +792,8 @@ class Tester:
         reference: Dict[str, Any],
         test_properties: List[str],
         test_conversion: Dict[str, float],
+        model_ensemble: bool,
+        model_ensemble_num: int,
     ) -> Dict[str, float]:
         """
         Compute the metrics mean absolute error (MAE) and mean squared error
@@ -693,6 +809,10 @@ class Tester:
             List of properties to evaluate.
         test_conversion: dict(str, float)
             Model prediction to test data unit conversion.
+        model_ensemble: bool
+            Model calculator or model ensemble flag
+        model_ensemble_num: int
+            Model ensemble calculator number
 
         Returns
         -------
@@ -726,6 +846,25 @@ class Tester:
                 * test_conversion[prop],
                 torch.flatten(reference[prop]))
 
+            # For model ensembles
+            if model_ensemble:
+                
+                # Compute mean standard deviation
+                prop_std = f"std_{prop:s}"
+                metrics[prop]['std'] = torch.mean(prediction[prop_std])
+                
+                #  Compute single calculator statistics
+                for imodel in range(model_ensemble_num):
+                    metrics[prop][imodel] = {}
+                    metrics[prop][imodel]['mae'] = mae_fn(
+                        torch.flatten(prediction[imodel][prop])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop]))
+                    metrics[prop][imodel]['mse'] = mse_fn(
+                        torch.flatten(prediction[imodel][prop])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop]))
+
         return metrics
 
     def update_metrics(
@@ -733,6 +872,8 @@ class Tester:
         metrics: Dict[str, float],
         metrics_update: Dict[str, float],
         test_properties: List[str],
+        model_ensemble: bool,
+        model_ensemble_num: int,
     ) -> Dict[str, float]:
         """
         Update the metrics dictionary.
@@ -745,6 +886,10 @@ class Tester:
             Dictionary of the metrics to update
         test_properties: list(str)
             List of properties to evaluate
+        model_ensemble: bool
+            Model calculator or model ensemble flag
+        model_ensemble_num: int
+            Model ensemble calculator number
 
         Returns
         -------
@@ -762,19 +907,34 @@ class Tester:
         # Update metrics
         metrics['Ndata'] = metrics['Ndata'] + metrics_update['Ndata']
         for prop in test_properties:
-            for metric in metrics_update[prop].keys():
+            for metric in ['mae', 'mse']:
                 metrics[prop][metric] = (
                     fdata*metrics[prop][metric]
                     + fdata_update*metrics_update[prop][metric].detach().item()
                     )
+            if model_ensemble:
+                metrics[prop]['std'] = (
+                    fdata*metrics[prop]['std']
+                    + fdata_update*metrics_update[prop]['std'].detach().item()
+                    )
+                for imodel in range(model_ensemble_num):
+                    for metric in ['mae', 'mse']:
+                        metrics[prop][imodel][metric] = (
+                            fdata*metrics[prop][imodel][metric]
+                            + fdata_update
+                            * (metrics_update
+                               )[prop][imodel][metric].detach().item()
+                            )
 
         return metrics
 
     def print_metric(
         self,
         metrics: Dict[str, float],
-        test_properties: Optional[List[str]] = None,
-        test_label: Optional[str] = '',
+        test_properties: List[str],
+        test_label: str,
+        model_ensemble: bool,
+        model_ensemble_num: int,
     ):
         """
         Print the values of MAE and RMSE for the test set.
@@ -787,24 +947,53 @@ class Tester:
             List of properties to evaluate
         test_label: str
             Label of the reference data set
+        model_ensemble: bool
+            Model calculator or model ensemble flag
+        model_ensemble_num: int
+            Model ensemble calculator number
 
         """
 
-        # Check property and label input
-        if test_properties is None:
-            test_properties = self.test_properties
+        # Prepare label input
         if len(test_label):
             msg_label = f" for {test_label:s} set"
+        else:
+            msg_label = ""
 
-        msg = (
-            f"Summary{msg_label:s}:\n"
-            + "  Property Metrics    MAE,       RMSE\n")
+        # Prepare header
+        message = f"Summary{msg_label:s}:\n"
+        message += f"   {'Property Metrics':<18s} "
+        message += f"{'MAE':<8s}   "
+        message += f"{'RMSE':<8s}"
+        if model_ensemble:
+            message += f"   {'Std':<8s}\n"
+        else:
+            message += "\n"
+        
+        # Add property metrics
         for prop in test_properties:
-            msg += f"   {prop:<16s} "
-            msg += f"{metrics[prop]['mae']:3.2e},  "
-            msg += f"{np.sqrt(metrics[prop]['mse']):3.2e} "
-            msg += f"{self.data_units[prop]:s}\n"
-        self.logger.info(msg)
+            
+            # Mean metrics
+            message += f"   {prop:<18s} "
+            message += f"{metrics[prop]['mae']:3.2e},  "
+            message += f"{np.sqrt(metrics[prop]['mse']):3.2e}"
+            if model_ensemble:
+                message += f",  {metrics[prop]['std']:3.2e}"
+            message += f" {self.data_units[prop]:s}\n"
+            
+            # For model ensemble, single model metrics
+            if model_ensemble:
+                for imodel in range(model_ensemble_num):
+                    if imodel:
+                        message += f"     {f'      {imodel:d}':<16s}  "
+                    else:
+                        message += f"     {f'Model {imodel:d}':<16s}  "
+                    message += f"{metrics[prop][imodel]['mae']:3.2e},  "
+                    message += f"{np.sqrt(metrics[prop][imodel]['mse']):3.2e}"
+                    message += f" {self.data_units[prop]:s}\n"
+
+        # Print metrics
+        self.logger.info(message)
 
         return
 
@@ -891,12 +1080,16 @@ class Tester:
 
         # Data label
         metrics_label = (
-            f"{label_property:s} ({label_dataset:s})\n" +
-            f"RMSE = {np.sqrt(data_metrics['mse']):3.2e} {unit_property:s}")
+            f"{label_property:s} ({label_dataset:s})\n"
+            + f"MAE = {data_metrics['mae']:3.2e} {unit_property:s}\n"
+            + f"RMSE = {np.sqrt(data_metrics['mse']):3.2e} {unit_property:s}")
         if self.is_imported("scipy"):
             r2 = stats.pearsonr(data_prediction, data_reference).statistic
             metrics_label += (
                 "\n" + r"1 - $R^2$ = " + f"{1.0 - r2:3.2e}")
+        if 'std' in data_metrics:
+            metrics_label += (
+                f"\nStd = {data_metrics['std']:3.2e} {unit_property:s}")
 
         # Scale data if requested
         if test_scaling is not None:
@@ -929,9 +1122,10 @@ class Tester:
         axs1.set_ylim(data_min - data_dif*0.05, data_max + data_dif*0.05)
 
         # Figure title
-        axs1.set_title(
-            f"Correlation plot - {label_property:s} ({label_dataset:s})",
-            fontweight='bold')
+        title = f"Correlation plot\n{label_property:s} ({label_dataset:s})"
+        if 'std' in data_metrics:
+            title = title[:-1] + ", ensemble average)"
+        axs1.set_title(title, fontweight='bold')
 
         # Axis labels
         axs1.set_xlabel(
@@ -1025,12 +1219,16 @@ class Tester:
 
         # Data label
         metrics_label = (
-            f"{label_property:s} ({label_dataset:s})\n" +
-            f"RMSE = {np.sqrt(data_metrics['mse']):3.2e} {unit_property:s}")
+            f"{label_property:s} ({label_dataset:s})\n"
+            + f"MAE = {data_metrics['mae']:3.2e} {unit_property:s}\n"
+            + f"RMSE = {np.sqrt(data_metrics['mse']):3.2e} {unit_property:s}")
         if self.is_imported("scipy"):
             r2 = stats.pearsonr(data_prediction, data_reference).statistic
             metrics_label += (
                 "\n" + r"1 - $R^2$ = " + f"{1.0 - r2:3.2e}")
+        if 'std' in data_metrics:
+            metrics_label += (
+                f"\nStd = {data_metrics['std']:3.2e} {unit_property:s}")
 
         # Plot data
         data_dif = data_reference - data_prediction
@@ -1051,10 +1249,12 @@ class Tester:
         axs1.set_xlim(-data_absmax, data_absmax)
 
         # Figure title
-        axs1.set_title(
-            f"Prediction error distribution - {label_property:s} "
-            + f"({label_dataset:s})",
-            fontweight='bold')
+        title = (
+            "Prediction error distribution\n"
+            + f"{label_property:s} ({label_dataset:s})")
+        if 'std' in data_metrics:
+            title = title[:-1] + ", ensemble average)"
+        axs1.set_title(title, fontweight='bold')
 
         # Axis labels
         axs1.set_xlabel(
@@ -1153,12 +1353,16 @@ class Tester:
 
         # Data label
         metrics_label = (
-            f"{label_property:s} ({label_dataset:s})\n" +
-            f"RMSE = {np.sqrt(data_metrics['mse']):3.2e} {unit_property:s}")
+            f"{label_property:s} ({label_dataset:s})\n"
+            + f"MAE = {data_metrics['mae']:3.2e} {unit_property:s}\n"
+            + f"RMSE = {np.sqrt(data_metrics['mse']):3.2e} {unit_property:s}")
         if self.is_imported("scipy"):
             r2 = stats.pearsonr(data_prediction, data_reference).statistic
             metrics_label += (
                 "\n" + r"1 - $R^2$ = " + f"{1.0 - r2:3.2e}")
+        if 'std' in data_metrics:
+            metrics_label += (
+                f"\nStd = {data_metrics['std']:3.2e} {unit_property:s}")
 
         # Scale data if requested
         if test_scaling is not None:
@@ -1195,9 +1399,10 @@ class Tester:
             data_devmin - data_devdif*0.05, data_devmax + data_devdif*0.05)
 
         # Figure title
-        axs1.set_title(
-            f"Residual plot - {label_property:s} ({label_dataset:s})",
-            fontweight='bold')
+        title = f"Residual plot\n{label_property:s} ({label_dataset:s})"
+        if 'std' in data_metrics:
+            title = title[:-1] + ", ensemble average)"
+        axs1.set_title(title, fontweight='bold')
 
         # Axis labels
         axs1.set_xlabel(

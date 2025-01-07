@@ -9,14 +9,14 @@ model = Asparagus(
     data_num_test=0.1,
     model_directory='model_ensemble',
     trainer_max_epochs=1000,)
-model.train(
-    model_ensemble=True,
-    model_ensemble_num=5,
-    model_num_threads=12,
-    ensemble_num_models=5,
-    ensemble_epochs_step=50,
-    ensemble_num_threads=3)
+#model.train(
+#    model_ensemble=True,
+#    model_ensemble_num=5,
+#    model_num_threads=4,
+#    ensemble_num_models=5,
+#    ensemble_epochs_step=50,
+#    ensemble_num_threads=3)
 #TODO Adopt Tester for model ensembles
-#model.test(
-#    test_datasets='all',
-#    test_directory=model.get('model_directory'))
+model.test(
+    test_datasets='test',
+    test_directory=model.get('model_directory'))

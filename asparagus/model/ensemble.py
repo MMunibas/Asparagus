@@ -319,6 +319,34 @@ class EnsembleModel(torch.nn.Module):
 
         return
 
+    def get_cutoff_ranges(self) -> List[float]:
+        """
+        Get model cutoff or, eventually, short range descriptor and long
+        range cutoff list.
+
+        Return
+        ------
+        list(float)
+            List of the long range model and, eventually, short range
+            descriptor cutoff (if defined and not short range equal long range
+            cutoff).
+
+        """
+
+        long_range_cutoff = self.model_calculator_list[0].model_cutoff
+        if hasattr(
+            self.model_calculator_list[0].input_module,
+            'input_radial_cutoff'
+        ):
+            short_range_cutoff = (
+                self.model_calculator_list[0].input_module.input_radial_cutoff)
+            if short_range_cutoff != long_range_cutoff:
+                cutoffs = [short_range_cutoff, long_range_cutoff]
+        else:
+            cutoffs = [long_range_cutoff]
+
+        return cutoffs
+
     # @torch.compile # Not supporting backwards propagation with torch.float64
     # @torch.jit.export  # No effect, as 'forward' already is
     def forward(
@@ -392,7 +420,8 @@ class EnsembleModel(torch.nn.Module):
             prop_std = f"std_{prop:s}"
             ensemble_results[prop_std], ensemble_results[prop] = (
                 torch.std_mean(
-                    torch.stack([results[prop] for results in model_results]),
+                    torch.stack(
+                        [results[prop] for results in model_results.values()]),
                     dim=0)
                 )
 

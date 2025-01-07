@@ -186,17 +186,11 @@ class PyCharmm_Calculator:
         # # # Set ML/MM Options # # #
         #############################
 
-        # Get model interaction cutoff and set evaluation mode
+        # Set model to evaluation mode
         if self.model_ensemble:
-            #self.interaction_cutoff = 0.0
             for calc in self.model_calculator_list:
-                #cutoff = calc.model_interaction_cutoff
-                #if self.interaction_cutoff < cutoff:
-                    #self.interaction_cutoff = cutoff
                 calc.eval()
         else:
-            #self.interaction_cutoff = (
-                #self.model_calculator.model_interaction_cutoff)
             self.model_calculator.eval()
 
         # Get property unit conversions from model units to CHARMM units

@@ -1,4 +1,3 @@
-# Test Script to import PhysNet as energy function in CHARMM via PyCHARMM
 
 # Basics
 import os
@@ -110,7 +109,6 @@ elif setup == 2:
         """
         stream.charmm_script(add_water)
 
-
     # Read ML system
     add_ammonia = """
     open read card unit 10 name charmm_data/ammonia.pdb
@@ -124,7 +122,7 @@ elif setup == 2:
 
     # Manipulate coordinates
     pos = coor.get_positions().to_numpy(dtype=np.float32)
-    pos[-4:, 0] -= 10.0 # Shift ammonia to the cell border to test pbc
+    #pos[-4:, 0] -= 10.0 # Shift ammonia to the cell border to test pbc
     pandas_pos = pandas.DataFrame(
         {'x': pos[:, 0], 'y': pos[:, 1], 'z': pos[:, 2]}
         )
@@ -138,8 +136,6 @@ elif setup == 2:
             .and. (segid WAT .and. type OH2 ))) end
         """
         stream.charmm_script(remove_water)
-
-
 
 write.coor_pdb("charmm_data/ammonia_water.pdb", title="Ammonia solvated")
 write.coor_card("charmm_data/ammonia_water.crd", title="Ammonia solvated")
@@ -256,7 +252,7 @@ energy.show()
 # Step 5: Heating - CHARMM, PhysNet
 #-----------------------------------------------------------
 
-if False:
+if True:
     
     timestep = 0.00025   # 0.25 fs
     nsteps = 10.*1./timestep # 10 ps
