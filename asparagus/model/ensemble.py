@@ -6,6 +6,7 @@ import numpy as np
 import ase
 import torch
 
+from asparagus import data
 from asparagus import model
 from asparagus import settings
 from asparagus import utils
@@ -532,5 +533,66 @@ class EnsembleModel(torch.nn.Module):
             charge=charge,
             conversion=conversion)
 
+    def calculate_data(
+        self,
+        dataset: Union[data.DataContainer, data.DataSet, data.DataSubSet],
+        batch_size: Optional[int] = 32,
+        num_workers: Optional[int] = 1,
+        **kwargs
+    ) -> Dict[str, torch.Tensor]:
 
+        """
+        Forward pass of the calculator model with an Asparagus data set.
 
+        Parameters
+        ----------
+        dataset: (data.DataContainer, data.DataSet, data.DataSubSet)
+            Asparagus DataContainer or DataSet object
+        batch_size: int, optional, default 32
+            Data loader batch size
+        num_workers: int, optional, default 1
+            Number of data loader workers
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+
+        # Prepare data loader for the data set
+        dataloader = data.DataLoader(
+            dataset,
+            batch_size,
+            False,
+            num_workers,
+            self.device,
+            self.dtype)
+
+        # Initialize model ensemble result dictionary
+        results = {}
+
+        # Iterate over data batches
+        for ib, batch in enumerate(dataloader):
+            
+            # Predict model properties from data batch
+            prediction = self.forward(batch, **kwargs)
+
+            # Append prediction to result dictionary
+            for prop, item in prediction.items():
+                if results.get(prop) is None:
+                    results[prop] = []
+                results[prop].append(
+                    item.cpu().detach())
+
+        # Concatenate results
+        for prop, item in results.items():
+            if ib and item[0].shape:
+                results[prop] = torch.cat(item)
+            elif ib:
+                results[prop] = torch.cat(
+                    [item_i.reshape(1) for item_i in item], dim=0)
+            else:
+                results[prop] = item[0]
+
+        return results

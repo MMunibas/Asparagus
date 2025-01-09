@@ -991,7 +991,7 @@ class DataContainer():
             Training dataloader batch size
         valid_batch_size: int
             Validation dataloader batch size
-        test_batch_size:  int
+        test_batch_size: int
             Test dataloader batch size
         num_workers: int, optional, default 1
             Number of data loader workers
@@ -1309,6 +1309,21 @@ class DataContainer():
                     data_atomic_energies_scaling[atomic_number][0])
 
         return atomic_energies_shift
+
+    def get_data_properties_dtype(
+        self,
+    ) -> 'dtype':
+        """
+        Return database properties float dtype
+        
+        Returns:
+        --------
+        'dtype'
+            Properties float dtype (most likely torch.float64)
+
+        """
+        with self.dataset.connect(self.data_file[0], mode='r') as db:
+            return db.properties_torch_dtype
 
     def get_metadata(self) -> Dict[str, Any]:
         """

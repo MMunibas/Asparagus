@@ -83,7 +83,7 @@ class Model_PaiNN(model.BaseModel):
         'model_repulsion_cutoff':       1.0,
         'model_repulsion_cuton':        0.0,
         'model_repulsion_trainable':    True,
-        'model_electrostatic':          True,
+        'model_electrostatic':          None,
         'model_electrostatic_dipole':   True,
         'model_dispersion':             True,
         'model_dispersion_trainable':   False,
