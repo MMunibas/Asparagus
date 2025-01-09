@@ -247,6 +247,8 @@ class Input_PaiNN(torch.nn.Module):
             Atom pair radial basis functions
         distances_uv: torch.tensor(N_pairs_uv)
             Long-range atom pair distances
+        vectors_uv: torch.tensor(N_pairs_uv, 3)
+            Long-range atom pair vectors
 
         """
         
@@ -264,12 +266,13 @@ class Input_PaiNN(torch.nn.Module):
 
         # Compute long-range cutoffs
         if pbc_offset_uv is None and idx_u is not None:
-            distances_uv = torch.norm(
-                positions[idx_u] - positions[idx_v], dim=-1)
+            vectors_uv = positions[idx_v] - positions[idx_u]
+            distances_uv = torch.norm(vectors_uv, dim=-1)
         elif idx_u is not None:
-            distances_uv = torch.norm(
-                positions[idx_v] - positions[idx_u] + pbc_offset_uv, dim=-1)
+            vectors_uv = positions[idx_v] - positions[idx_u] + pbc_offset_uv
+            distances_uv = torch.norm(vectors_uv, dim=-1)
         else:
+            vectors_uv = vectors
             distances_uv = distances
 
         # Compute distance cutoff values
@@ -278,7 +281,9 @@ class Input_PaiNN(torch.nn.Module):
         # Compute radial basis functions
         rbfs = self.radial_fn(distances)
 
-        return features, distances, vectors, cutoffs, rbfs, distances_uv
+        return (
+            features, distances, vectors, cutoffs, rbfs,
+            distances_uv, vectors_uv)
 
 
 #======================================

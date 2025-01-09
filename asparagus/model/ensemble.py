@@ -332,20 +332,7 @@ class EnsembleModel(torch.nn.Module):
             cutoff).
 
         """
-
-        long_range_cutoff = self.model_calculator_list[0].model_cutoff
-        if hasattr(
-            self.model_calculator_list[0].input_module,
-            'input_radial_cutoff'
-        ):
-            short_range_cutoff = (
-                self.model_calculator_list[0].input_module.input_radial_cutoff)
-            if short_range_cutoff != long_range_cutoff:
-                cutoffs = [short_range_cutoff, long_range_cutoff]
-        else:
-            cutoffs = [long_range_cutoff]
-
-        return cutoffs
+        return self.model_calculator_list[0].get_cutoff_ranges()
 
     # @torch.compile # Not supporting backwards propagation with torch.float64
     # @torch.jit.export  # No effect, as 'forward' already is

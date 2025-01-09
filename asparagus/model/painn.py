@@ -51,9 +51,13 @@ class Model_PaiNN(model.BaseModel):
     model_repulsion_trainable: bool, optional, default True
         If True, repulsion model parameter are trainable. Else, default
         parameter values are fix.
-    model_electrostatic: bool, optional, default True
+    model_electrostatic: bool, optional, default None
         Use electrostatic potential between atomic charges for energy
-        prediction.
+        prediction. If None, electrostatic potential model is applied if
+        atomic charges are available.
+    model_electrostatic_dipole: bool, optional, default True
+        Include atomic dipole moments to compute the electrostatic potential
+        between atom pairs for energy prediction if available.
     model_dispersion: bool, optional, default True
         Use Grimme's D3 dispersion model for energy prediction.
     model_dispersion_trainable: bool, optional, default False
@@ -79,7 +83,8 @@ class Model_PaiNN(model.BaseModel):
         'model_repulsion_cutoff':       1.0,
         'model_repulsion_cuton':        0.0,
         'model_repulsion_trainable':    True,
-        'model_electrostatic':          None,
+        'model_electrostatic':          True,
+        'model_electrostatic_dipole':   True,
         'model_dispersion':             True,
         'model_dispersion_trainable':   False,
         'model_num_threads':            4,
@@ -97,6 +102,7 @@ class Model_PaiNN(model.BaseModel):
         'model_repulsion_cuton':        [utils.is_numeric, utils.is_None],
         'model_repulsion_trainable':    [utils.is_bool],
         'model_electrostatic':          [utils.is_bool, utils.is_None],
+        'model_electrostatic_dipole':   [utils.is_bool],
         'model_dispersion':             [utils.is_bool],
         'model_dispersion_trainable':   [utils.is_bool],
         'model_num_threads':            [utils.is_integer],
@@ -136,6 +142,7 @@ class Model_PaiNN(model.BaseModel):
         model_repulsion_cuton: Optional[float] = None,
         model_repulsion_trainable: Optional[bool] = None,
         model_electrostatic: Optional[bool] = None,
+        model_electrostatic_dipole: Optional[bool] = None,
         model_dispersion: Optional[bool] = None,
         model_dispersion_trainable: Optional[bool] = None,
         model_num_threads: Optional[int] = None,
@@ -189,7 +196,7 @@ class Model_PaiNN(model.BaseModel):
         self.model_properties = self.check_model_properties(
             config,
             self.model_properties)
-        
+
         # Check model properties - Energy and energy gradient properties
         self.model_properties = self.set_model_energy_properties(
             self.model_properties,
@@ -285,8 +292,18 @@ class Model_PaiNN(model.BaseModel):
                 **kwargs)
 
         # Assign electrostatic interaction module
-        if self.model_electrostatic:
-            # Get electrostatic point charge model calculator
+        if self.model_electrostatic and self.model_electrostatic_dipole:
+            # Get electrostatic atomic charge and dipole model calculator
+            self.electrostatic_module = module.PC_Dipole_damped_electrostatics(
+                self.model_cutoff,
+                config.get('input_radial_cutoff'),
+                self.device,
+                self.dtype,
+                unit_properties=self.model_unit_properties,
+                truncation='force',
+                **kwargs)
+        elif self.model_electrostatic:
+            # Get electrostatic atomic charge model calculator
             self.electrostatic_module = module.PC_damped_electrostatics(
                 self.model_cutoff,
                 config.get('input_radial_cutoff'),
@@ -596,7 +613,10 @@ class Model_PaiNN(model.BaseModel):
             positions.requires_grad_(True)
 
         # Run input model
-        features, distances, vectors, cutoffs, rbfs, distances_uv = (
+        (
+            features, distances, vectors, cutoffs, rbfs, 
+            distances_uv, vectors_uv
+        ) = (
             self.input_module(
                 atomic_numbers, positions,
                 idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
@@ -663,7 +683,7 @@ class Model_PaiNN(model.BaseModel):
         # Add electrostatic model contribution
         if self.model_electrostatic:
             electrostatic_atomic_energies = self.electrostatic_module(
-                results, distances_uv, idx_u, idx_v)
+                results, distances_uv, idx_u, idx_v, vectors=vectors_uv)
             results['atomic_energies'] = (
                 results['atomic_energies'] + electrostatic_atomic_energies)
             if verbose_results:
@@ -731,8 +751,8 @@ class Model_PaiNN(model.BaseModel):
             # mass
             atomic_masses = self.atomic_masses[atomic_numbers]
             system_mass = utils.scatter_sum(
-                    atomic_masses, sys_i, dim=0,
-                    shape=atoms_number.shape)
+                atomic_masses, sys_i, dim=0,
+                shape=atoms_number.shape)
             system_com = (
                 utils.scatter_sum(
                     atomic_masses[..., None]*positions_dipole,

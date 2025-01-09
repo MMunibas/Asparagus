@@ -525,7 +525,7 @@ class Electrostatic_shift:
         Duv = torch.sqrt(sum_distances[selection])
         
         # Reduce the indexes to consider only interacting pairs (selection)
-        # and point image atom indices to primary atom indices (idx?p)
+        # and point image atom indices to primary atom indices (idx_p)
         idxur = idxup[selection]
         idxvr = idxvp[selection]
         

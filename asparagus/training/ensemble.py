@@ -18,11 +18,9 @@ from asparagus import training
 
 class EnsembleTrainer:
     """
-    Wrapper for ensemle training of NNP models.
-
-    Here, a number ()'ensemble_num_models') of NNP models ('model_calculator')
-    will be trained serially by looping through the models and train for
-    'ensemble_epochs_step' epochs until maximum number of epochs is reached.
+    Wrapper for the training of an model ensemble, either serial or in parallel
+    for a certain number of epochs 'trainer_epochs_step' before cycling 
+    to the next model calculator until maximum epochs is reached.
 
     Parameters
     ----------
@@ -31,12 +29,10 @@ class EnsembleTrainer:
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
         Path to config json file (str)
-    ensemble_num_models: int, optional, default None
-        Number of models potentials to train.
-    ensemble_epochs_step: int, optional, default None
+    trainer_epochs_step: int, optional, default None
         Number of epochs to train single NNP models each step before looping
         through the next until maximum number of epochs is reached.
-    ensemble_num_threads: int, optional, default 1
+    trainer_num_threads: int, optional, default 1
         Number of model training threads for parallel model training.
     trainer_max_epochs: int, optional, default 10000
         Maximum number of training epochs
@@ -52,18 +48,16 @@ class EnsembleTrainer:
 
     # Default arguments for ensemble trainer class
     _default_args = {
-        'ensemble_num_models':          5,
-        'ensemble_epochs_step':         100,
-        'ensemble_num_threads':         1,
+        'trainer_epochs_step':          100,
+        'trainer_num_threads':          1,
         'trainer_max_epochs':           10_000,
         'trainer_save_interval':        5,
         }
 
     # Expected data types of input variables
     _dtypes_args = {
-        'ensemble_num_models':          [utils.is_integer],
-        'ensemble_epochs_step':         [utils.is_integer],
-        'ensemble_num_threads':         [utils.is_integer],
+        'trainer_epochs_step':          [utils.is_integer],
+        'trainer_num_threads':          [utils.is_integer],
         'trainer_max_epochs':           [utils.is_integer],
         'trainer_save_interval':        [utils.is_integer],
         }
@@ -74,9 +68,8 @@ class EnsembleTrainer:
         config_file: Optional[str] = None,
         data_container: Optional[data.DataContainer] = None,
         model_calculator: Optional[torch.nn.Module] = None,
-        ensemble_num_models: Optional[int] = None,
-        ensemble_epochs_step: Optional[int] = None,
-        ensemble_num_threads: Optional[int] = None,
+        trainer_epochs_step: Optional[int] = None,
+        trainer_num_threads: Optional[int] = None,
         trainer_max_epochs: Optional[int] = None,
         trainer_save_interval: Optional[int] = None,
         device: Optional[str] = None,
@@ -132,6 +125,17 @@ class EnsembleTrainer:
                 config=config,
                 **kwargs)
 
+        # Check for model ensemble calculator and grep model calculator number
+        if hasattr(self.model_calculator, 'model_ensemble'):
+            self.model_ensemble = self.model_calculator.model_ensemble
+        else:
+            self.model_ensemble = False
+        if self.model_ensemble:
+            self.model_ensemble_num = self.model_calculator.model_ensemble_num
+        else:
+            raise SyntaxError(
+                "The Ensemble Trainer class only handles model ensembles!")
+
         # Initialize checkpoint file manager
         self.filemanager = model.FileManager(
             config=config,
@@ -145,47 +149,40 @@ class EnsembleTrainer:
         # # # Check Ensemble Trainer Parameters # # #
         #############################################
 
-        # Check that 'ensemble_epochs_step' is a multiple of
+        # Check that 'trainer_epochs_step' is a multiple of
         # 'trainer_save_interval' and update in config if necessary.
-        ensemble_epochs_step = int(
+        trainer_epochs_step = int(
             self.trainer_save_interval*
-            (self.ensemble_epochs_step//self.trainer_save_interval)
+            (self.trainer_epochs_step//self.trainer_save_interval)
         )
-        if ensemble_epochs_step != self.ensemble_epochs_step:
+        if trainer_epochs_step != self.trainer_epochs_step:
             self.logger.warning(
                 "Number of epochs per training step "
-                + f"({self.ensemble_epochs_step:d}) is not a multiple of the "
+                + f"({self.trainer_epochs_step:d}) is not a multiple of the "
                 + f"Trainer's checkpoint save interval "
                 + f"({self.trainer_save_interval:d})!\n"
                 + "Number of epochs per training step is changed to "
-                + f"{ensemble_epochs_step:d}.")
-            self.ensemble_epochs_step = ensemble_epochs_step
+                + f"{trainer_epochs_step:d}.")
+            self.trainer_epochs_step = trainer_epochs_step
 
         ##########################################
         # # # Prepare Model Ensemble Configs # # #
         ##########################################
 
         # Get model subdirectories
-        self.ensemble_model_subdirectories = [
+        self.model_subdirectories = [
             os.path.join(self.model_directory, f"{imodel:d}")
-            for imodel in range(self.ensemble_num_models)]
+            for imodel in range(self.model_ensemble_num)]
 
         # Create model subdirectories
-        for model_directory in self.ensemble_model_subdirectories:
+        for model_directory in self.model_subdirectories:
             if not os.path.exists(model_directory):
                 os.makedirs(model_directory)
 
-        # Assign logger output files
-        self.ensemble_logger_files = [
-            os.path.join(
-                self.ensemble_model_subdirectories[imodel],
-                f"training_model_{imodel:d}.out")
-            for imodel in range(self.ensemble_num_models)]
-
         # Generate model configurations
-        self.ensemble_model_configs = []
+        self.model_configs = []
         for imodel, model_subdirectory in enumerate(
-            self.ensemble_model_subdirectories
+            self.model_subdirectories
         ):
             
             # Get a copy of the configuration dictionary
@@ -197,7 +194,7 @@ class EnsembleTrainer:
 
             # Store single model configuration
             model_config_file = os.path.join(model_subdirectory, "config.json")
-            self.ensemble_model_configs.append(
+            self.model_configs.append(
                 settings.get_config(
                     config=model_config,
                     config_file=model_config_file,
@@ -211,30 +208,30 @@ class EnsembleTrainer:
         #################################################
 
         # Initialize step number list per model
-        self.ensemble_model_step = np.zeros(
-            self.ensemble_num_models, dtype=int)
+        self.trainer_model_step = np.zeros(
+            self.model_ensemble_num, dtype=int)
 
         # Initialize active training flag list per model
-        self.ensemble_model_is_training = np.zeros(
-            self.ensemble_num_models, dtype=bool)
+        self.trainer_model_is_training = np.zeros(
+            self.model_ensemble_num, dtype=bool)
 
         # Assign training schedule steps
-        self.ensemble_epoch_steps_list = np.arange(
-            self.ensemble_epochs_step,
-            self.trainer_max_epochs + self.ensemble_epochs_step,
-            self.ensemble_epochs_step)
-        self.ensemble_epoch_steps_number = len(self.ensemble_epoch_steps_list)
+        self.trainer_epoch_steps_list = np.arange(
+            self.trainer_epochs_step,
+            self.trainer_max_epochs + self.trainer_epochs_step,
+            self.trainer_epochs_step)
+        self.trainer_epoch_steps_number = len(self.trainer_epoch_steps_list)
 
         # Check number of model training threads
-        if self.ensemble_num_threads > self.ensemble_num_models:
+        if self.trainer_num_threads > self.model_ensemble_num:
             self.logger.warning(
                 "Number of model training threads "
-                + f"({self.ensemble_num_threads:d}) cannot be larger than "
-                + " the number of ensemble models "
-                + f"({self.ensemble_num_models:d})!\n"
+                + f"({self.trainer_num_threads:d}) cannot be larger than "
+                + " the number of ensemble model calculators "
+                + f"({self.model_ensemble_num:d})!\n"
                 + "Number of model training threads is lowered to "
-                + f"({ensemble_num_models:d}).")
-            self.ensemble_num_threads = self.ensemble_num_models
+                + f"({model_ensemble_num:d}).")
+            self.trainer_num_threads = self.model_ensemble_num
 
         return
 
@@ -290,18 +287,18 @@ class EnsembleTrainer:
 
         # Check checkpoint input
         if checkpoint is None:
-            checkpoint_list = [None]*self.ensemble_num_models
+            checkpoint_list = [None]*self.model_ensemble_num
         elif utils.is_string(checkpoint) or utils.is_integer(checkpoint):
-            checkpoint_list = [checkpoint]*self.ensemble_num_models
+            checkpoint_list = [checkpoint]*self.model_ensemble_num
         elif (
             utils.is_string_array(checkpoint)
             or utils.is_integer_array(checkpoint)
         ):
-            if len(checkpoint) != self.ensemble_num_models:
+            if len(checkpoint) != self.model_ensemble_num:
                 raise ValueError(
                     "Checkpoint in 'checkpoint' is a list but of different "
                     + f"length ({len(checkpoint):d}) than the number of "
-                    + f"ensemble models ({self.ensemble_num_models:d})!")
+                    + f"ensemble models ({self.model_ensemble_num:d})!")
             checkpoint_list = checkpoint
         else:
             raise ValueError(
@@ -314,13 +311,13 @@ class EnsembleTrainer:
         # Print ensemble training information
         self.logger.info(
             "Start model ensemble training:\n"
-            + f" Number of models: {self.ensemble_num_models:d}\n"
+            + f" Number of models: {self.model_ensemble_num:d}\n"
             + f" Models directory: {self.model_directory:s}\n"
-            + f" Epochs per training step: {self.ensemble_epochs_step:d}\n"
-            + f" Number of training threads: {self.ensemble_num_threads:d}")
+            + f" Epochs per training step: {self.trainer_epochs_step:d}\n"
+            + f" Number of training threads: {self.trainer_num_threads:d}")
 
         # Run sampling over sample systems
-        if self.ensemble_num_threads == 1:
+        if self.trainer_num_threads == 1:
 
             self.run_training(
                 checkpoint_list,
@@ -346,7 +343,7 @@ class EnsembleTrainer:
                     kwargs={
                         'ithread': ithread}
                     )
-                for ithread in range(self.ensemble_num_threads)]
+                for ithread in range(self.trainer_num_threads)]
 
             # Start threads
             for thread in threads:
@@ -405,25 +402,25 @@ class EnsembleTrainer:
             if ithread is None:
                 self.logger.info(
                     f"Start training of model {imodel:d} up to epoch "
-                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
+                    + f"{self.trainer_epoch_steps_list[istep]:d}.")
             else:
                 self.logger.info(
                     f"Start training of model {imodel:d} "
                     + f"(thread {ithread:d}) up to epoch "
-                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
+                    + f"{self.trainer_epoch_steps_list[istep]:d}.")
 
             # Initialize ensemble model potential
             model_calculator, _, _ = model.get_model_calculator(
-                config=self.ensemble_model_configs[imodel],
-                model_directory=self.ensemble_model_subdirectories[imodel],
+                config=self.model_configs[imodel],
+                model_directory=self.model_subdirectories[imodel],
                 verbose=False)
 
             # Initialize Trainer instance
             trainer = training.Trainer(
-                config=self.ensemble_model_configs[imodel],
+                config=self.model_configs[imodel],
                 data_container=self.data_container,
                 model_calculator=model_calculator,
-                trainer_max_epochs=self.ensemble_epoch_steps_list[istep],
+                trainer_max_epochs=self.trainer_epoch_steps_list[istep],
                 trainer_evaluate_testset=False,
                 trainer_print_progress_bar=False,
                 verbose=False)
@@ -452,19 +449,19 @@ class EnsembleTrainer:
 
             # Set model training status to idle
             with self.lock:
-                self.ensemble_model_is_training[imodel] = False
-                self.ensemble_model_step[imodel] += 1
+                self.trainer_model_is_training[imodel] = False
+                self.trainer_model_step[imodel] += 1
 
             # Print training thread information
             if ithread is None:
                 self.logger.info(
                     f"Done training of model {imodel:d} up to epoch "
-                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
+                    + f"{self.trainer_epoch_steps_list[istep]:d}.")
             else:
                 self.logger.info(
                     f"Done training of model {imodel:d} "
                     + f"(thread {ithread:d}) up to epoch "
-                    + f"{self.ensemble_epoch_steps_list[istep]:d}.")
+                    + f"{self.trainer_epoch_steps_list[istep]:d}.")
 
         return
         
@@ -478,13 +475,13 @@ class EnsembleTrainer:
         with self.lock:
 
             # Models, which are currently not actively training
-            idle_models = np.logical_not(self.ensemble_model_is_training)
+            idle_models = np.logical_not(self.trainer_model_is_training)
 
             # Get training steps for idle models
-            idle_model_steps = self.ensemble_model_step[idle_models]
+            idle_model_steps = self.trainer_model_step[idle_models]
 
             if np.any(
-                idle_model_steps < self.ensemble_epoch_steps_number
+                idle_model_steps < self.trainer_epoch_steps_number
             ):
                 return True
             else:
@@ -500,15 +497,15 @@ class EnsembleTrainer:
         with self.lock:
 
             # Models, which are currently not actively training
-            idle_models = np.logical_not(self.ensemble_model_is_training)
+            idle_models = np.logical_not(self.trainer_model_is_training)
 
             # Select model with lowest step number which is currently not
             # actively training
-            min_step = np.min(self.ensemble_model_step[idle_models])
+            min_step = np.min(self.trainer_model_step[idle_models])
             imodel = np.where(
                 np.logical_and(
                     idle_models,
-                    self.ensemble_model_step == min_step
+                    self.trainer_model_step == min_step
                 )
             )[0]
             if len(imodel):
@@ -518,9 +515,9 @@ class EnsembleTrainer:
                     "No inactive model found!")
 
             # Get next epoch step of the selected model
-            istep = self.ensemble_model_step[imodel]
+            istep = self.trainer_model_step[imodel]
 
             # Set model status to actively training
-            self.ensemble_model_is_training[imodel] = True
+            self.trainer_model_is_training[imodel] = True
 
         return imodel, istep
