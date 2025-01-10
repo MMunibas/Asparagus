@@ -564,7 +564,7 @@ class Sampler:
             )
 
         # Assign ASE calculator
-        sample_system.set_calculator(ase_calculator)
+        sample_system.calc = ase_calculator
 
         return sample_system
 

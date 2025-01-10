@@ -34,6 +34,12 @@ ase_calculator_units = {
 # ASE Calculator Provision
 #======================================
 
+def get_model_calculator(**kwargs):
+    from asparagus import Asparagus
+    model = Asparagus(**kwargs)
+    return model.get_ase_calculator, {}
+
+
 def get_xtb(**kwargs) -> "ASE.Calculator":
     from xtb.ase.calculator import XTB
     return XTB, {}
@@ -105,6 +111,8 @@ def get_slurm(**kwargs) -> "ASE.Calculator":
 
 # ASE calculator grep functions
 ase_calculator_avaiable = {
+    'Asparagus'.lower(): get_model_calculator,
+    'Model'.lower(): get_model_calculator,
     'XTB'.lower(): get_xtb,
     'ORCA'.lower(): get_orca,
     'Shell'.lower(): get_shell,

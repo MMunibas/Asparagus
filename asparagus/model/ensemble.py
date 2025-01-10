@@ -224,7 +224,7 @@ class EnsembleModel(torch.nn.Module):
 
     @property
     def checkpoint_loaded(self):
-        return torch.all([
+        return all([
             model_calculator.checkpoint_loaded
             for model_calculator in self.model_calculator_list])
 
@@ -538,6 +538,7 @@ class EnsembleModel(torch.nn.Module):
         dataset: Union[data.DataContainer, data.DataSet, data.DataSubSet],
         batch_size: Optional[int] = 32,
         num_workers: Optional[int] = 1,
+        verbose_results: Optional[bool] = False,
         **kwargs
     ) -> Dict[str, torch.Tensor]:
 
@@ -552,6 +553,9 @@ class EnsembleModel(torch.nn.Module):
             Data loader batch size
         num_workers: int, optional, default 1
             Number of data loader workers
+        verbose_results: bool, optional, default False
+            If True, store single model property predictions and extended model
+            property contributions.
 
         Returns
         -------
@@ -576,18 +580,39 @@ class EnsembleModel(torch.nn.Module):
         for ib, batch in enumerate(dataloader):
             
             # Predict model properties from data batch
-            prediction = self.forward(batch, **kwargs)
+            prediction = self.forward(
+                batch, 
+                verbose_results=verbose_results,
+                **kwargs)
 
             # Append prediction to result dictionary
             for prop, item in prediction.items():
-                if results.get(prop) is None:
-                    results[prop] = []
-                results[prop].append(
-                    item.cpu().detach())
+                if verbose_results and utils.is_dictionary(item):
+                    if results.get(prop) is None:
+                        results[prop] = {}
+                    for sub_prop, sub_item in item.items():
+                        if results[prop].get(sub_prop) is None:
+                            results[prop][sub_prop] = [sub_item.cpu().detach()]
+                        else:
+                            results[prop][sub_prop].append(
+                                sub_item.cpu().detach())
+                elif results.get(prop) is None:
+                    results[prop] = [item.cpu().detach()]
+                else:
+                    results[prop].append(item.cpu().detach())
 
         # Concatenate results
         for prop, item in results.items():
-            if ib and item[0].shape:
+            if verbose_results and utils.is_dictionary(item):
+                for sub_prop, sub_item in item.items():
+                    if ib and sub_item[0].shape:
+                        results[prop][sub_prop] = torch.cat(sub_item)
+                    elif ib:
+                        results[prop][sub_prop] = torch.cat(
+                            [item_i.reshape(1) for item_i in sub_item], dim=0)
+                    else:
+                        results[prop][sub_prop] = sub_item[0]
+            elif ib and item[0].shape:
                 results[prop] = torch.cat(item)
             elif ib:
                 results[prop] = torch.cat(

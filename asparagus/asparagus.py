@@ -890,14 +890,11 @@ class Asparagus():
         # # # Assign Model Calculator # # #
         ###################################
 
-        if self.model_calculator is None:
-            model_calculator = self.get_model_calculator(
-                config=config,
-                config_file=config_file,
-                model_checkpoint=model_checkpoint,
-                **kwargs)
-        else:
-            model_calculator = self.model_calculator
+        model_calculator = self.get_model_calculator(
+            config=config,
+            config_file=config_file,
+            model_checkpoint=model_checkpoint,
+            **kwargs)
 
         ##################################
         # # # Prepare ASE Calculator # # #
@@ -942,14 +939,11 @@ class Asparagus():
         # # # Assign Model Calculator # # #
         ###################################
 
-        if self.model_calculator is None:
-            model_calculator = self.get_model_calculator(
-                config=config,
-                config_file=config_file,
-                model_checkpoint=model_checkpoint,
-                **kwargs)
-        else:
-            model_calculator = self.model_calculator
+        model_calculator = self.get_model_calculator(
+            config=config,
+            config_file=config_file,
+            model_checkpoint=model_checkpoint,
+            **kwargs)
 
         #######################################
         # # # Prepare PyCHARMM Calculator # # #

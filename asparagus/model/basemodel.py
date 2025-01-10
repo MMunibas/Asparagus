@@ -962,9 +962,9 @@ class BaseModel(torch.nn.Module):
             # Append prediction to result dictionary
             for prop, item in prediction.items():
                 if results.get(prop) is None:
-                    results[prop] = []
-                results[prop].append(
-                    item.cpu().detach())
+                    results[prop] = [item.cpu().detach()]
+                else:
+                    results[prop].append(item.cpu().detach())
     
         # Concatenate results
         for prop, item in results.items():
