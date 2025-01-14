@@ -64,26 +64,25 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 
 ## What needs to be added?
 
-- [ ] Add more NN architectures (Low priority)
-- [x] Read parameters from older PhysNet Versions (i.e. TF1 and TF2) (Luis)
-- [ ] Add sampling methods:
+- [x] Add more NN architectures (Low priority)
+- [x] Add sampling methods:
     - [x] MD with XTB
     - [x] MC with XTB
     - [x] Normal Model Sampling (Vanilla with random generation) 
     - [x] Normal Model Scanning 
     - [ ] Umbrella Sampling (Low priority)
     - [x] Metadynamics Sampling 
-- [ ] Electronic structure calculations:
+- [x] Electronic structure calculations:
    - [x] ASE calculator (As good as it can be)
    - [x] Automatic generation of input files for commonly used codes (e.g. Gaussian, Orca, MOLPRO, etc.)
    - [x] Automatic extraction of information from output files
 - Trainer class:
-  - [ ] Training of model ensemble 
+  - [x] Training of model ensemble 
 - Tester class: 
   - [x] Finish automatic evaluation 
 - Active learning
-   - [ ] Adaptive Sampling
-   - [ ] Uncertainty calculations
+   - [(x)] Adaptive Sampling
+   - [x] Uncertainty calculations
      - [x] Model ensemble via ASE calculator 
      - [ ] Deep Evidential Regression (Low priority)
 - Tools class:
