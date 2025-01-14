@@ -599,39 +599,54 @@ class DataContainer():
         # *data_alt_property_labels'
         if utils.is_string(data_properties):
             data_properties = [data_properties]
-        for ip, prop in enumerate(data_properties):
+        for ip, data_prop in enumerate(data_properties):
+            # Check property label for prefix
+            if 'std_' in data_prop:
+                prop = data_prop[4:]
+            else:
+                prop = data_prop
             match, modified, new_prop = utils.check_property_label(
                 prop,
                 valid_property_labels=settings._valid_properties,
                 alt_property_labels=data_alt_property_labels)
             if match and modified:
+                if 'std_' in data_prop:
+                    new_prop = f"std_{new_prop:s}"
                 self.logger.warning(
-                    f"Property key '{prop}' in "
-                    + "'data_properties' is not a valid label!\n"
-                    + f"Property key '{prop}' is replaced by '{new_prop}'.")
+                    f"Property key '{data_prop}' in "
+                    + "'data_properties' is not a valid label!\nProperty key "
+                    + f"'{data_prop}' is replaced by '{new_prop}'.")
                 data_properties[ip] = new_prop
             elif not match:
                 raise ValueError(
-                    f"Unknown property ('{prop}') in 'data_properties'!")
+                    f"Unknown property ('{data_prop}') in 'data_properties'!")
 
         # Check for unknown property labels in 'data_unit_properties'
         # and replace if possible with internally used property label in
         # 'data_alt_property_labels'
-        for prop in data_unit_properties:
+        for data_prop in data_unit_properties:
+            # Check property label for prefix
+            if 'std_' in data_prop:
+                prop = data_prop[4:]
+            else:
+                prop = data_prop
             match, modified, new_prop = utils.check_property_label(
                 prop,
                 valid_property_labels=settings._valid_properties,
                 alt_property_labels=data_alt_property_labels)
             if match and modified:
+                if 'std_' in data_prop:
+                    new_prop = f"std_{new_prop:s}"
                 self.logger.warning(
-                    f"Property key '{prop}' in "
-                    + "'data_unit_properties' is not a valid label!\n"
-                    + f"Property key '{prop}' is replaced by '{new_prop}'.")
+                    f"Property key '{data_prop}' in "
+                    + "'data_unit_properties' is not a valid label!\nProperty "
+                    + f"key '{data_prop}' is replaced by '{new_prop}'.")
                 data_unit_properties[new_prop] = (
-                    data_unit_properties.pop(prop))
+                    data_unit_properties.pop(data_prop))
             elif not match:
                 raise ValueError(
-                    f"Unknown property ('{prop}') in 'data_unit_properties'!")
+                    f"Unknown property ('{data_prop}') in "
+                    + "'data_unit_properties'!")
 
         # Initialize checked property units dictionary
         checked_data_unit_properties = {}
@@ -648,16 +663,22 @@ class DataContainer():
 
         # Check if all units from 'data_properties' are defined in
         # 'data_unit_properties', if not assign default units.
-        for prop in data_properties:
-            if prop not in data_unit_properties:
+        for data_prop in data_properties:
+            if data_prop not in data_unit_properties:
+                # Check property label for prefix
+                if 'std_' in data_prop:
+                    prop = data_prop[4:]
+                else:
+                    prop = data_prop
                 self.logger.warning(
-                    f"No unit defined for property '{prop}'!\n"
+                    f"No unit defined for property '{data_prop}'!\n"
                     + f"Default unit of '{settings._default_units[prop]}' "
                     + "will be used.")
-                checked_data_unit_properties[prop] = (
+                checked_data_unit_properties[data_prop] = (
                     settings._default_units[prop])
             else:
-                checked_data_unit_properties[prop] = data_unit_properties[prop]
+                checked_data_unit_properties[data_prop] = (
+                    data_unit_properties[data_prop])
 
         return (
             data_properties, checked_data_unit_properties,

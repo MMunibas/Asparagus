@@ -310,6 +310,9 @@ class MetaSampler(sampling.Sampler):
         for _ in range(self.sample_num_threads):
             sample_systems_queue.put('stop')
 
+        # Initialize sample number list
+        self.Nsamples = [0 for ithread in range(self.sample_num_threads)]
+
         if self.sample_num_threads == 1 or self.meta_parallel:
             
             self.run_system(sample_systems_queue)
@@ -352,6 +355,7 @@ class MetaSampler(sampling.Sampler):
             sample index.
         ithread: int, optional, default None
             Thread number
+
         """
         
         while self.keep_going(ithread):
@@ -361,7 +365,10 @@ class MetaSampler(sampling.Sampler):
             
             # Check for stop flag
             if sample == 'stop':
-                self.thread_keep_going[ithread] = False
+                if ithread is None:
+                    self.thread_keep_going[0] = False
+                else:
+                    self.thread_keep_going[ithread] = False
                 continue
             
             # Extract sample system to optimize
@@ -389,10 +396,10 @@ class MetaSampler(sampling.Sampler):
             gaussian_log_file = self.meta_gaussian_log_file.format(isample)
             
             # Perform parallel meta dynamics simulation
+            # TODO I think this wouldn't work yet ...
             if self.meta_parallel and self.sample_num_threads > 1:
                 
                 # Prepare parallel meta dynamics simulations
-                Nsamples = [0]*self.sample_num_threads
                 systems = [
                     system.copy() for _ in range(self.sample_num_threads)]
 
@@ -400,15 +407,14 @@ class MetaSampler(sampling.Sampler):
                 threads = [
                     threading.Thread(
                         target=self.run_meta,
-                        args=(systems[ithread], ),
+                        args=(systems[ithread2], ),
                         kwargs={
                             'gaussian_log_file': gaussian_log_file,
                             'log_file': sample_log_file,
                             'trajectory_file': trajectory_file,
-                            'Nsamples': Nsamples,
-                            'ithread': ithread},
+                            'ithread': ithread2},
                         )
-                    for ithread in range(self.sample_num_threads)]
+                    for ithread2 in range(self.sample_num_threads)]
 
                 # Start threads
                 for thread in threads:
@@ -418,13 +424,10 @@ class MetaSampler(sampling.Sampler):
                 for thread in threads:
                     thread.join()
                     
-                # Sum number of stored system samples
-                Nsample = np.sum(Nsamples)
-                
             # Perform single meta dynamics simulation
             else:
             
-                Nsample = self.run_meta(
+                self.run_meta(
                     system, 
                     gaussian_log_file=gaussian_log_file,
                     log_file=sample_log_file,
@@ -432,16 +435,20 @@ class MetaSampler(sampling.Sampler):
                     ithread=ithread)
             
             # Print sampling info
+            if ithread is None:
+                isample = 0
+            else:
+                isample = ithread
             message = (
                 f"Sampling method '{self.sample_tag:s}' complete for system "
                 + f"of index {index:d} from '{source}!'\n")
-            if Nsample == 0:
+            if self.Nsamples[isample] == 0:
                 message += f"No samples written to "
-            if Nsample == 1:
-                message += f"{Nsample:d} sample written to "
+            if self.Nsamples[isample] == 1:
+                message += f"{self.Nsamples[isample]:d} sample written to "
             else:
-                message += f"{Nsample:d} samples written to "
-            message += f"'{self.sample_data_file:s}'."
+                message += f"{self.Nsamples[isample]:d} samples written to "
+            message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
             
         return
@@ -464,12 +471,11 @@ class MetaSampler(sampling.Sampler):
         initial_temperature: Optional[float] = None,
         log_file: Optional[str] = None,
         trajectory_file: Optional[str] = None,
-        Nsamples: Optional[List[int]] = None,
         ithread: Optional[int] = None,
-    ) -> int:
+    ):
         """
         This does a Meta Dynamics simulation using a Meta constraint with a
-        Langevin thermostat and verlocity Verlet algorithm for an NVT ensemble.
+        Langevin thermostat and Verlocity Verlet algorithm for an NVT ensemble.
 
         Parameters
         ----------
@@ -508,15 +514,8 @@ class MetaSampler(sampling.Sampler):
             Log file for sampling information
         trajectory_file: str, optional, default None
             ASE Trajectory file path to append sampled system if requested
-        Nsamples: list(int), optional, default None
-            List for number of sampled systems per thread
         ithread: int, optional, default None
             Thread number
-        
-        Return
-        ------
-        int
-            Number of sampled systems to database
 
         """
 
@@ -548,9 +547,6 @@ class MetaSampler(sampling.Sampler):
         if initial_temperature is None:
             initial_temperature = self.meta_initial_temperature    
     
-        # Initialize stored sample counter
-        Nsample = 0
-        
         # Assign calculator
         system = self.assign_calculator(
             system,
@@ -597,7 +593,7 @@ class MetaSampler(sampling.Sampler):
             self.save_properties,
             interval=self.meta_save_interval,
             system=system,
-            Nsample=Nsample)
+            ithread=ithread)
         
         # Attach trajectory
         if self.sample_save_trajectory:
@@ -619,16 +615,8 @@ class MetaSampler(sampling.Sampler):
         simulation_steps = round(
             simulation_time/time_step)
         meta_dyn.run(simulation_steps)
-        
-        # As function attachment to ASE Dynamics class does not provide a 
-        # return option of Nsample, guess attached samples
-        Nsample = simulation_steps//self.meta_save_interval + 1
-        
-        # Assign Nsample
-        if Nsamples is not None:
-            Nsamples[ithread] = Nsample
 
-        return Nsample
+        return
         
 
 class MetaConstraint:

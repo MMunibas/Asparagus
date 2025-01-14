@@ -161,6 +161,9 @@ class MCSampler(sampling.Sampler):
         for _ in range(self.sample_num_threads):
             sample_systems_queue.put('stop')
 
+        # Initialize sample number list
+        self.Nsamples = [0 for ithread in range(self.sample_num_threads)]
+
         if self.sample_num_threads == 1:
             
             self.run_system(sample_systems_queue)
@@ -204,6 +207,7 @@ class MCSampler(sampling.Sampler):
             sample index.
         ithread: int, optional, default None
             Thread number
+
         """
 
         while self.keep_going(ithread):
@@ -213,9 +217,12 @@ class MCSampler(sampling.Sampler):
             
             # Check for stop flag
             if sample == 'stop':
-                self.thread_keep_going[ithread] = False
+                if ithread is None:
+                    self.thread_keep_going[0] = False
+                else:
+                    self.thread_keep_going[ithread] = False
                 continue
-            
+
             # Extract sample system to optimize
             (system, isample, source, index) = sample
 
@@ -240,22 +247,26 @@ class MCSampler(sampling.Sampler):
                 ithread=ithread)
 
             # Perform Monte-Carlo simulation
-            Nsample = self.monte_carlo_steps(
+            self.monte_carlo_steps(
                 system, 
                 trajectory_file=trajectory_file,
                 ithread=ithread)
             
             # Print sampling info
+            if ithread is None:
+                isample = 0
+            else:
+                isample = ithread
             message = (
                 f"Sampling method '{self.sample_tag:s}' complete for system "
                 + f"of index {index:d} from '{source}!'\n")
-            if Nsample == 0:
+            if self.Nsamples[isample] == 0:
                 message += f"No samples written to "
-            if Nsample == 1:
-                message += f"{Nsample:d} sample written to "
+            if self.Nsamples[isample] == 1:
+                message += f"{self.Nsamples[isample]:d} sample written to "
             else:
-                message += f"{Nsample:d} samples written to "
-            message += f"'{self.sample_data_file:s}'."
+                message += f"{self.Nsamples[isample]:d} samples written to "
+            message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
         
         return
@@ -268,7 +279,7 @@ class MCSampler(sampling.Sampler):
         max_displacement: Optional[float] = None,
         trajectory_file: Optional[str] = None,
         ithread: Optional[int] = None,
-    ) -> int:
+    ):
         """
         This does a simple Monte-Carlo simulation using the Metropolis
         algorithm.
@@ -290,11 +301,6 @@ class MCSampler(sampling.Sampler):
             ASE Trajectory file path to append sampled system if requested
         ithread: int, optional, default None
             Thread number
-        
-        Return
-        ------
-        int
-            Number of sampled systems to database
 
         """
     
@@ -324,7 +330,7 @@ class MCSampler(sampling.Sampler):
         current_energy = system_properties['energy']
 
         # Store initial system properties
-        Nsample = self.save_properties(system, Nsample)
+        self.save_properties(system, ithread)
         if self.sample_save_trajectory:
             self.write_trajectory(system, trajectory_file)
         
@@ -372,8 +378,8 @@ class MCSampler(sampling.Sampler):
                 Naccept += 1
                 
                 # Store system properties
-                if not Nsample%self.mc_save_interval:
-                    Nsample = self.save_properties(system, Nsample)
+                if not Naccept%self.mc_save_interval:
+                    self.save_properties(system, ithread)
                     if self.sample_save_trajectory:
                         self.write_trajectory(
                             system, trajectory_file)
@@ -384,4 +390,4 @@ class MCSampler(sampling.Sampler):
                 # Reset the position of the atom
                 system.positions[selected_atom] = old_position
 
-        return Nsample
+        return

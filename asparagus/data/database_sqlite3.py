@@ -986,6 +986,10 @@ class DataBase_SQLite3(data.DataBase):
                 properties[prop_i] = torch.reshape(
                     properties[prop_i],
                     reference_properties_shape[prop_i])
+            elif 'std_' in prop_i and prop_i[4:] in reference_properties_shape:
+                properties[prop_i] = torch.reshape(
+                    properties[prop_i],
+                    reference_properties_shape[prop_i[4:]])
 
             Np += 1
 

@@ -153,9 +153,14 @@ class EnsembleModel(torch.nn.Module):
 
         # Model properties and units
         self.model_properties = (
-            self.model_calculator_list[0].model_properties)
+            self.model_calculator_list[0].model_properties.copy())
         self.model_unit_properties = (
-            self.model_calculator_list[0].model_unit_properties)
+            self.model_calculator_list[0].model_unit_properties.copy())
+        for prop in self.model_calculator_list[0].model_properties:
+            prop_std = f"std_{prop:s}"
+            self.model_properties.append(prop_std)
+            self.model_unit_properties[prop_std] = (
+                self.model_calculator_list[0].model_unit_properties[prop])
 
         # Model cutoff ranges
         if hasattr(self.model_calculator_list[0], 'model_cutoff'):

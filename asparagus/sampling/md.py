@@ -197,6 +197,9 @@ class MDSampler(sampling.Sampler):
         for _ in range(self.sample_num_threads):
             sample_systems_queue.put('stop')
 
+        # Initialize sample number list
+        self.Nsamples = [0 for ithread in range(self.sample_num_threads)]
+
         if self.sample_num_threads == 1:
             
             self.run_system(sample_systems_queue)
@@ -239,6 +242,7 @@ class MDSampler(sampling.Sampler):
             sample index.
         ithread: int, optional, default None
             Thread number
+
         """
 
         while self.keep_going(ithread):
@@ -248,7 +252,10 @@ class MDSampler(sampling.Sampler):
             
             # Check for stop flag
             if sample == 'stop':
-                self.thread_keep_going[ithread] = False
+                if ithread is None:
+                    self.thread_keep_going[0] = False
+                else:
+                    self.thread_keep_going[ithread] = False
                 continue
             
             # Extract sample system to optimize
@@ -278,23 +285,27 @@ class MDSampler(sampling.Sampler):
                 ithread=ithread)
 
             # Perform MD simulation
-            Nsample = self.run_langevin_md(
+            self.run_langevin_md(
                 system,
                 log_file=sample_log_file,
                 trajectory_file=trajectory_file,
                 ithread=ithread)
             
             # Print sampling info
+            if ithread is None:
+                isample = 0
+            else:
+                isample = ithread
             message = (
                 f"Sampling method '{self.sample_tag:s}' complete for system "
                 + f"of index {index:d} from '{source}!'\n")
-            if Nsample == 0:
+            if self.Nsamples[isample] == 0:
                 message += f"No samples written to "
-            if Nsample == 1:
-                message += f"{Nsample:d} sample written to "
+            if self.Nsamples[isample] == 1:
+                message += f"{self.Nsamples[isample]:d} sample written to "
             else:
-                message += f"{Nsample:d} samples written to "
-            message += f"'{self.sample_data_file:s}'."
+                message += f"{self.Nsamples[isample]:d} samples written to "
+            message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
 
         return
@@ -312,7 +323,7 @@ class MDSampler(sampling.Sampler):
         log_file: Optional[str] = None,
         trajectory_file: Optional[str] = None,
         ithread: Optional[int] = None,
-    ) -> int:
+    ):
         """
         This does a Molecular Dynamics simulation using Langevin thermostat
         and verlocity Verlet algorithm for an NVT ensemble.
@@ -352,11 +363,6 @@ class MDSampler(sampling.Sampler):
             ASE Trajectory file path to append sampled system if requested
         ithread: int, optional, default None
             Thread number
-        
-        Return
-        ------
-        int
-            Number of sampled systems to database
 
         """
 
@@ -378,9 +384,6 @@ class MDSampler(sampling.Sampler):
         temperature, temperature_program = self.check_temperature(
             temperature,
             simulation_time)
-
-        # Initialize stored sample counter
-        Nsample = 0
 
         # Set initial atom velocities if requested
         if utils.is_bool(initial_temperature):
@@ -414,7 +417,7 @@ class MDSampler(sampling.Sampler):
             self.save_properties,
             interval=self.md_save_interval,
             system=system,
-            Nsample=Nsample)
+            ithread=ithread)
 
         # Attach trajectory
         if self.sample_save_trajectory:
@@ -440,12 +443,8 @@ class MDSampler(sampling.Sampler):
         # Run MD simulation
         simulation_steps = round(simulation_time/time_step)
         md_dyn.run(simulation_steps)
-        
-        # As function attachment to ASE Dynamics class does not provide a 
-        # return option of Nsamples, guess attached samples
-        Nsample = simulation_steps//self.md_save_interval + 1
 
-        return Nsample
+        return
 
     def check_temperature(
         self,

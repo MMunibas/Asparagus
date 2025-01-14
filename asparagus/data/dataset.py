@@ -69,8 +69,10 @@ class DataSet():
         # Assign data file and format
         if utils.is_string(data_file):
             self.data_file = (
-                data_file, data.check_data_format(
-                    data_file, is_source_format=False))
+                data_file,
+                data.check_data_format(
+                    data_file, is_source_format=False)
+                )
         else:
             self.data_file = tuple(data_file)
 
@@ -434,6 +436,7 @@ class DataSet():
         """
         Check compatibility between input for 'data_properties' and
         'data_unit_properties' with metadata.
+
         """
 
         if (
@@ -488,7 +491,7 @@ class DataSet():
                     metadata['unit_properties'][prop] = (
                         data_unit_properties[prop])
                 else:
-                    message += f"No Property unit defined for '{prop:s}'."
+                    message += f"No Property unit defined for '{prop:s}'.\n"
             if len(message):
                 raise SyntaxError(
                     "DataSet 'load_properties' input contains properties with"

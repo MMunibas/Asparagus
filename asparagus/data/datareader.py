@@ -1024,7 +1024,7 @@ class DataReader():
 
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
-            'ase.Atoms',
+            ('ase.Atoms', None),
             source_properties,
             data_properties,
             data_skip_properties,
@@ -1137,22 +1137,30 @@ class DataReader():
         assigned_properties = {}
         for source_label in source_properties:
 
+            # Check source label for prefix
+            if 'std_' in source_label:
+                label = source_label[4:]
+            else:
+                label = source_label
+
             # Skip system properties, which are read otherwise
-            if source_label in skip_properties:
+            if label in skip_properties:
                 continue
 
             match, modified, valid_label = utils.check_property_label(
-                source_label,
+                label,
                 valid_property_labels=settings._valid_properties,
                 alt_property_labels=data_alt_property_labels)
             if match:
-                assigned_properties[valid_label] = source_label
-            elif modified:
-                self.logger.warning(
-                    f"Property key '{source_label:s}' in "
-                    + f"database '{data_source[0]:s}' is not a valid label!\n"
-                    + f"Property key '{source_label:s}' is assigned as "
-                    + f"'{valid_label:s}'.")
+                if 'std_' in source_label:
+                    valid_label = f"std_{valid_label:s}"
+                if modified:
+                    self.logger.warning(
+                        f"Property key '{source_label:s}' in database "
+                        + f"'{data_source[0]:s}' is not a valid label!\n"
+                        + f"Property key '{source_label:s}' is assigned as "
+                        + f"'{valid_label:s}'.")
+                assigned_properties[valid_label] = label
             else:
                 self.logger.warning(
                     f"Unknown property '{source_label:s}' in "
@@ -1214,18 +1222,29 @@ class DataReader():
 
             # Check units of positions and properties
             unit_conversion = {}
-            for prop in data_properties.keys():
+            for data_prop in data_properties.keys():
+
+                # Check for property prefix
+                if 'std_' in data_prop:
+                    prop = data_prop[4:]
+                else:
+                    prop = data_prop
 
                 if source_unit_properties.get(prop) is None:
                     source_unit_property = None
                 else:
                     source_unit_property = source_unit_properties.get(prop)
-                if data_unit_properties.get(prop) is None:
+                if (
+                    data_unit_properties.get(data_prop) is None
+                    and data_unit_properties.get(prop) is None
+                ):
                     data_unit_property = None
+                elif data_unit_properties.get(prop) is None:
+                    data_unit_property = data_unit_properties.get(data_prop)
                 else:
                     data_unit_property = data_unit_properties.get(prop)
 
-                unit_conversion[prop], _ = (
+                unit_conversion[data_prop], _ = (
                     utils.check_units(
                         data_unit_property,
                         source_unit_property)

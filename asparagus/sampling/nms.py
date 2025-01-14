@@ -293,9 +293,6 @@ class NormalModeScanner(sampling.Sampler):
             Queue object including sample systems.
         """
 
-        # Initialize stored sample counter
-        Nsample = 0
-        
         # Initialize normal mode analysis queue
         sample_calculate_queue = queue.Queue()
         
@@ -524,7 +521,7 @@ class NormalModeScanner(sampling.Sampler):
         if self.sample_data_file is None:
             message += f"{system.get_chemical_formula():s}\n"
         else:
-            message += f"{self.sample_data_file:s}\n"
+            message += f"{self.sample_data_file[0]:s}\n"
         message = (
             f" {'Index':5s} |"
             + f" {'Frequency (cm**-1)':18s} |"
@@ -585,7 +582,10 @@ class NormalModeScanner(sampling.Sampler):
         # Add stop flag
         for _ in range(self.sample_num_threads):
             sample_calculate_queue.put('stop')
-        
+
+        # Initialize sample number list
+        self.Nsamples = [0 for ithread in range(self.sample_num_threads)]
+
         # Initialize continuation flag
         self.thread_keep_going = np.array(
             [True for ithread in range(self.sample_num_threads)],
@@ -593,7 +593,6 @@ class NormalModeScanner(sampling.Sampler):
             )
 
         # Run 
-        Nsamples = [0]*self.sample_num_threads
         if self.sample_num_threads == 1:
                 
             # Run job calculations
@@ -603,8 +602,7 @@ class NormalModeScanner(sampling.Sampler):
                 system_initial_results['energy'],
                 system_displfact,
                 system_modes,
-                atom_indices,
-                Nsamples)
+                atom_indices)
         
         else:
 
@@ -618,8 +616,7 @@ class NormalModeScanner(sampling.Sampler):
                         system_initial_results['energy'],
                         system_displfact,
                         system_modes,
-                        atom_indices,
-                        Nsamples),
+                        atom_indices),
                     kwargs={
                         'ithread': ithread}
                     )
@@ -635,17 +632,16 @@ class NormalModeScanner(sampling.Sampler):
                 
         # Print sampling info
         for ithread in range(self.sample_num_threads):
-
             message = (
                 f"Sampling method '{self.sample_tag:s}' complete for "
                 + f"system of index {index:d} from '{source}!'\n")
-            if Nsamples[ithread] == 0:
+            if self.Nsamples[ithread] == 0:
                 message += f"No samples written to "
-            if Nsamples[ithread] == 1:
-                message += f"{Nsamples[ithread]:d} sample written to "
+            if self.Nsamples[ithread] == 1:
+                message += f"{self.Nsamples[ithread]:d} sample written to "
             else:
-                message += f"{Nsamples[ithread]:d} samples written to "
-            message += f"'{self.sample_data_file:s}'."
+                message += f"{self.Nsamples[ithread]:d} samples written to "
+            message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
 
     def run_scan(
@@ -656,7 +652,6 @@ class NormalModeScanner(sampling.Sampler):
         system_displfact: List[float],
         system_modes: List[float],
         atom_indices: List[float],
-        Nsamples: List[int],
         ithread: Optional[int] = None
     ):
         """
@@ -673,9 +668,6 @@ class NormalModeScanner(sampling.Sampler):
             Thread number
         """
         
-        # Initialize stored sample counter
-        Nsample = 0
-        
         # Get ASE calculator
         ase_calculator, ase_calculator_tag = (
             interface.get_ase_calculator(
@@ -686,7 +678,7 @@ class NormalModeScanner(sampling.Sampler):
         
         # Assign calculator
         system = sample_system.copy()
-        system.set_calculator(ase_calculator)
+        system.calc = ase_calculator
 
         # Store equilibrium positions
         system_initial_positions = system.get_positions()
@@ -778,7 +770,7 @@ class NormalModeScanner(sampling.Sampler):
 
                 # Add to dataset
                 if converged:
-                    Nsample = self.save_properties(system, Nsample)
+                    self.save_properties(system, ithread)
 
                 # Attach to trajectory
                 if converged and self.sample_save_trajectory:
@@ -823,12 +815,6 @@ class NormalModeScanner(sampling.Sampler):
 
                     # Set flag in case maximum Nsteps is reached
                     done = True
-        
-        # Set number of stored samples
-        if ithread is None:
-            Nsamples[0] = Nsample
-        else:
-            Nsamples[ithread] = Nsample
 
         return
 
@@ -1078,9 +1064,6 @@ class NormalModeSampler(sampling.Sampler):
 
         """
 
-        # Initialize stored sample counter
-        self.Nsample = 0
-
         # Initialize normal mode analysis queue
         sample_calculate_queue = queue.Queue()
 
@@ -1308,7 +1291,7 @@ class NormalModeSampler(sampling.Sampler):
         if self.sample_data_file is None:
             message += f"{system.get_chemical_formula():s}\n"
         else:
-            message += f"{self.sample_data_file:s}\n"
+            message += f"{self.sample_data_file[0]:s}\n"
         message = (
             f" {'Index':5s} |"
             + f" {'Frequency (cm**-1)':18s} |"
@@ -1337,7 +1320,10 @@ class NormalModeSampler(sampling.Sampler):
 
         # Initialize normal mode sampling queue
         sample_calculate_queue = queue.Queue()
-        
+
+        # Initialize sample number list
+        self.Nsamples = [0 for ithread in range(self.sample_num_threads)]
+
         # Initialize continuation flag
         self.thread_keep_going = np.array(
             [True for ithread in range(self.sample_num_threads)],
@@ -1345,7 +1331,6 @@ class NormalModeSampler(sampling.Sampler):
             )
 
         # Start calculation run
-        Nsamples = [0]*self.sample_num_threads
         if self.sample_num_threads == 1:
             
             # Add calculation jobs
@@ -1367,8 +1352,7 @@ class NormalModeSampler(sampling.Sampler):
             # Run job calculations
             self.run_sampling(
                 system,
-                sample_calculate_queue,
-                Nsamples)
+                sample_calculate_queue)
         
         else:
 
@@ -1378,8 +1362,7 @@ class NormalModeSampler(sampling.Sampler):
                     target=self.run_sampling,
                     args=(
                         system,
-                        sample_calculate_queue,
-                        Nsamples),
+                        sample_calculate_queue),
                     kwargs={
                         'ithread': ithread}
                     )
@@ -1414,13 +1397,13 @@ class NormalModeSampler(sampling.Sampler):
             message = (
                 f"Sampling method '{self.sample_tag:s}' complete for "
                 + f"system of index {index:d} from '{source}!'\n")
-            if Nsamples[ithread] == 0:
+            if self.Nsamples[ithread] == 0:
                 message += f"No samples written to "
-            if Nsamples[ithread] == 1:
-                message += f"{Nsamples[ithread]:d} sample written to "
+            if self.Nsamples[ithread] == 1:
+                message += f"{self.Nsamples[ithread]:d} sample written to "
             else:
-                message += f"{Nsamples[ithread]:d} samples written to "
-            message += f"'{self.sample_data_file:s}'."
+                message += f"{self.Nsamples[ithread]:d} samples written to "
+            message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
 
         return
@@ -1429,7 +1412,6 @@ class NormalModeSampler(sampling.Sampler):
         self,
         sample_system: ase.Atoms,
         sample_calculate_queue: queue.Queue,
-        Nsamples: List[int],
         ithread: Optional[int] = None
     ):
         """
@@ -1447,9 +1429,6 @@ class NormalModeSampler(sampling.Sampler):
 
         """
 
-        # Initialize stored sample counter
-        Nsample = 0
-        
         # Get ASE calculator
         ase_calculator, ase_calculator_tag = (
             interface.get_ase_calculator(
@@ -1507,18 +1486,12 @@ class NormalModeSampler(sampling.Sampler):
 
             # Add to dataset
             if converged:
-                Nsample = self.save_properties(system, Nsample)
+                self.save_properties(system, ithread)
 
             # Attach to trajectory
             if converged and self.sample_save_trajectory:
                 self.write_trajectory(
                     system, self.sample_trajectory_file.format(isample))
-
-        # Set number of stored samples
-        if ithread is None:
-            Nsamples[0] = Nsample
-        else:
-            Nsamples[ithread] = Nsample
 
         return
         

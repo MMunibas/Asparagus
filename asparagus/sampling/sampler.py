@@ -103,6 +103,11 @@ class Sampler:
     sample_data_overwrite: bool, optional, default False
         If False, add new sampling data to an eventually existing data
         file. If True, overwrite an existing one.
+    sample_property_threshold: dict, optional, default None
+        Dictionary of model property (key) minimum threshold values (item) to
+        decide if samples or frames are added to the sample data file.
+        For model ensembles, this could be the energy standard deviation
+        ('str_energy').
     sample_tag: str, optional, default 'sample'
         Sampling method tag of the specific sampling methods for
         log and ASE trajectory files or the data file name if not defined.
@@ -130,6 +135,7 @@ class Sampler:
         'sample_systems_optimize':      False,
         'sample_systems_optimize_fmax': 0.001,
         'sample_data_overwrite':        False,
+        'sample_property_threshold':    None,
         'sample_tag':                   'sample',
         }
 
@@ -158,6 +164,7 @@ class Sampler:
             utils.is_bool, utils.is_boolean_array],
         'sample_systems_optimize_fmax': [utils.is_numeric],
         'sample_data_overwrite':        [utils.is_bool],
+        'sample_property_threshold':    [utils.is_None, utils.is_dictionary],
         'sample_tag':                   [utils.is_string],
         }
 
@@ -181,6 +188,7 @@ class Sampler:
         sample_systems_optimize: Optional[bool] = None,
         sample_systems_optimize_fmax: Optional[float] = None,
         sample_data_overwrite: Optional[bool] = None,
+        sample_property_threshold: Optional[Union[str, float]] = None,
         sample_tag: Optional[str] = None,
         **kwargs,
     ):
@@ -216,42 +224,6 @@ class Sampler:
                 + "an ASE Atoms object as initial sample structure.")
             self.sample_systems = []
 
-        ############################
-        # # # Prepare Sampling # # #
-        ############################
-
-        # Initialize sampling counter
-        if config.get('sample_counter') is None:
-            self.sample_counter = 1
-        else:
-            self.sample_counter = config.get('sample_counter') + 1
-
-        # Generate working directory
-        if self.sample_directory is None or not len(self.sample_directory):
-            self.sample_directory = '.'
-        elif not os.path.exists(self.sample_directory):
-            os.makedirs(self.sample_directory)
-
-        # Check sample data file
-        if self.sample_data_file is None:
-            self.sample_data_file = f'{self.sample_tag:s}.db'
-        elif not utils.is_string(self.sample_data_file):
-            raise ValueError(
-                "Sample data file 'sample_data_file' must be a string "
-                + "of a valid file path but is of type "
-                + f"'{type(self.sample_data_file)}'.")
-
-        # Define sample log file path and trajectory file
-        self.sample_log_file = os.path.join(
-            self.sample_directory,
-            f'{self.sample_counter:d}_{self.sample_tag:s}_{{:d}}.log')
-        self.sample_trajectory_file = os.path.join(
-            self.sample_directory, 
-            f'{self.sample_counter:d}_{self.sample_tag:s}_{{:d}}.traj')
-
-        # Initialize the multithreading lock
-        self.lock = threading.Lock()
-
         #####################################
         # # # Prepare Sample Calculator # # #
         #####################################
@@ -261,7 +233,7 @@ class Sampler:
             interface.get_ase_calculator(
                 self.sample_calculator,
                 self.sample_calculator_args))
-        
+
         # Assign calculator tag for info dictionary
         self.sample_calculator_tag = ase_calculator_tag
 
@@ -295,6 +267,86 @@ class Sampler:
                     "\nNumber of parallel threads is set back to just 1.")
                 self.logger.warning(message)
                 self.sample_num_threads = 1
+
+        ############################
+        # # # Prepare Sampling # # #
+        ############################
+
+        # Initialize sampling counter
+        if config.get('sample_counter') is None:
+            self.sample_counter = 1
+        else:
+            self.sample_counter = config.get('sample_counter') + 1
+
+        # Generate working directory
+        if self.sample_directory is None or not len(self.sample_directory):
+            self.sample_directory = '.'
+        elif not os.path.exists(self.sample_directory):
+            os.makedirs(self.sample_directory)
+
+        # Check sample data file
+        if self.sample_data_file is None:
+            self.sample_data_file = f'{self.sample_tag:s}.db'
+        if utils.is_string(self.sample_data_file):
+            self.sample_data_file = (
+                self.sample_data_file,
+                data.check_data_format(
+                    self.sample_data_file, is_source_format=False)
+                )
+        elif utils.is_string_array(self.sample_data_file):
+            self.sample_data_file = tuple(self.sample_data_file)
+        else:
+            raise ValueError(
+                "Sample data file 'sample_data_file' must be a string "
+                + "of a valid file path but is of type "
+                + f"'{type(self.sample_data_file)}'!")
+
+        # Define sample log file path and trajectory file
+        self.sample_log_file = os.path.join(
+            self.sample_directory,
+            f'{self.sample_counter:d}_{self.sample_tag:s}_{{:d}}.log')
+        self.sample_trajectory_file = os.path.join(
+            self.sample_directory, 
+            f'{self.sample_counter:d}_{self.sample_tag:s}_{{:d}}.traj')
+
+        # Initialize the multithreading lock
+        self.lock = threading.Lock()
+
+        # Check property threshold parameter
+        if (
+            self.sample_property_threshold is not None
+            and utils.is_dictionary(self.sample_property_threshold)
+        ):
+            message = (
+                "Property threshold filter is applied to store samples in "
+                + f"'{self.sample_data_file[0]:s}'!\n"
+                + f" {'Property':<12s}   Threshold\n"
+                + "-"*30 + "\n")
+            for prop, value in self.sample_property_threshold.items():
+                if prop not in self.sample_properties:
+                    raise ValueError(
+                        "Property threshold dictionary "
+                        + "'sample_property_threshold' contains invalid "
+                        + f"property '{prop:s}' which is not a calculator "
+                        + f"property:\n{self.sample_properties}")
+                if utils.is_numeric(value):
+                    self.sample_property_threshold[prop] = float(value)
+                    message += (
+                        f" {prop:>12} > "
+                        + f"{self.sample_property_threshold[prop]:.2E}\n")
+                else:
+                    raise ValueError(
+                        "Property threshold dictionary "
+                        + "'sample_property_threshold' contains invalid "
+                        + f"threshold value for property '{prop:s}' of type "
+                        + f"'{value}'!")
+            self.logger.info(message)
+        elif self.sample_property_threshold is not None:
+            raise ValueError(
+                "Property threshold dictionary 'sample_property_threshold' "
+                + "must be a dictionary of a valid property (key) and "
+                + "threshold value (value), but is of type "
+                + f"'{type(self.sample_property_threshold)}'!")
 
         #############################
         # # # Prepare Optimizer # # #
@@ -371,17 +423,17 @@ class Sampler:
 
         # If number of samples sources is larger 1, prepare system index 
         # selection for sample sources
-        Nsamples = len(sample_systems)
-        if Nsamples > 1 and sample_systems_indices is not None:
+        Nsystems = len(sample_systems)
+        if Nsystems > 1 and sample_systems_indices is not None:
             indices = sample_systems_indices.copy()
             for ii, idx in enumerate(sample_systems_indices):
-                if idx >= Nsamples or idx < (-1*Nsamples):
+                if idx >= Nsystems or idx < (-1*Nsystems):
                     raise SyntaxError(
                         "System index selection 'sample_systems_indices' "
                         + f"contains index ({idx:d}) which is outside of "
-                        + f"the sample number range of ({Nsamples:d})!")
+                        + f"the sample number range of ({Nsystems:d})!")
                 if idx < 0:
-                    indices[ii] = Nsamples + idx
+                    indices[ii] = Nsystems + idx
 
         # Iterate over system input and eventually read file to store as
         # (ASE Atoms object, index, sample source)
@@ -390,7 +442,7 @@ class Sampler:
         ):
             
             # If sample index not in indices list in case of multiple sources
-            if Nsamples > 1 and sample_systems_indices is not None:
+            if Nsystems > 1 and sample_systems_indices is not None:
                 if isample not in indices:
                     continue
 
@@ -425,7 +477,7 @@ class Sampler:
                 
                 # Prepare system index selection in case of just one sample 
                 # source
-                if Nsamples == 1 and sample_systems_indices is not None:
+                if Nsystems == 1 and sample_systems_indices is not None:
                     Ndata = len(dataset)
                     indices = sample_systems_indices.copy()
                     for ii, idx in enumerate(sample_systems_indices):
@@ -443,7 +495,7 @@ class Sampler:
                 for isys, data_i in enumerate(dataset):
 
                     # Skip if system index not in indices list 
-                    if Nsamples == 1 and sample_systems_indices is not None:
+                    if Nsystems == 1 and sample_systems_indices is not None:
                         if isys not in indices:
                             continue
 
@@ -481,7 +533,7 @@ class Sampler:
                 while not complete:
                     try:
                         if (
-                            Nsamples == 1 
+                            Nsystems == 1
                             and sample_systems_indices is not None
                         ):
                             isys = sample_systems_indices[counter]
@@ -508,7 +560,7 @@ class Sampler:
                     else:
                         counter += 1
                         if (
-                            Nsamples == 1 
+                            Nsystems == 1
                             and sample_systems_indices is not None
                             and counter >= len(sample_systems_indices)
                         ):
@@ -549,12 +601,39 @@ class Sampler:
             sample_calculator_args = self.sample_calculator_args
 
         # Get ASE calculator
-        ase_calculator, ase_calculator_tag = (
-            interface.get_ase_calculator(
-                sample_calculator,
-                sample_calculator_args,
-                ithread=ithread)
-            )
+        # Special case: Asparagus model calculator is stored to avoid repeating
+        # initialization for multiple sample systems
+        if (
+            utils.is_string(sample_calculator)
+            and sample_calculator.lower() in ['asparagus', 'model']
+        ):
+
+            if hasattr(self, 'model_calculator'):
+
+                # Get stored model calculator
+                ase_calculator = self.model_calculator
+                ase_calculator_tag = self.model_calculator_tag
+
+            else:
+
+                # Initialize and store model calculator
+                ase_calculator, ase_calculator_tag = (
+                    interface.get_ase_calculator(
+                        sample_calculator,
+                        sample_calculator_args,
+                        ithread=ithread)
+                    )
+                self.model_calculator = ase_calculator
+                self.model_calculator_tag = ase_calculator_tag
+
+        else:
+
+            ase_calculator, ase_calculator_tag = (
+                interface.get_ase_calculator(
+                    sample_calculator,
+                    sample_calculator_args,
+                    ithread=ithread)
+                )
 
         # Check requested system properties
         self.sample_properties, self.sample_unit_properties = (
@@ -598,9 +677,12 @@ class Sampler:
         # If sample properties are not defined (None), take all available
         # properties from ASE calculator
         if sample_properties is None:
-            sample_properties = [
-                prop for prop in sample_calculator.implemented_properties
-                if prop in settings._valid_properties]
+            sample_properties = []
+            for prop in sample_calculator.implemented_properties:
+                if prop in settings._valid_properties:
+                    sample_properties.append(prop)
+                elif 'std_' in prop and prop[4:] in settings._valid_properties:
+                    sample_properties.append(prop)
 
         # Check requested system properties
         for prop in sample_properties:
@@ -614,9 +696,14 @@ class Sampler:
                     + f"{sample_calculator.implemented_properties}")
 
         # Define positions and property units
-        sample_unit_properties = {
-            prop: interface.ase_calculator_units.get(prop)
-            for prop in sample_properties}
+        sample_unit_properties = {}
+        for prop in sample_properties:
+            if 'std_' in prop:
+                sample_unit_properties[prop] = (
+                    interface.ase_calculator_units.get(prop[4:]))
+            else:
+                sample_unit_properties[prop] = (
+                    interface.ase_calculator_units.get(prop))
         if 'positions' not in sample_unit_properties:
             sample_unit_properties['positions'] = (
                 interface.ase_calculator_units.get('positions'))
@@ -754,6 +841,9 @@ class Sampler:
         for _ in range(self.sample_num_threads):
             sample_systems_queue.put('stop')
 
+        # Initialize sample number list
+        self.Nsamples = [0 for ithread in range(self.sample_num_threads)]
+
         # Run sampling over sample systems
         if self.sample_num_threads == 1:
             
@@ -800,9 +890,6 @@ class Sampler:
             Thread number
 
         """
-        
-        # Initialize stored sample counter
-        Nsample = 0
 
         while self.keep_going(ithread):
             
@@ -861,23 +948,27 @@ class Sampler:
 
             # Store results
             if converged:
-                Nsample = self.save_properties(system, Nsample)
+                self.save_properties(system, ithread)
 
             if converged and self.sample_save_trajectory:
                 self.write_trajectory(
                     system, self.sample_trajectory_file.format(isample))
 
         # Print sampling info
+        if ithread is None:
+            isample = 0
+        else:
+            isample = ithread
         message = (
             f"Sampling method '{self.sample_tag:s}' complete for system from "
             + f"'{source}!'\n")
-        if Nsample == 0:
+        if self.Nsamples[isample] == 0:
             message += f"No samples written to "
-        if Nsample == 1:
-            message += f"{Nsample:d} sample written to "
+        if self.Nsamples[isample] == 1:
+            message += f"{self.Nsamples[isample]:d} sample written to "
         else:
-            message += f"{Nsample:d} samples written to "
-        message += f"'{self.sample_data_file:s}'."
+            message += f"{self.Nsamples[isample]:d} samples written to "
+        message += f"'{self.sample_data_file[0]:s}'."
         self.logger.info(message)
 
         return
@@ -1054,19 +1145,33 @@ class Sampler:
         Collect system properties and calculator results
 
         """
-
         return interface.get_ase_properties(system, self.sample_properties)
 
-    def save_properties(self, system, Nsample) -> int:
+    def save_properties(self, system, ithread) -> int:
         """
         Save system properties
         """
-        
-        system_properties = self.get_properties(system)
-        self.sample_dataset.add_atoms(system, system_properties)
-        Nsample += 1
 
-        return Nsample
+        # Collect system properties
+        system_properties = self.get_properties(system)
+
+        # Sample list index
+        if ithread is None:
+            isample = 0
+        else:
+            isample = ithread
+
+        # Check for property thresholds
+        if self.sample_property_threshold is not None:
+            for prop, value in self.sample_property_threshold.items():
+                if system_properties[prop] < value:
+                    return
+
+        # Add to sample data file
+        self.sample_dataset.add_atoms(system, system_properties)
+        self.Nsamples[isample] += 1
+
+        return
 
     def write_trajectory(self, system, trajectory_file):
         """
@@ -1080,8 +1185,8 @@ class Sampler:
         # Save system without constraint to the trajectory file
         with self.lock:
             trajectory = ase.io.Trajectory(
-                    trajectory_file, atoms=system,
-                    mode='a', properties=self.sample_properties)
+                trajectory_file, atoms=system,
+                mode='a', properties=self.sample_properties)
             system_noconstraint = system.copy()
             system_noconstraint.calc = system.calc
             system_noconstraint.set_constraint()

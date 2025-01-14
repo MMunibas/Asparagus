@@ -75,7 +75,7 @@ class ASE_Calculator(ase_calc.Calculator):
         # Set implemented properties
         if implemented_properties is None:
             self.implemented_properties = (
-                    self.model_calculator.model_properties)
+                self.model_calculator.model_properties)
         else:
             if utils.is_string(implemented_properties):
                 self.implemented_properties = [implemented_properties]

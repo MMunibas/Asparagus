@@ -601,6 +601,12 @@ class DataBase_npz(data.DataBase):
                         reference_properties_shape[prop_i])
                 self.data[prop_i + ':id'] = np.array(
                     [0], dtype=integer_numpy_dtype)
+            elif 'std_' in prop_i and prop_i[4:] in reference_properties_shape:
+                self.data[prop_i] = np.array(
+                    [], dtype=self.properties_numpy_dtype).reshape(
+                        reference_properties_shape[prop_i[4:]])
+                self.data[prop_i + ':id'] = np.array(
+                    [0], dtype=integer_numpy_dtype)
 
         return
 
@@ -683,8 +689,16 @@ class DataBase_npz(data.DataBase):
                 else:
                     data_i = np.array(
                         properties.get(prop_i),
-                        dtype=self.properties_numpy_dtype).reshape(
+                        dtype=self.properties_numpy_dtype)
+                    if prop_i in reference_properties_shape:
+                        data_i = data_i.reshape(
                             reference_properties_shape[prop_i])
+                    elif (
+                        'std_' in prop_i
+                        and prop_i[4:] in reference_properties_shape
+                    ):
+                        data_i = data_i.reshape(
+                            reference_properties_shape[prop_i[4:]])
                     self.data_new[prop_i].append(data_i)
                     self.data_new[prop_i + ':id'].append(
                         np.array(
@@ -735,8 +749,16 @@ class DataBase_npz(data.DataBase):
                 else:
                     data_i = np.array(
                         properties.get(prop_i),
-                        dtype=self.properties_numpy_dtype).reshape(
+                        dtype=self.properties_numpy_dtype)
+                    if prop_i in reference_properties_shape:
+                        data_i = data_i.reshape(
                             reference_properties_shape[prop_i])
+                    elif (
+                        'std_' in prop_i
+                        and prop_i[4:] in reference_properties_shape
+                    ):
+                        data_i = data_i.reshape(
+                            reference_properties_shape[prop_i[4:]])
                     self.data_new[prop_i][row_id] = data_i
                     self.data_new[prop_i + ':id'][row_id] = np.array(
                         data_i.shape[0], dtype=integer_numpy_dtype)

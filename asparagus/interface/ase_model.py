@@ -302,6 +302,6 @@ def get_ase_properties(
     for ip, prop in enumerate(calc_properties):
         if prop in properties:
             continue
-        properties[prop] = system._calc.results.get(prop)
+        properties[prop] = system.calc.results.get(prop)
 
     return properties
