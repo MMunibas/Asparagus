@@ -66,41 +66,41 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 
 - [x] Add more NN architectures (Low priority)
 - [x] Add sampling methods:
-    - [x] MD with XTB
-    - [x] MC with XTB
-    - [x] Normal Model Sampling (Vanilla with random generation) 
+    - [x] MD
+    - [x] MC
+    - [x] Normal Model Sampling
     - [x] Normal Model Scanning 
+    - [x] Metadynamics Sampling
     - [ ] Umbrella Sampling (Low priority)
-    - [x] Metadynamics Sampling 
 - [x] Electronic structure calculations:
-   - [x] ASE calculator (As good as it can be)
-   - [x] Automatic generation of input files for commonly used codes (e.g. Gaussian, Orca, MOLPRO, etc.)
-   - [x] Automatic extraction of information from output files
+   - [x] ASE calculator
+   - [x] Custom Calculators (via shell run or slurm batch files)
 - Trainer class:
   - [x] Training of model ensemble 
 - Tester class: 
-  - [x] Finish automatic evaluation 
+  - [x] Model and Moddel Ensemble automatic evaluation 
 - Active learning
-   - [(x)] Adaptive Sampling
+   - [x] Adaptive Sampling (first iteration)
    - [x] Uncertainty calculations
-     - [x] Model ensemble via ASE calculator 
-     - [ ] Deep Evidential Regression (Low priority)
+     - [x] via Model Ensembles
+     - [ ] via Deep Evidential Regression (Low priority)
 - Tools class:
-  - [x] Normal mode calculation (Luis)
+  - [x] Normal mode calculation (via ASE)
   - [x] Minimum energy path and Minimum dynamic path
-  - [x] Diffusion MonteCarlo
+  - [x] Diffusion Monte-Carlo
   - [ ] Others(?)
 - Production: 
-  - [x] PyCharmm 
-  - [x] ASE calculator for dynamics
+  - [x] ASE calculator
+  - [x] PyCharmm interface
+  - [ ] Gaussian interface
 - Documentation:
-  - [X] Improve documentation
+  - [ ] Improve documentation
   - [x] Add examples
-  - [x] Add tutorials
+  - [ ] Add tutorials
  - Others
    - [ ] Create a conda package
    - [ ] Create a pip package
-  
+
 ## Contact
 
 For any questions, please open an issue in the repository.
