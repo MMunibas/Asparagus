@@ -1239,6 +1239,19 @@ class DataContainer():
             for key, item in atomic_energies_scaling_str.items():
                 atomic_energies_scaling[int(key)] = item
 
+            # Check for NaN values in stored values
+            nan_error = any([
+                np.any(np.isnan(values))
+                for _, values in atomic_energies_scaling.items()]
+            )
+
+            # If NaN values are found, recompute atomic energies scaling 
+            # parameter
+            if nan_error:
+                atomic_energies_scaling = self.get_atomic_energies_scaling(
+                    data_label=data_label,
+                    overwrite=True)
+
         else:
 
             # Get energy unit
