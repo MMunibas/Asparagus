@@ -1202,7 +1202,7 @@ class DataContainer():
 
         Parameters
         ----------
-        data_label: str, optional, default 'train'
+        data_label: str, optional, default 'all'
             Dataset or subset label using for computing property scaling
             statistics.
         overwrite: bool, optional, default False
@@ -1301,7 +1301,7 @@ class DataContainer():
         
         Parameters
         ----------
-        data_label: str, optional, default 'training'
+        data_label: str, optional, default 'all'
             Reference dataset ('all') or subset (e.g. 'training', 'validation')
             used for the atomic energies shift computation.
 

@@ -415,15 +415,18 @@ class EnsembleTrainer:
                 model_directory=self.model_subdirectories[imodel],
                 verbose=False)
 
-            # Initialize Trainer instance
-            trainer = training.Trainer(
-                config=self.model_configs[imodel],
-                data_container=self.data_container,
-                model_calculator=model_calculator,
-                trainer_max_epochs=self.trainer_epoch_steps_list[istep],
-                trainer_evaluate_testset=False,
-                trainer_print_progress_bar=False,
-                verbose=False)
+            # Initialize Trainer instance, only in series one thread after
+            # another, to avoid conflicts with data container (e.g. reference
+            # atomic energy shifts).
+            with self.lock:
+                trainer = training.Trainer(
+                    config=self.model_configs[imodel],
+                    data_container=self.data_container,
+                    model_calculator=model_calculator,
+                    trainer_max_epochs=self.trainer_epoch_steps_list[istep],
+                    trainer_evaluate_testset=False,
+                    trainer_print_progress_bar=False,
+                    verbose=False)
 
             # Run training
             if istep:
