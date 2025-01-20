@@ -521,7 +521,7 @@ class ShellCalculator(FileIOCalculator):
 
         # Check executable file
         if execute_file is None:
-            execute_file = os.path.split(file_i)[1]
+            execute_file = os.path.split(files[0])[1]
         elif utils.is_string(execute_file):
             if (not os.path.exists(execute_file) and not any([
                 execute_file in os.path.split(file_i)[1] for file_i in files])
