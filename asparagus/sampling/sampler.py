@@ -918,33 +918,7 @@ class Sampler:
                     sample_index=isample)
 
             # Compute system properties
-            try:
-
-                system.calc.calculate(
-                    system,
-                    properties=self.sample_properties,
-                    system_changes=system.calc.implemented_properties)
-
-                if hasattr(system.calc, 'converged'):
-                    converged = system.calc.converged
-                elif (
-                    self.sample_properties[0] in system.calc.results
-                    and (
-                        system.calc.results[self.sample_properties[0]] is None
-                        or np.any(np.isnan(
-                            system.calc.results[self.sample_properties[0]]))
-                    )
-                ):
-                    converged = False
-                else:
-                    converged = True                
-
-            except (
-                ase.calculators.calculator.CalculationFailed
-                or subprocess.CalledProcessError
-            ):
-
-                converged = False
+            system, converged = self.run_calculation(system)
 
             # Store results
             if converged:
@@ -972,6 +946,67 @@ class Sampler:
         self.logger.info(message)
 
         return
+
+    def run_calculation(
+        self,
+        system: ase.Atoms,
+        try_again: Optional[bool] = True,
+    ) -> (ase.Atoms, bool):
+        """
+        Apply sample calculator on system input and write properties to 
+        database.
+        
+        Parameters
+        ----------
+        system: ase.Atoms
+            ASE atoms object with linked calculator to run the reference
+            calculation with.
+        try_again: bool, optional, default True
+            If the calculation failed (converged == False), try the reference
+            calculation for a second time with 'try_again=False' then.
+
+        Returns
+        -------
+        ase.Atoms
+            ASE atoms object with linked calculator after reference calculation
+            was run.
+        bool
+            Flag for converged (True) or failed (False) reference calculation
+
+        """
+        
+        try:
+
+            system.calc.calculate(
+                system,
+                properties=self.sample_properties,
+                system_changes=system.calc.implemented_properties)
+
+            if hasattr(system.calc, 'converged'):
+                converged = system.calc.converged
+            elif (
+                self.sample_properties[0] in system.calc.results
+                and (
+                    system.calc.results[self.sample_properties[0]] is None
+                    or np.any(np.isnan(
+                        system.calc.results[self.sample_properties[0]]))
+                )
+            ):
+                converged = False
+            else:
+                converged = True                
+
+        except (
+            ase.calculators.calculator.CalculationFailed
+            or subprocess.CalledProcessError
+        ):
+
+            converged = False
+
+        if not converged and try_again:
+            system, converged = self.run_calculation(system, try_again=False)
+
+        return system, converged
 
     def run_optimization(
         self,
@@ -1005,6 +1040,7 @@ class Sampler:
         -------
         ase.Atoms
             Optimized ASE atoms object
+
         """
         
         # Check sample system input

@@ -727,26 +727,16 @@ class NormalModeScanner(sampling.Sampler):
                     current_step_positions,
                     apply_constraint=False)
 
-                # Compute observables and check potential threshold
-                try:
+                # Compute observables
+                system, converged = self.run_calculation(system)
 
-                    ase_calculator.calculate(
-                        system,
-                        properties=self.sample_properties,
-                        system_changes=system.calc.implemented_properties)
-                    current_properties = system.calc.results
-                    current_potential = current_properties['energy']
-
-                    if hasattr(ase_calculator, 'converged'):
-                        converged = ase_calculator.converged
-                    elif (
-                        current_potential is None
-                        or np.isnan(current_potential)
-                    ):
-                        converged = False
-                    else:
-                        converged = True
-
+                # Check potential threshold
+                current_properties = system.calc.results
+                current_potential = current_properties['energy']
+                if not converged or np.isnan(current_potential):
+                    converged = False
+                    threshold_reached = True
+                else:
                     if current_potential < system_initial_potential:
                         threshold_reached = (
                             (
@@ -759,14 +749,6 @@ class NormalModeScanner(sampling.Sampler):
                                 current_potential 
                                 - system_initial_potential
                             ) > self.nms_energy_limits[1])
-
-                except (
-                    ase.calculators.calculator.CalculationFailed
-                    or subprocess.CalledProcessError
-                ):
-
-                    converged = False
-                    threshold_reached = True
 
                 # Add to dataset
                 if converged:
@@ -1458,31 +1440,7 @@ class NormalModeSampler(sampling.Sampler):
             system.set_positions(sample_positions)
             
             # Compute observables and check potential threshold
-            try:
-
-                ase_calculator.calculate(
-                    system,
-                    properties=self.sample_properties,
-                    system_changes=system.calc.implemented_properties)
-                if hasattr(ase_calculator, 'converged'):
-                    converged = ase_calculator.converged
-                elif (
-                    'energy' in system.calc.results
-                    and (
-                        system.calc.results['energy'] is None
-                        or np.isnan(system.calc.results['energy'])
-                    )
-                ):
-                    converged = False
-                else:
-                    converged = True
-
-            except (
-                    ase.calculators.calculator.CalculationFailed
-                    or subprocess.CalledProcessError
-                ):
-
-                converged = False
+            system, converged = self.run_calculation(system)
 
             # Add to dataset
             if converged:

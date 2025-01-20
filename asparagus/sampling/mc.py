@@ -322,12 +322,13 @@ class MCSampler(sampling.Sampler):
         Nsample = 0
         
         # Compute current energy
-        system.calc.calculate(
-            system,
-            properties=self.sample_properties,
-            system_changes=system.calc.implemented_properties)
-        system_properties = system.calc.results
-        current_energy = system_properties['energy']
+        system, converged = self.run_calculation(system)
+        if converged:
+            system_properties = system.calc.results
+            current_energy = system_properties['energy']
+        else:
+            self.logger.error("Initial MC reference calculation failed!")
+            return
 
         # Store initial system properties
         self.save_properties(system, ithread)
@@ -360,18 +361,18 @@ class MCSampler(sampling.Sampler):
             system.positions[selected_atom] += displacement
 
             # Get the potential energy of the new system
-            system.calc.calculate(
-                system,
-                properties=self.sample_properties,
-                system_changes=system.calc.implemented_properties)
-            system_properties = system.calc.results
-            new_energy = system_properties['energy']
+            system, converged = self.run_calculation(system)
+            if converged:
+                system_properties = system.calc.results
+                new_energy = system_properties['energy']
+            else:
+                new_energy = np.inf
 
             # Metropolis acceptance criterion
             threshold = np.exp(-beta*(new_energy - current_energy))
 
             # If accepted 
-            if np.random.rand() < threshold:
+            if converged and np.random.rand() < threshold:
 
                 # Set the new position of the atom
                 current_energy = new_energy
