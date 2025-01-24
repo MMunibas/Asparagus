@@ -613,9 +613,7 @@ class FileManager():
         if self.model_ensemble and imodel is None:
 
             # Get model checkpoint file paths
-            ckpt_name = [
-                os.path.join(ckpt_dir, 'best_model.pt')
-                for ckpt_dir in self.ckpt_dir]
+            ckpt_name = []
 
             # Get highest index checkpoint file each
             message = "Latest model checkpoint files:\n"

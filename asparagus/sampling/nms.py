@@ -779,6 +779,13 @@ class NormalModeScanner(sampling.Sampler):
 
                     # Increment step size index
                     istep += 1
+            
+                # Check if number of sample threshold is reached
+                if (
+                    self.sample_nsamples_threshold is not None
+                    and np.sum(self.Nsamples) >= self.sample_nsamples_threshold
+                ):
+                    done = True
 
                 # Check step size progress
                 if done or istep >= Nsteps:
@@ -1432,13 +1439,13 @@ class NormalModeSampler(sampling.Sampler):
             if sample == 'stop':
                 self.thread_keep_going[ithread] = False
                 continue
-            
+
             # Extract normal mode combination parameters
             (isample, irun, sample_positions) = sample
-            
+
             # Set sample positions to calculate
             system.set_positions(sample_positions)
-            
+
             # Compute observables and check potential threshold
             system, converged = self.run_calculation(system)
 
@@ -1684,7 +1691,7 @@ class Vibrations_Asparagus(Vibrations_ASE):
             (atoms, name) = sample
             
             # Assign calculator
-            atoms.set_calculator(ase_calculator)
+            atoms.calc = ase_calculator
 
             # Run job
             with self.cache.lock(name) as handle:
@@ -1699,12 +1706,8 @@ class Vibrations_Asparagus(Vibrations_ASE):
                 else:
 
                     # Compute essential results
-                    results = {}
-                    if self.hessian_avail:
-                        results['hessian'] = atoms.get_hessian()
-                    else:
-                        results['forces'] = atoms.get_forces()
-                    
+                    atoms, results = self.run_calculation(atoms)
+
                     # Add additional results
                     for prop, result in ase_calculator.results.items():
                         results[prop] = result
@@ -1727,6 +1730,65 @@ class Vibrations_Asparagus(Vibrations_ASE):
                         atoms, atoms_properties)
 
         return
+
+    def run_calculation(
+        self,
+        atoms: ase.Atoms,
+        try_again: Optional[bool] = True,
+    ) -> (ase.Atoms, Dict[str, np.ndarray]):
+        """
+        Apply calculator on atoms input
+        
+        Parameters
+        ----------
+        system: ase.Atoms
+            ASE atoms object with linked calculator to run the reference
+            calculation with.
+        try_again: bool, optional, default True
+            If the calculation failed (converged == False), try the reference
+            calculation for a second time with 'try_again=False' then.
+
+        Returns
+        -------
+        ase.Atoms
+            ASE atoms object with linked calculator after reference calculation
+            was run.
+        dict(str, np.ndarray)
+            Essential result array containing hessian or forces.
+
+        """
+
+        # Initialize result dictionary
+        results = {}
+        
+        try:
+
+            # Compute essential results
+            if self.hessian_avail:
+                results['hessian'] = atoms.get_hessian()
+            else:
+                results['forces'] = atoms.get_forces()
+
+            if hasattr(atoms.calc, 'converged'):
+                converged = atoms.calc.converged
+            elif self.hessian_avail and results['hessian'] is None:
+                converged = False
+            elif results['forces'] is None:
+                converged = False
+            else:
+                converged = True                
+
+        except (
+            ase.calculators.calculator.CalculationFailed
+            or subprocess.CalledProcessError
+        ):
+
+            converged = False
+
+        if not converged and try_again:
+            atoms, results = self.run_calculation(atoms, try_again=False)
+
+        return atoms, results
 
     def get_initial_results(
         self,

@@ -595,13 +595,20 @@ class MetaSampler(sampling.Sampler):
             system=system,
             ithread=ithread)
         
-        # Attach trajectory
+        # Attach trajectory writer
         if self.sample_save_trajectory:
             meta_dyn.attach(
                 self.write_trajectory, 
                 interval=self.meta_save_interval,
                 system=system,
                 trajectory_file=trajectory_file)
+
+        # Attach sample number filter
+        if self.sample_nsamples_threshold is not None:
+            md_dyn.attach(
+                self.check_sample_number,
+                interval=self.meta_save_interval,
+                dyn=meta_dyn)
 
         # Attach collective variables writer
         meta_cv_logger = MetaDynamicLogger(
@@ -617,7 +624,30 @@ class MetaSampler(sampling.Sampler):
         meta_dyn.run(simulation_steps)
 
         return
-        
+
+    def check_sample_number(
+        self,
+        dyn: Langevin,
+    ):
+        """
+        If number of samples written to the database reach the threshold,
+        manipulate ASE dynamics instance to terminate the run.
+
+        Parameters
+        ----------
+        dyn: ase.md.langevin.Langevin
+            ASE Langevin dynamics instance
+
+        """
+        # Check if number of sample threshold is reached
+        if (
+            self.sample_nsamples_threshold is not None
+            and np.sum(self.Nsamples) >= self.sample_nsamples_threshold
+        ):
+            dyn.max_steps = dyn.nsteps
+
+        return
+
 
 class MetaConstraint:
     """

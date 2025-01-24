@@ -16,6 +16,10 @@ from asparagus import data
 from asparagus import model
 from asparagus import training
 
+from .tester import Tester
+
+__all__ = ['EnsembleTrainer']
+
 class EnsembleTrainer:
     """
     Wrapper for the training of an model ensemble, either serial or in parallel
@@ -39,6 +43,15 @@ class EnsembleTrainer:
     trainer_save_interval: int, optional, default 5
         Interval between epoch to save current and best set of model
         parameters.
+    trainer_evaluate_testset: bool, optional, default True
+        If True, run ensemble model test when each single model have been run
+        through same 'trainer_epochs_step'.
+    trainer_batch_size: int, optional, default None
+        Default dataloader batch size
+    trainer_test_batch_size:  int, optional, default None
+        Test dataloader batch size. If None, default batch size is used.
+    trainer_num_batch_workers: int, optional, default 1
+        Number of test dataloader workers.
 
     """
 
@@ -52,6 +65,10 @@ class EnsembleTrainer:
         'trainer_num_threads':          1,
         'trainer_max_epochs':           10_000,
         'trainer_save_interval':        5,
+        'trainer_evaluate_testset':     True,
+        'trainer_batch_size':           32,
+        'trainer_test_batch_size':      None,
+        'trainer_num_batch_workers':    0,
         }
 
     # Expected data types of input variables
@@ -60,6 +77,10 @@ class EnsembleTrainer:
         'trainer_num_threads':          [utils.is_integer],
         'trainer_max_epochs':           [utils.is_integer],
         'trainer_save_interval':        [utils.is_integer],
+        'trainer_evaluate_testset':     [utils.is_bool],
+        'trainer_batch_size':           [utils.is_integer],
+        'trainer_test_batch_size':      [utils.is_integer, utils.is_None],
+        'trainer_num_batch_workers':    [utils.is_integer],
         }
 
     def __init__(
@@ -72,6 +93,10 @@ class EnsembleTrainer:
         trainer_num_threads: Optional[int] = None,
         trainer_max_epochs: Optional[int] = None,
         trainer_save_interval: Optional[int] = None,
+        trainer_evaluate_testset: Optional[bool] = None,
+        trainer_batch_size: Optional[int] = None,
+        trainer_test_batch_size: Optional[int] = None,
+        trainer_num_batch_workers: Optional[int] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
         **kwargs
@@ -222,6 +247,11 @@ class EnsembleTrainer:
             self.trainer_epochs_step)
         self.trainer_epoch_steps_number = len(self.trainer_epoch_steps_list)
 
+        # Initialize first test step
+        # When all model steps are at current test step, run tester class next
+        # time
+        self.trainer_test_step = 1
+
         # Check number of model training threads
         if self.trainer_num_threads > self.model_ensemble_num:
             self.logger.warning(
@@ -232,6 +262,21 @@ class EnsembleTrainer:
                 + "Number of model training threads is lowered to "
                 + f"({model_ensemble_num:d}).")
             self.trainer_num_threads = self.model_ensemble_num
+
+        ##########################
+        # # # Prepare Tester # # #
+        ##########################
+
+        # Assign model prediction tester if test set evaluation is requested
+        if self.trainer_evaluate_testset:
+            if self.trainer_test_batch_size is None:
+                self.trainer_test_batch_size = self.trainer_batch_size
+            self.tester = Tester(
+                config=config,
+                data_container=self.data_container,
+                test_datasets='test',
+                test_batch_size=self.trainer_test_batch_size,
+                test_num_batch_workers=self.trainer_num_batch_workers)
 
         return
 
@@ -396,7 +441,18 @@ class EnsembleTrainer:
         while self.keep_going():
             
             # Select next model and step
-            imodel, istep = self.next_step()
+            imodel, istep, flag_test = self.next_step()
+
+            # Check last model training epoch
+            checkpoint = self.filemanager.load_checkpoint(
+                'last',
+                return_name=False,
+                verbose=False)
+            last_epoch = checkpoint[imodel]['epoch']
+            if last_epoch >= self.trainer_epoch_steps_list[istep]:
+                # Skip training step
+                self.increment_model_step(imodel)
+                continue
 
             # Print training thread information
             if ithread is None:
@@ -419,6 +475,7 @@ class EnsembleTrainer:
             # another, to avoid conflicts with data container (e.g. reference
             # atomic energy shifts).
             with self.lock:
+
                 trainer = training.Trainer(
                     config=self.model_configs[imodel],
                     data_container=self.data_container,
@@ -427,6 +484,30 @@ class EnsembleTrainer:
                     trainer_evaluate_testset=False,
                     trainer_print_progress_bar=False,
                     verbose=False)
+
+            # Run test if requested
+            if flag_test:
+                
+                # Get best model checkpoint
+                checkpoint, checkpoint_file = self.filemanager.load_checkpoint(
+                    'best',
+                    return_name=True,
+                    verbose=False)
+
+                # Load current model checkpoint file
+                self.model_calculator.load(
+                    checkpoint,
+                    checkpoint_file=checkpoint_file,
+                    verbose=False)
+
+                # Run test
+                self.tester.test(
+                    self.model_calculator,
+                    model_conversion=trainer.model_conversion,
+                    test_directory=os.path.join(self.model_directory, 'best'),
+                    test_plot_correlation=True,
+                    test_plot_histogram=True,
+                    test_plot_residual=True)
 
             # Run training
             if istep:
@@ -450,10 +531,9 @@ class EnsembleTrainer:
                     ithread=ithread,
                     verbose=False)
 
-            # Set model training status to idle
+            # Set model training status to idle and increment model step
             with self.lock:
-                self.trainer_model_is_training[imodel] = False
-                self.trainer_model_step[imodel] += 1
+                self.increment_model_step(imodel)
 
             # Print training thread information
             if ithread is None:
@@ -467,7 +547,24 @@ class EnsembleTrainer:
                     + f"{self.trainer_epoch_steps_list[istep]:d}.")
 
         return
-        
+
+    def increment_model_step(
+        self,
+        imodel: int,
+    ):
+        """
+        Set model training status to idle and increment model step
+
+        Parameters
+        ----------
+        imodel: int
+            Model calculator index
+
+        """
+        self.trainer_model_is_training[imodel] = False
+        self.trainer_model_step[imodel] += 1
+        return
+
     def keep_going(self):
         """
         Check if training steps are left.
@@ -523,4 +620,11 @@ class EnsembleTrainer:
             # Set model status to actively training
             self.trainer_model_is_training[imodel] = True
 
-        return imodel, istep
+            # Check if model test run is due
+            flag_test = all([
+                self.trainer_test_step == test_istep
+                for test_istep in self.trainer_model_step])
+            if flag_test:
+                self.trainer_test_step += 1
+
+        return imodel, istep, flag_test

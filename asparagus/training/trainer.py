@@ -68,7 +68,7 @@ class Trainer:
     trainer_test_batch_size:  int, optional, default None
         Test dataloader batch size. If None, default batch size is used.
     trainer_num_batch_workers: int, optional, default 1
-        Number of data loader workers.
+        Number of dataloader workers.
     trainer_optimizer: (str, object), optional, default 'AMSgrad'
         Optimizer class for the NNP model training
     trainer_optimizer_args: dict, optional, default {}

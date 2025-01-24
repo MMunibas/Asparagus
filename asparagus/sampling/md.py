@@ -68,7 +68,7 @@ class MDSampler(sampling.Sampler):
         'md_temperature':               300.,
         'md_time_step':                 1.,
         'md_simulation_time':           1.E5,
-        'md_save_interval':             100,
+        'md_save_interval':             10,
         'md_langevin_friction':         1.E-2,
         'md_equilibration_time':        None,
         'md_initial_temperature':       False,
@@ -419,13 +419,20 @@ class MDSampler(sampling.Sampler):
             system=system,
             ithread=ithread)
 
-        # Attach trajectory
+        # Attach trajectory writer
         if self.sample_save_trajectory:
             md_dyn.attach(
                 self.write_trajectory, 
                 interval=self.md_save_interval,
                 system=system,
                 trajectory_file=trajectory_file)
+
+        # Attach sample number filter
+        if self.sample_nsamples_threshold is not None:
+            md_dyn.attach(
+                self.check_sample_number,
+                interval=self.md_save_interval,
+                dyn=md_dyn)
 
         # If defined, attach temperature program function to change reference
         # temperature by an temperature increment every specified time interval
@@ -545,13 +552,54 @@ class MDSampler(sampling.Sampler):
 
         return
 
-    def update_temperature(self, dyn, increment, ithread):
+    def update_temperature(
+        self,
+        dyn: Langevin,
+        increment: float,
+        ithread: int,
+    ):
         """
         Apply Langevin reference temperature step
+
+        Parameters
+        ----------
+        dyn: ase.md.langevin.Langevin
+            ASE Langevin dynamics instance
+        increment: float
+            Temperature increment
+        ithread: int
+            Thread number
+
         """
+
         if self.first_increment[ithread]:
             self.first_increment[ithread] = False
             return
+
         dyn.temp = dyn.temp + units.kB*increment
         dyn.updatevars()
+
+        return
+
+    def check_sample_number(
+        self,
+        dyn: Langevin,
+    ):
+        """
+        If number of samples written to the database reach the threshold,
+        manipulate ASE dynamics instance to terminate the run.
+
+        Parameters
+        ----------
+        dyn: ase.md.langevin.Langevin
+            ASE Langevin dynamics instance
+
+        """
+        # Check if number of sample threshold is reached
+        if (
+            self.sample_nsamples_threshold is not None
+            and np.sum(self.Nsamples) >= self.sample_nsamples_threshold
+        ):
+            dyn.max_steps = dyn.nsteps
+
         return

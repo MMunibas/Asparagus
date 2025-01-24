@@ -118,7 +118,10 @@ class ASE_Calculator(ase_calc.Calculator):
         self.results = {}
 
         # Initialize convergence flag
-        self.converged = False
+        self.converged = True
+
+        # Set flag to use stored results if atoms property did not change
+        self.use_cache = True
 
         return
 
@@ -203,7 +206,8 @@ class ASE_Calculator(ase_calc.Calculator):
         fconv = self.model_conversion['positions']
         batch['positions'] = torch.cat(
             [
-                torch.tensor(atms.get_positions()*fconv, dtype=self.dtype)
+                torch.tensor(
+                    atms.get_positions()*fconv, dtype=self.model_dtype)
                 for atms in atoms
             ], 0).to(
                 device=self.model_device, dtype=self.model_dtype)
@@ -250,26 +254,23 @@ class ASE_Calculator(ase_calc.Calculator):
             ASE atoms property predictions
 
         """
-        
-        # Prepare or update atoms data batch
-        if atoms is None and self.atoms is None:
 
+        # Collect atoms object
+        if atoms is None and self.atoms is None:
             raise ase_calc.CalculatorSetupError(
                 "ASE atoms object is not defined!")
-
         elif atoms is None:
+            atoms = self.atoms
+        elif not (
+            len(atoms) == len(self.atoms)
+            and np.all(atoms.numbers == self.atoms.numbers)
+        ):
+            # Different atoms system needs a reset of the atom batch
+            self.atoms_batch = {}
 
-            # Update data batch with linked atoms object(s)
-            self.atoms_batch = self.update_model_input(
+        # Prepare or update atoms data batch
+        self.atoms_batch = self.update_model_input(
                 self.atoms_batch,
-                self.atoms,
-                charge)
-
-        else:
-
-            # Reset data batch with the input atoms object(s)
-            self.atoms_batch = self.update_model_input(
-                {},
                 atoms,
                 charge)
 

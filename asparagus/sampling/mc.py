@@ -385,6 +385,13 @@ class MCSampler(sampling.Sampler):
                         self.write_trajectory(
                             system, trajectory_file)
             
+                # Check if number of sample threshold is reached
+                if (
+                    self.sample_nsamples_threshold is not None
+                    and np.sum(self.Nsamples) >= self.sample_nsamples_threshold
+                ):
+                    break
+
             # If not accepted
             else:
                 

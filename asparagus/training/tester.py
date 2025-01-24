@@ -339,12 +339,13 @@ class Tester:
         # Check test output directory
         if test_directory is None:
             test_directory = self.test_directory
-        elif not utils.is_string(test_directory):
+        elif utils.is_string(test_directory):
+            if not os.path.exists(test_directory):
+                os.makedirs(test_directory)
+        else:
             raise SyntaxError(
                 "Test results output directory input 'test_directory' is not "
-                + "a string for a valid file path.")
-        elif not os.path.exists(test_directory):
-            os.makedirs(test_directory)
+                + "a string of a valid file path.")
 
         # Compare model properties with test properties and store properties
         # to evaluate
@@ -598,7 +599,6 @@ class Tester:
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
-                                test_property_scaling[prop],
                                 test_directory_model,
                                 test_plot_format,
                                 test_plot_dpi)

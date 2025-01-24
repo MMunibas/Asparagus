@@ -108,6 +108,9 @@ class Sampler:
         decide if samples or frames are added to the sample data file.
         For model ensembles, this could be the energy standard deviation
         ('str_energy').
+    sample_nsamples_threshold: int, optional, default None
+        If not None, the sampling will be terminated if the sample number
+        threshold is reached.
     sample_tag: str, optional, default 'sample'
         Sampling method tag of the specific sampling methods for
         log and ASE trajectory files or the data file name if not defined.
@@ -136,6 +139,7 @@ class Sampler:
         'sample_systems_optimize_fmax': 0.001,
         'sample_data_overwrite':        False,
         'sample_property_threshold':    None,
+        'sample_nsamples_threshold':    None,
         'sample_tag':                   'sample',
         }
 
@@ -165,6 +169,7 @@ class Sampler:
         'sample_systems_optimize_fmax': [utils.is_numeric],
         'sample_data_overwrite':        [utils.is_bool],
         'sample_property_threshold':    [utils.is_None, utils.is_dictionary],
+        'sample_nsamples_threshold':    [utils.is_None, utils.is_integer],
         'sample_tag':                   [utils.is_string],
         }
 
@@ -188,7 +193,8 @@ class Sampler:
         sample_systems_optimize: Optional[bool] = None,
         sample_systems_optimize_fmax: Optional[float] = None,
         sample_data_overwrite: Optional[bool] = None,
-        sample_property_threshold: Optional[Union[str, float]] = None,
+        sample_property_threshold: Optional[Dict[str, float]] = None,
+        sample_nsamples_threshold: Optional[int] = None,
         sample_tag: Optional[str] = None,
         **kwargs,
     ):
@@ -313,40 +319,12 @@ class Sampler:
         self.lock = threading.Lock()
 
         # Check property threshold parameter
-        if (
-            self.sample_property_threshold is not None
-            and utils.is_dictionary(self.sample_property_threshold)
-        ):
-            message = (
-                "Property threshold filter is applied to store samples in "
-                + f"'{self.sample_data_file[0]:s}'!\n"
-                + f" {'Property':<12s}   Threshold\n"
-                + "-"*30 + "\n")
-            for prop, value in self.sample_property_threshold.items():
-                if prop not in self.sample_properties:
-                    raise ValueError(
-                        "Property threshold dictionary "
-                        + "'sample_property_threshold' contains invalid "
-                        + f"property '{prop:s}' which is not a calculator "
-                        + f"property:\n{self.sample_properties}")
-                if utils.is_numeric(value):
-                    self.sample_property_threshold[prop] = float(value)
-                    message += (
-                        f" {prop:>12} > "
-                        + f"{self.sample_property_threshold[prop]:.2E}\n")
-                else:
-                    raise ValueError(
-                        "Property threshold dictionary "
-                        + "'sample_property_threshold' contains invalid "
-                        + f"threshold value for property '{prop:s}' of type "
-                        + f"'{value}'!")
-            self.logger.info(message)
-        elif self.sample_property_threshold is not None:
-            raise ValueError(
-                "Property threshold dictionary 'sample_property_threshold' "
-                + "must be a dictionary of a valid property (key) and "
-                + "threshold value (value), but is of type "
-                + f"'{type(self.sample_property_threshold)}'!")
+        if self.sample_property_threshold is not None:
+            self.check_property_threshold()
+
+        # Check sample number threshold parameter
+        if self.sample_nsamples_threshold is not None:
+            self.check_nsamples_threshold()
 
         #############################
         # # # Prepare Optimizer # # #
@@ -994,7 +972,7 @@ class Sampler:
             ):
                 converged = False
             else:
-                converged = True                
+                converged = True
 
         except (
             ase.calculators.calculator.CalculationFailed
@@ -1168,10 +1146,22 @@ class Sampler:
             Thread number.
 
         """
+        
+        # Check if number of sample threshold is reached
+        if (
+            self.sample_nsamples_threshold is not None
+            and np.sum(self.Nsamples) >= self.sample_nsamples_threshold
+        ):
+            if ithread is None:
+                self.thread_keep_going[0] = False
+            else:
+                self.thread_keep_going[ithread] = False
+            return False
 
+        # Return thread continuation flag
         if ithread is None:
             return self.thread_keep_going[0]
-        if hasattr(self, 'thread_keep_going'):
+        else:
             return self.thread_keep_going[ithread]
 
         return False
@@ -1203,9 +1193,17 @@ class Sampler:
                 if system_properties[prop] < value:
                     return
 
+        # Check for number of sample threshold
+        if (
+            self.sample_nsamples_threshold is not None
+            and np.sum(self.Nsamples) >= self.sample_nsamples_threshold
+        ):
+            return
+
         # Add to sample data file
-        self.sample_dataset.add_atoms(system, system_properties)
-        self.Nsamples[isample] += 1
+        with self.lock:
+            self.sample_dataset.add_atoms(system, system_properties)
+            self.Nsamples[isample] += 1
 
         return
 
@@ -1228,5 +1226,76 @@ class Sampler:
             system_noconstraint.set_constraint()
             trajectory.write(system_noconstraint)
             trajectory.close()
+
+        return
+
+    def check_property_threshold(
+        self
+    ):
+        """
+        Check property threshold input
+        """
+
+        if (
+            self.sample_property_threshold is not None
+            and utils.is_dictionary(self.sample_property_threshold)
+        ):
+            message = (
+                "Property threshold filter is applied to store samples in "
+                + f"'{self.sample_data_file[0]:s}'!\n"
+                + f" {'Property':<12s}   Threshold\n"
+                + "-"*30 + "\n")
+            for prop, value in self.sample_property_threshold.items():
+                if prop not in self.sample_properties:
+                    raise ValueError(
+                        "Property threshold dictionary "
+                        + "'sample_property_threshold' contains invalid "
+                        + f"property '{prop:s}' which is not a calculator "
+                        + f"property:\n{self.sample_properties}")
+                if utils.is_numeric(value):
+                    self.sample_property_threshold[prop] = float(value)
+                    message += (
+                        f" {prop:>12} > "
+                        + f"{self.sample_property_threshold[prop]:.2E}"
+                        + f" {self.sample_unit_properties[prop]:s}\n")
+                else:
+                    raise ValueError(
+                        "Property threshold dictionary "
+                        + "'sample_property_threshold' contains invalid "
+                        + f"threshold value for property '{prop:s}' of type "
+                        + f"'{value}'!")
+            self.logger.info(message)
+        elif self.sample_property_threshold is not None:
+            raise ValueError(
+                "Property threshold dictionary 'sample_property_threshold' "
+                + "must be a dictionary of a valid property (key) and "
+                + "threshold value (value), but is of type "
+                + f"'{type(self.sample_property_threshold)}'!")
+
+        return
+
+    def check_nsamples_threshold(
+        self
+    ):
+        """
+        Check sample number threshold input
+
+        """
+
+        if (
+            self.sample_nsamples_threshold is not None
+            and utils.is_integer(self.sample_nsamples_threshold)
+            and self.sample_nsamples_threshold > 0
+        ):
+            message = (
+                "Sample number threshold filter for a maximum of"
+                + f"{self.sample_nsamples_threshold:d} is applied that are "
+                + f"stored in '{self.sample_data_file[0]:s}'!\n")
+            self.logger.info(message)
+        elif self.sample_nsamples_threshold is not None:
+            raise ValueError(
+                "Sample number threshold input 'sample_nsamples_threshold' "
+                + "must be a positive integer but is of type "
+                + f"'{type(self.sample_nsamples_threshold)}'!")
 
         return
