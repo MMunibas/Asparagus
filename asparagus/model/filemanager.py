@@ -7,6 +7,8 @@ import datetime
 import logging
 from typing import Optional, List, Dict, Tuple, Union, Any
 
+import numpy as np
+
 import torch
 
 from asparagus import model
@@ -769,25 +771,180 @@ class FileManager():
                     self.logger.info(
                         f"Checkpoint file '{ckpt_name}' found!")
 
+        # Load specific model checkpoint number for each model
+        elif utils.is_integer_array(checkpoint_label):
+
+            # For model ensembles without certain model definition check
+            # in all model subdirectories
+            if self.model_ensemble and imodel is None:
+
+                # Check checkpoint label number
+                if len(checkpoint_label) != self.model_ensemble_num:
+                    raise SyntaxError(
+                        "Number of checkpoints in input 'checkpoint_label' "
+                        + f"({len(checkpoint_label):d}) does not match the "
+                        + "number of models in the model ensemble "
+                        + f"({self.model_ensemble_num:d}).")
+
+                # Get model checkpoint file paths
+                ckpt_name = [
+                    os.path.join(ckpt_dir, f'model_{ckpt_num:d}.pt')
+                    for ckpt_num, ckpt_dir in zip(
+                        checkpoint_label, self.ckpt_dir)
+                    ]
+
+                # Check existence of each file
+                message = ""
+                for imdl, ckpt_name_i in enumerate(ckpt_name):
+                    if not os.path.exists(ckpt_name_i):
+                        ckpt_name[imdl] = None
+                        message += (
+                            f" Checkpoint file '{ckpt_name_i:s}' for model "
+                            + f"{imdl:d} not found!\n")
+                    else:
+                        message += (
+                            f" Found checkpoint file '{ckpt_name_i:s}' for "
+                            + f"model {imdl:d}!\n")
+                message = message[:-1]
+
+                if np.any(
+                    [ckpt_name_i is None for ckpt_name_i in ckpt_name]
+                ):
+                    message = "Checkpoint files not found:\n" + message
+                    raise FileNotFoundError(message)
+                elif verbose:
+                    message = "Checkpoint files found:\n" + message
+                    self.logger.info(message)
+
+            else:
+
+                # Get model checkpoint file path
+                if self.model_ensemble:
+                    ckpt_dir = self.ckpt_dir[imodel]
+                    ckpt_num = checkpoint_label[imodel]
+                else:
+                    ckpt_dir = self.ckpt_dir
+                    ckpt_num = 0
+                ckpt_name = os.path.join(ckpt_dir, f'model_{ckpt_num:d}.pt')
+
+                # Check existence
+                if not os.path.exists(ckpt_name):
+                    raise FileNotFoundError(
+                        f"Checkpoint file '{ckpt_name}' not found!")
+                elif verbose and self.model_ensemble:
+                    self.logger.info(
+                        f"Checkpoint file '{ckpt_name}' found "
+                        + f"for model {imodel:d}!")
+                elif verbose:
+                    self.logger.info(
+                        f"Checkpoint file '{ckpt_name}' found!")
+
         # Load specific model checkpoint file
         elif utils.is_string(checkpoint_label):
 
-            # For model ensembles without certain model definition is not
-            # supported
+            # For model ensembles without certain model definition, the single
+            # checkpoint label is applied to all models
             if self.model_ensemble and imodel is None:
-                raise NotImplementedError(
-                    "For model ensembles, the definition of the model number "
-                    + "'imodel' is mandatory")
+
+                # Get model checkpoint file paths
+                ckpt_name = [
+                    checkpoint_label for _ in range(self.model_ensemble_num)]
+
+                # Check existence of each file
+                message = ""
+                for imdl, ckpt_name_i in enumerate(ckpt_name):
+                    if not os.path.exists(ckpt_name_i):
+                        ckpt_name[imdl] = None
+                        message += (
+                            f" Checkpoint file '{ckpt_name_i:s}' for model "
+                            + f"{imdl:d} not found!\n")
+                    else:
+                        message += (
+                            f" Found checkpoint file '{ckpt_name_i:s}' for "
+                            + f"model {imdl:d}!\n")
+                message = message[:-1]
+
+                if np.any(
+                    [ckpt_name_i is None for ckpt_name_i in ckpt_name]
+                ):
+                    message = "Checkpoint files not found:\n" + message
+                    raise FileNotFoundError(message)
+                elif verbose:
+                    message = "Checkpoint files found:\n" + message
+                    self.logger.info(message)
 
             # Check for checkpoint file
             else:
 
+                # Get model checkpoint file path
                 ckpt_name = checkpoint_label
 
                 # Check existence
                 if not os.path.exists(ckpt_name):
                     raise FileNotFoundError(
-                        f"Checkpoint file '{ckpt_name}' does not exist!")
+                        f"Checkpoint file '{ckpt_name}' not found!")
+                elif verbose and self.model_ensemble:
+                    self.logger.info(
+                        f"Checkpoint file '{ckpt_name}' found "
+                        + f"for model {imodel:d}!")
+                elif verbose:
+                    self.logger.info(
+                        f"Checkpoint file '{ckpt_name}' found!")
+
+        # Load specific model checkpoint files
+        elif utils.is_string_array(checkpoint_label):
+
+            # For model ensembles without certain model definition check
+            # in all model subdirectories
+            if self.model_ensemble and imodel is None:
+
+                # Check checkpoint label number
+                if len(checkpoint_label) != self.model_ensemble_num:
+                    raise SyntaxError(
+                        "Number of checkpoints in input 'checkpoint_label' "
+                        + f"({len(checkpoint_label):d}) does not match the "
+                        + "number of models in the model ensemble "
+                        + f"({self.model_ensemble_num:d}).")
+
+                # Get model checkpoint file paths
+                ckpt_name = checkpoint_label
+
+                # Check existence of each file
+                message = ""
+                for imdl, ckpt_name_i in enumerate(ckpt_name):
+                    if not os.path.exists(ckpt_name_i):
+                        ckpt_name[imdl] = None
+                        message += (
+                            f" Checkpoint file '{ckpt_name_i:s}' for model "
+                            + f"{imdl:d} not found!\n")
+                    else:
+                        message += (
+                            f" Found checkpoint file '{ckpt_name_i:s}' for "
+                            + f"model {imdl:d}!\n")
+                message = message[:-1]
+
+                if np.any(
+                    [ckpt_name_i is None for ckpt_name_i in ckpt_name]
+                ):
+                    message = "Checkpoint files not found:\n" + message
+                    raise FileNotFoundError(message)
+                elif verbose:
+                    message = "Checkpoint files found:\n" + message
+                    self.logger.info(message)
+
+            else:
+
+                # Get model checkpoint file path
+                ckpt_name = checkpoint_label[0]
+
+                # Check existence
+                if not os.path.exists(ckpt_name):
+                    raise FileNotFoundError(
+                        f"Checkpoint file '{ckpt_name}' not found!")
+                elif verbose and self.model_ensemble:
+                    self.logger.info(
+                        f"Checkpoint file '{ckpt_name}' found "
+                        + f"for model {imodel:d}!")
                 elif verbose:
                     self.logger.info(
                         f"Checkpoint file '{ckpt_name}' found!")

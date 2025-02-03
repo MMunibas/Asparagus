@@ -244,7 +244,6 @@ class EnsembleModel(torch.nn.Module):
         checkpoint: List[Dict[str, Any]],
         checkpoint_file: Optional[List[str]] = None,
         verbose: Optional[bool] = True,
-        **kwargs
     ):
         """
         Load model parameters from checkpoint file.

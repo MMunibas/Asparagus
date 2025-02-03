@@ -448,7 +448,10 @@ class EnsembleTrainer:
                 'last',
                 return_name=False,
                 verbose=False)
-            last_epoch = checkpoint[imodel]['epoch']
+            if checkpoint[imodel] is None:
+                last_epoch = 0
+            else:
+                last_epoch = checkpoint[imodel]['epoch']
             if last_epoch >= self.trainer_epoch_steps_list[istep]:
                 # Skip training step
                 self.increment_model_step(imodel)

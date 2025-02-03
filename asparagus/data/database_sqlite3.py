@@ -367,8 +367,9 @@ class DataBase_SQLite3(data.DataBase):
             # parameter are defined, take the latest version smaller than the
             # requested one
             if self.version in init_systems_version:
-                self.init_systems_execute = (
-                    init_systems_version[self.version][:])
+                self.init_systems_execute = [
+                    init_system.strip()
+                    for init_system in init_systems_version[self.version]]
             else:
                 version = self.latest_version(init_systems_version)
                 self.init_systems_execute = (init_systems_version[version][:])
@@ -547,7 +548,7 @@ class DataBase_SQLite3(data.DataBase):
                     if prop_i not in self.structure_properties_dtype.keys():
                         self.init_systems_execute[0] += f"{prop_i} BLOB,\n"
                 self.init_systems_execute[0] = (
-                    self.init_systems_execute[0][:-2] + ")")
+                    self.init_systems_execute[0].strip()[:-1] + ")")
 
                 # Initialize data columns
                 for statement in self.init_systems_execute:

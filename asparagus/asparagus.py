@@ -493,7 +493,7 @@ class Asparagus():
         ####################################
 
         # Assign model calculator
-        model_calculator, checkpoint, checkpoint_file = (
+        model_calculator, checkpoint_state, checkpoint_file = (
             model.get_model_calculator(
                 config=config,
                 model_calculator=model_calculator,
@@ -507,9 +507,8 @@ class Asparagus():
 
         # Load model checkpoint file
         model_calculator.load(
-            checkpoint,
-            checkpoint_file=checkpoint_file,
-            **kwargs)
+            checkpoint_state,
+            checkpoint_file=checkpoint_file)
 
         # Compile model calculator if requested
         if model_compile:

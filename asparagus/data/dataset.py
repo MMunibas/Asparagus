@@ -483,6 +483,7 @@ class DataSet():
             and data_unit_properties is None
         ):
             metadata['unit_properties'] = {}
+            data_unit_properties = {}
         elif metadata.get('unit_properties') is None:
             metadata['unit_properties'] = {}
             message = ""

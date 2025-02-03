@@ -211,14 +211,20 @@ def estimate_property_scaling(
             )
         properties_prediction = {}
         model_scaling = {}
-
+    # print(properties_reference)
+    # print(properties_prediction)
     # Compute model property scaling parameters
     property_scaling = compute_property_scaling(
         properties_reference,
         properties_prediction,
         model_scaling,
         atomic_energies_guess)
-
+    # print(
+    #     model_scaling['atomic_energies'][1],
+    #     model_scaling['atomic_energies'][6],
+    #     model_scaling['atomic_energies'][7],
+    #     model_scaling['atomic_energies'][17])
+    # print(property_scaling)
     return property_scaling
 
 

@@ -632,15 +632,18 @@ class NormalModeScanner(sampling.Sampler):
                 
         # Print sampling info
         for ithread in range(self.sample_num_threads):
-            message = (
-                f"Sampling method '{self.sample_tag:s}' complete for "
-                + f"system of index {index:d} from '{source}!'\n")
             if self.Nsamples[ithread] == 0:
                 message += f"No samples written to "
-            if self.Nsamples[ithread] == 1:
-                message += f"{self.Nsamples[ithread]:d} sample written to "
             else:
-                message += f"{self.Nsamples[ithread]:d} samples written to "
+                message = (
+                    f"Sampling method '{self.sample_tag:s}' complete for "
+                    + f"system from '{source}!'\n")
+                message += f"{self.Nsamples[ithread]:d} sample written to "
+                if self.Nsamples[ithread] == 1:
+                    message += "sample "
+                else:
+                    message += f"samples "
+                message += "written to "
             message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
 
@@ -1383,15 +1386,18 @@ class NormalModeSampler(sampling.Sampler):
 
         # Print sampling info
         for ithread in range(self.sample_num_threads):
-            message = (
-                f"Sampling method '{self.sample_tag:s}' complete for "
-                + f"system of index {index:d} from '{source}!'\n")
             if self.Nsamples[ithread] == 0:
                 message += f"No samples written to "
-            if self.Nsamples[ithread] == 1:
-                message += f"{self.Nsamples[ithread]:d} sample written to "
             else:
-                message += f"{self.Nsamples[ithread]:d} samples written to "
+                message = (
+                    f"Sampling method '{self.sample_tag:s}' complete for "
+                    + f"system from '{source}!'\n")
+                message += f"{self.Nsamples[ithread]:d} sample written to "
+                if self.Nsamples[ithread] == 1:
+                    message += "sample "
+                else:
+                    message += f"samples "
+                message += "written to "
             message += f"'{self.sample_data_file[0]:s}'."
             self.logger.info(message)
 

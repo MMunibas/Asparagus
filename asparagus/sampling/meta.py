@@ -605,7 +605,7 @@ class MetaSampler(sampling.Sampler):
 
         # Attach sample number filter
         if self.sample_nsamples_threshold is not None:
-            md_dyn.attach(
+            meta_dyn.attach(
                 self.check_sample_number,
                 interval=self.meta_save_interval,
                 dyn=meta_dyn)

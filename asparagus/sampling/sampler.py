@@ -320,7 +320,9 @@ class Sampler:
 
         # Check property threshold parameter
         if self.sample_property_threshold is not None:
-            self.check_property_threshold()
+            self.check_property_threshold(
+                self.sample_property_threshold,
+                sample_calculator=ase_calculator)
 
         # Check sample number threshold parameter
         if self.sample_nsamples_threshold is not None:
@@ -333,7 +335,7 @@ class Sampler:
         if self.sample_systems_optimize:
 
             # Assign ASE optimizer
-            self.optimizer_tag = "bfgs"
+            self.optimizer_tag = 'bfgs'
             self.ase_optimizer = optimize.BFGS
 
         #####################################
@@ -498,7 +500,10 @@ class Sampler:
                             sample_system_fragments,
                             system)
                         system.info['fragments'] = fragments
-                    elif 'fragments' in data_i:
+                    elif (
+                        'fragments' in data_i
+                        and data_i['fragments'] is not None
+                    ):
                         system.info['fragments'] = data_i['fragments'].numpy()
                     
                     sample_systems_queue.put((system, isample, source, isys))
@@ -628,7 +633,7 @@ class Sampler:
     def check_properties(
         self,
         sample_properties: List[str],
-        sample_calculator: object
+        sample_calculator: 'ase.Calculator'
     ):
         """
         Check requested sample properties and units with implemented properties
@@ -639,7 +644,7 @@ class Sampler:
         sample_properties: list
             List of system properties to check for availability by the
             calculator.
-        sample_calculator: object
+        sample_calculator: ase.Calculator
             ASE Calculator to compare requested and available properties
             from the calculator.
 
@@ -754,6 +759,12 @@ class Sampler:
             sample_systems_format,
             sample_systems_indices,
             sample_system_fragments)
+
+        # Check if sample systems queue is empty
+        if sample_systems_queue.empty():
+            raise SyntaxError(
+                "No sample systems defined (empty queue)! "
+                + "Check 'sample_systems' input.")
 
         # Update configuration file with sampling parameters
         if 'sampler_schedule' in self.config:
@@ -873,7 +884,7 @@ class Sampler:
             
             # Get sample parameters or wait
             sample = sample_systems_queue.get()
-            
+
             # Check for stop flag
             if sample == 'stop':
                 self.thread_keep_going[ithread] = False
@@ -896,7 +907,8 @@ class Sampler:
                     sample_index=isample)
 
             # Compute system properties
-            system, converged = self.run_calculation(system)
+            system, converged = self.run_calculation(
+                system, isample, source, index)
 
             # Store results
             if converged:
@@ -911,15 +923,18 @@ class Sampler:
             isample = 0
         else:
             isample = ithread
-        message = (
-            f"Sampling method '{self.sample_tag:s}' complete for system from "
-            + f"'{source}!'\n")
         if self.Nsamples[isample] == 0:
             message += f"No samples written to "
-        if self.Nsamples[isample] == 1:
-            message += f"{self.Nsamples[isample]:d} sample written to "
         else:
-            message += f"{self.Nsamples[isample]:d} samples written to "
+            message = (
+                f"Sampling method '{self.sample_tag:s}' complete for system "
+                + f"from '{source}!'\n")
+            message += f"{self.Nsamples[isample]:d} sample written to "
+            if self.Nsamples[isample] == 1:
+                message += "sample "
+            else:
+                message += f"samples "
+            message += "written to "
         message += f"'{self.sample_data_file[0]:s}'."
         self.logger.info(message)
 
@@ -928,6 +943,9 @@ class Sampler:
     def run_calculation(
         self,
         system: ase.Atoms,
+        isample: Optional[int] = None,
+        source: Optional[str] = None,
+        index: Optional[int] = None,
         try_again: Optional[bool] = True,
     ) -> (ase.Atoms, bool):
         """
@@ -939,6 +957,12 @@ class Sampler:
         system: ase.Atoms
             ASE atoms object with linked calculator to run the reference
             calculation with.
+        isample: int, optional, default None
+            For log file, sample number from 'source'.
+        source: str, optional, default None
+            For log file, sample system 'source'.
+        index: int, optional, default None
+            For log file, sample system 'source' index.
         try_again: bool, optional, default True
             If the calculation failed (converged == False), try the reference
             calculation for a second time with 'try_again=False' then.
@@ -952,7 +976,8 @@ class Sampler:
             Flag for converged (True) or failed (False) reference calculation
 
         """
-        
+
+        # Run calculation
         try:
 
             system.calc.calculate(
@@ -983,6 +1008,24 @@ class Sampler:
 
         if not converged and try_again:
             system, converged = self.run_calculation(system, try_again=False)
+
+        # Store calculation state to log file
+        if isample is None:
+            isample = -1
+        if source is None:
+            source = 'None'
+        if index is None:
+            index = -1
+        message = f"{time.asctime():s} "
+        if converged:
+            message += "CONVERGED "
+        else:
+            message += "FAILED "
+        message += (
+            f"calculation for sample {isample:d} of '{source:s}' ({index:d})")
+        with self.lock:
+            with open(self.sample_log_file, 'a') as flog:
+                flog.write(message)
 
         return system, converged
 
@@ -1143,7 +1186,7 @@ class Sampler:
         Parameters
         ----------
         ithread: int
-            Thread number.
+            Thread number
 
         """
         
@@ -1190,7 +1233,7 @@ class Sampler:
         # Check for property thresholds
         if self.sample_property_threshold is not None:
             for prop, value in self.sample_property_threshold.items():
-                if system_properties[prop] < value:
+                if system.calc.results[prop] < value:
                     return
 
         # Check for number of sample threshold
@@ -1215,7 +1258,22 @@ class Sampler:
         # Check trajectory file
         if trajectory_file is None:
             return
-        
+
+        # Check for property thresholds
+        # If accepted, write to another trajectory file
+        threshold_trajectory_file = None
+        if self.sample_property_threshold is not None:
+            accepted = True
+            for prop, value in self.sample_property_threshold.items():
+                if system.calc.results[prop] < value:
+                    accepted = False
+            if accepted:
+                threshold_trajectory_file = (
+                    f'{trajectory_file:s}.threshold.traj')
+                threshold_trajectory_properties = (
+                    self.sample_properties
+                    + list(self.sample_property_threshold.keys()))
+
         # Save system without constraint to the trajectory file
         with self.lock:
             trajectory = ase.io.Trajectory(
@@ -1226,38 +1284,76 @@ class Sampler:
             system_noconstraint.set_constraint()
             trajectory.write(system_noconstraint)
             trajectory.close()
+            if threshold_trajectory_file is not None:
+                trajectory = ase.io.Trajectory(
+                    threshold_trajectory_file, atoms=system_noconstraint,
+                    mode='a', properties=threshold_trajectory_properties)
+                trajectory.write(system_noconstraint)
+                trajectory.close()
 
         return
 
     def check_property_threshold(
-        self
+        self,
+        sample_property_threshold: Dict[str, float],
+        sample_calculator: Optional['ase.Calculator'] = None,
     ):
         """
         Check property threshold input
+
+        Parameters
+        ----------
+        sample_property_threshold: dict
+            Dictionary of model property (key) minimum threshold values (item)
+            to decide if samples or frames are added to the sample data file.
+        sample_calculator: ASE.Calculator, optional, default None
+            ASE Calculator used for sampling. If defined, check if the
+            calculators implemented properties contain the requested property,
+            else check with sample properties.
+
         """
 
+        # Get available property list
+        if sample_calculator is None:
+            available_properties = self.sample_properties
+        else:
+            available_properties = sample_calculator.implemented_properties
+
+        # Get available property unit dictionary
+        available_unit_properties = {}
+        for prop in available_properties:
+            if prop in self.sample_unit_properties:
+                available_unit_properties[prop] = (
+                    self.sample_unit_properties[prop])
+            elif 'std_' in prop:
+                available_unit_properties[prop] = (
+                    interface.ase_calculator_units.get(prop[4:]))
+            else:
+                available_unit_properties[prop] = (
+                    interface.ase_calculator_units.get(prop))
+
         if (
-            self.sample_property_threshold is not None
-            and utils.is_dictionary(self.sample_property_threshold)
+            sample_property_threshold is not None
+            and utils.is_dictionary(sample_property_threshold)
         ):
             message = (
                 "Property threshold filter is applied to store samples in "
                 + f"'{self.sample_data_file[0]:s}'!\n"
                 + f" {'Property':<12s}   Threshold\n"
                 + "-"*30 + "\n")
-            for prop, value in self.sample_property_threshold.items():
-                if prop not in self.sample_properties:
+            for prop, value in sample_property_threshold.items():
+                if prop not in available_properties:
                     raise ValueError(
                         "Property threshold dictionary "
                         + "'sample_property_threshold' contains invalid "
                         + f"property '{prop:s}' which is not a calculator "
-                        + f"property:\n{self.sample_properties}")
+                        + f"property:\n{available_properties}")
                 if utils.is_numeric(value):
-                    self.sample_property_threshold[prop] = float(value)
+                    sample_property_threshold[prop] = float(value)
                     message += (
                         f" {prop:>12} > "
-                        + f"{self.sample_property_threshold[prop]:.2E}"
-                        + f" {self.sample_unit_properties[prop]:s}\n")
+                        + f"{sample_property_threshold[prop]:.2E}"
+                        + f" {available_unit_properties[prop]:s}\n")
                 else:
                     raise ValueError(
                         "Property threshold dictionary "
@@ -1265,12 +1361,12 @@ class Sampler:
                         + f"threshold value for property '{prop:s}' of type "
                         + f"'{value}'!")
             self.logger.info(message)
-        elif self.sample_property_threshold is not None:
+        elif sample_property_threshold is not None:
             raise ValueError(
                 "Property threshold dictionary 'sample_property_threshold' "
                 + "must be a dictionary of a valid property (key) and "
                 + "threshold value (value), but is of type "
-                + f"'{type(self.sample_property_threshold)}'!")
+                + f"'{type(sample_property_threshold)}'!")
 
         return
 
@@ -1288,7 +1384,7 @@ class Sampler:
             and self.sample_nsamples_threshold > 0
         ):
             message = (
-                "Sample number threshold filter for a maximum of"
+                "Sample number threshold filter for a maximum of "
                 + f"{self.sample_nsamples_threshold:d} is applied that are "
                 + f"stored in '{self.sample_data_file[0]:s}'!\n")
             self.logger.info(message)
