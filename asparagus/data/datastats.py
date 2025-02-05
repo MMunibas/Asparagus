@@ -394,6 +394,8 @@ def compute_atomic_property_sum_scaling(
     atoms_number: np.ndarray,
     atomic_numbers: np.ndarray,
     sys_i: np.ndarray,
+    set_shift_term: Optional[bool] = True,
+    set_scaling_factor: Optional[bool] = True,
     verbose: Optional[bool] = False,
 ) -> Dict[str, List[float]]:
     """
@@ -415,6 +417,10 @@ def compute_atomic_property_sum_scaling(
         System atomic numbers
     sys_i: np.ndarray
         System indices of atoms
+    set_shift_term: bool, optional, default True
+        If True, estimate shift terms.
+    set_scaling_factor: bool, optional, default True
+        If True, estimate the scaling factors.
 
     Return
     ------
@@ -458,21 +464,26 @@ def compute_atomic_property_sum_scaling(
         atomic_numbers, return_inverse=True)
 
     # Compute atomic energies average and standard deviation
-    property_atomic_reference_mean = np.mean(property_reference/atoms_number)
-    property_atomic_reference_stdv = np.std(
-        property_reference/atoms_number)
-    if property_atomic_reference_stdv == 0.0:
+    if set_shift_term:
+        property_atomic_reference_mean = np.mean(
+            property_reference/atoms_number)
+    else:
+        property_atomic_reference_mean = 0.0
+    if set_scaling_factor:
+        property_atomic_reference_stdv = np.std(
+            property_reference/atoms_number)
+    elif not set_scaling_factor or property_atomic_reference_stdv == 0.0:
         property_atomic_reference_stdv = 1.0
 
     # Set initial property shift and scaling parameter as atom scaled average
     # and standard deviation of the system reference property
-    property_scale = np.full(
-        atomic_numbers_list.shape,
-        property_atomic_reference_stdv,
-        dtype=float)
     property_shift = np.full(
         atomic_numbers_list.shape,
         property_atomic_reference_mean,
+        dtype=float)
+    property_scale = np.full(
+        atomic_numbers_list.shape,
+        property_atomic_reference_stdv,
         dtype=float)
 
     if property_prediction_scaling is None:
@@ -490,19 +501,19 @@ def compute_atomic_property_sum_scaling(
         # Iterate over available elements
         for iatom, atomic_number in enumerate(atomic_numbers_list):
 
+            selection = atomic_number==atomic_numbers
             property_atomic_prediction_shift = np.mean(
-                property_prediction[atomic_number==atomic_numbers])
+                property_prediction[selection])
             property_atomic_prediction_scale = np.std(
-                property_prediction[atomic_number==atomic_numbers])
+                property_prediction[selection])
             if property_atomic_prediction_scale == 0.0:
                 property_atomic_prediction_scale = 1.0
-            #print(iatom, atomic_number, property_atomic_prediction_scale, property_atomic_prediction_shift)
+
             # Attune atomic property shift and scaling parameter
-            #print(property_scale[iatom], property_shift[iatom])
-            property_scale[iatom] /= property_atomic_prediction_scale
-            property_shift[iatom] -= (
-                property_atomic_prediction_shift*property_scale[iatom])
-            #print(property_scale[iatom], property_shift[iatom])
+            if set_shift_term:
+                property_shift[iatom] -= property_atomic_prediction_shift
+            if set_scaling_factor:
+                property_scale[iatom] /= property_atomic_prediction_scale
 
     # Define energy computation and evaluation function
     def property_sum(
@@ -520,10 +531,11 @@ def compute_atomic_property_sum_scaling(
         if property_prediction is None:
             atomic_property = np.array(shifts)[aidcs]
         else:
-            atomic_property = (
-                (property_prediction[aidcs] - model_scaling[aidcs, 0])
-                * scales[aidcs]
-                + shifts[aidcs] + model_scaling[aidcs, 0])
+            atomic_property = property_prediction.copy()
+            for iatom, atomic_number in enumerate(atomic_numbers_list):
+                selection = atomic_number==atomic_numbers
+                atomic_property[selection] = (
+                    atomic_property[selection]*scales[iatom] + shifts[iatom])
 
         # Sum up atomic property to system property
         np.add.at(prediction, sidcs, atomic_property)
@@ -537,7 +549,14 @@ def compute_atomic_property_sum_scaling(
     ):
 
         # Collect property per atom type
-        shifts, scales = pars.reshape(2, -1)
+        if set_shift_term and set_scaling_factor:
+            shifts, scales = pars.reshape(2, -1)
+        elif set_shift_term:
+            shifts = pars
+            scales = np.ones_like(pars)
+        else:
+            scales = pars
+            shifts = np.zeros_like(pars)
         prediction = property_sum(shifts, scales)
 
         # Compute root mean square error between reference and prediction
@@ -548,15 +567,23 @@ def compute_atomic_property_sum_scaling(
 
         return rmse
 
-    # If systems have different atom compositions,
+    # If systems have different atom compositions or prediction is available,
     # fit atomic property to match best the system energies.
-    if various_systems:
+    if (
+        (various_systems or property_prediction is not None)
+        and (set_shift_term or set_scaling_factor)
+    ):
 
         # Start fitting procedure
         try:
 
             # Concatenate shift term and scaling factor
-            pars = np.append(property_shift, property_scale)
+            if set_shift_term and set_scaling_factor:
+                pars = np.append(property_shift, property_scale)
+            elif set_shift_term:
+                pars = property_shift
+            else:
+                pars = property_scale
 
             # Start fitting atomic energies shifts
             from scipy.optimize import minimize
@@ -567,7 +594,12 @@ def compute_atomic_property_sum_scaling(
             fit_rmse = fit_result.fun
 
             # Assign fit results
-            property_shift, property_scale = fit_result.x.reshape(2, -1)
+            if set_shift_term and set_scaling_factor:
+                property_shift, property_scale = fit_result.x.reshape(2, -1)
+            elif set_shift_term:
+                property_shift = fit_result.x.reshape(-1)
+            else:
+                property_scale = fit_result.x.reshape(-1)
 
             # Set successful fitting flag
             fit_complete = True
@@ -585,9 +617,6 @@ def compute_atomic_property_sum_scaling(
         # Set None fitting flag
         fit_complete = None
         fit_rmse = np.nan
-
-    #pars = np.append(property_shift, property_scale)
-    #print(system_property_eval(pars))
 
     # Assign atomic energies statistics
     for iatom, atomic_number in enumerate(atomic_numbers_list):

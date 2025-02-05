@@ -99,7 +99,9 @@ def set_property_scaling_estimation(
             properties_first,
             use_model_prediction,
             model_conversion,
-            atomic_energies_guess)
+            atomic_energies_guess,
+            set_shift_term=set_shift_term,
+            set_scaling_factor=set_scaling_factor)
 
         # Set model property scaling parameter to the model calculator output
         # module
@@ -122,7 +124,9 @@ def set_property_scaling_estimation(
             properties_second,
             use_model_prediction,
             model_conversion,
-            atomic_energies_guess)
+            atomic_energies_guess,
+            set_shift_term=set_shift_term,
+            set_scaling_factor=set_scaling_factor)
 
         # Set model property scaling parameter to the model calculator output
         # module
@@ -146,6 +150,8 @@ def estimate_property_scaling(
     use_model_prediction: bool,
     model_conversion: Dict[str, float],
     atomic_energies_guess: bool,
+    set_shift_term: Optional[bool] = True,
+    set_scaling_factor: Optional[bool] = True,
 ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
     """
     Estimate model property scaling parameters and prepare respective
@@ -170,6 +176,10 @@ def estimate_property_scaling(
         In case atomic energies are not available by the reference data
         set, which is normally the case, predict anyways from a guess of
         the difference between total reference energy and predicted energy.
+    set_shift_term: bool, optional, default True
+        If True, estimate shift terms.
+    set_scaling_factor: bool, optional, default True
+        If True, estimate the scaling factors.
 
     Returns
     -------
@@ -216,7 +226,9 @@ def estimate_property_scaling(
         properties_reference,
         properties_prediction,
         model_scaling,
-        atomic_energies_guess)
+        atomic_energies_guess,
+        set_shift_term=set_shift_term,
+        set_scaling_factor=set_scaling_factor)
 
     return property_scaling
 
@@ -282,9 +294,6 @@ def get_model_prediction_and_reference_properties(
         for prop in properties_system + properties_available:
             properties_reference[prop].append(
                 batch[prop].cpu().detach())
-
-        #if ib > 1:
-            #break
 
     # Concatenate prediction and reference results
     for prop, item in properties_prediction.items():
@@ -390,6 +399,8 @@ def compute_property_scaling(
     properties_prediction: Dict[str, np.ndarray],
     model_scaling: Dict[str, Union[List[float], Dict[int, List[float]]]],
     atomic_energies_guess: bool,
+    set_shift_term: Optional[bool] = True,
+    set_scaling_factor: Optional[bool] = True,
 ) -> Dict[str, Union[List[float], Dict[int, List[float]]]]:
     """
     Compute guess of property scaling parameters either from the reference
@@ -406,6 +417,10 @@ def compute_property_scaling(
     atomic_energies_guess: bool
         Predict atomic energies scaling parameter eventually from the
         total system energy data.
+    set_shift_term: bool, optional, default True
+        If True, estimate shift terms.
+    set_scaling_factor: bool, optional, default True
+        If True, estimate the scaling factors.
 
     Returns
     -------
@@ -451,18 +466,23 @@ def compute_property_scaling(
                 # Special case: Atomic energies scaling guess
                 if prop == 'energy' and atomic_energies_guess:
 
-                    # Prepare reference energy to scale output module atomic
+                    # Prepare reference energy by subtracting energy 
+                    # contribution which are not from the output module atomic
                     # energies
                     reference_output_energy = (
                         properties_reference['energy'].copy())
-                    property_tag = 'energy'
+                    property_tag = '_energy'
+                    property_list = []
                     for prop, item in properties_prediction.items():
                         if property_tag in prop[-len(property_tag):]:
                             if 'output_' in prop:
                                 continue
                             else:
+                                property_list.append(prop)
                                 reference_output_energy -= item
 
+                    # Scale atomic energies output to best match total system
+                    # energy
                     properties_scaling['atomic_energies'] = (
                         data.compute_atomic_property_sum_scaling(
                             reference_output_energy,
@@ -471,7 +491,9 @@ def compute_property_scaling(
                             model_scaling['atomic_energies'],
                             properties_reference['atoms_number'],
                             properties_reference['atomic_numbers'],
-                            properties_reference['sys_i'])
+                            properties_reference['sys_i'],
+                            set_shift_term=set_shift_term,
+                            set_scaling_factor=set_scaling_factor)
                         )
 
                 elif prop == 'atomic_energies':
@@ -508,12 +530,16 @@ def compute_property_scaling(
         if prop in properties_scaling:
             if utils.is_dictionary(properties_scaling[prop]):
                 for ai in properties_scaling[prop]:
-                    properties_scaling[prop][ai][0] += (
-                        model_scaling[prop][ai][0])
+                    properties_scaling[prop][ai][0] = (
+                        model_scaling[prop][ai][0]
+                        * properties_scaling[prop][ai][1]
+                        + properties_scaling[prop][ai][0])
                     properties_scaling[prop][ai][1] *= (
                         model_scaling[prop][ai][1])
             else:
-                properties_scaling[prop][0] += model_scaling[prop][0]
+                properties_scaling[prop][0] = (
+                    model_scaling[prop][0]*properties_scaling[prop][1]
+                    + properties_scaling[prop][0])
                 properties_scaling[prop][1] *= model_scaling[prop][1]
 
     return properties_scaling

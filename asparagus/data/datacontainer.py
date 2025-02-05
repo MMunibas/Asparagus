@@ -49,8 +49,12 @@ class DataContainer():
         string (item) in the source data files.
         If None, the property units as defined in 'data_unit_properties'
         are assumed.
-        This input is only regarded for data source format, where no property
+     ^   This input is only regarded for data source format, where no property
         units are defined such as the Numpy npz files.
+    #data_source_property_filter: dictionary, optional, default None
+        #Property conditions to avoid/filter out data from data source which
+        #fulfill the conditions, e.g., an 'energy' (key) larger than a threshold
+        #value (item).
     data_num_train: (int, float), optional, default 0.8 (80% of data)
         Number of training data points [absolute (>1) or relative
         (<= 1.0)].
@@ -89,6 +93,7 @@ class DataContainer():
                                         'forces': 'eV/Ang',
                                         'dipole': 'e*Ang'},
         'data_source_unit_properties':  None,
+        #'data_source_property_filter':  None,
         'data_alt_property_labels':     {},
         'data_num_train':               0.8,
         'data_num_valid':               0.1,
@@ -107,6 +112,7 @@ class DataContainer():
         'data_properties':              [utils.is_array_like],
         'data_unit_properties':         [utils.is_dictionary],
         'data_source_unit_properties':  [utils.is_dictionary, utils.is_None],
+        #'data_source_property_filter':  [utils.is_dictionary, utils.is_None],
         'data_alt_property_labels':     [utils.is_dictionary],
         'data_num_train':               [utils.is_numeric],
         'data_num_valid':               [utils.is_numeric],
