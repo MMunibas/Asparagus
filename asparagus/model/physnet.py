@@ -699,14 +699,14 @@ class Model_PhysNet(model.BaseModel):
 
             if self.model_hessian:
                 hessian = results['energy'].new_zeros(
-                    (gradient.size(0), gradient.size(0)))
+                    (gradient.size(0), gradient.size(0), 3))
                 for ig in range(gradient.size(0)):
                     hessian_ig = torch.autograd.grad(
-                        [gradient[ig]],
+                        [torch.sum(gradient[ig])],
                         positions,
                         retain_graph=(ig < gradient.size(0)))[0]
                     if hessian_ig is not None:
-                        hessian[ig] = hessian_ig.view(-1)
+                        hessian[ig] = hessian_ig
                 results['hessian'] = hessian
 
         # Compute molecular dipole if demanded

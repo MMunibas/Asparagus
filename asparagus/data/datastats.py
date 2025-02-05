@@ -496,11 +496,13 @@ def compute_atomic_property_sum_scaling(
                 property_prediction[atomic_number==atomic_numbers])
             if property_atomic_prediction_scale == 0.0:
                 property_atomic_prediction_scale = 1.0
-
+            #print(iatom, atomic_number, property_atomic_prediction_scale, property_atomic_prediction_shift)
             # Attune atomic property shift and scaling parameter
+            #print(property_scale[iatom], property_shift[iatom])
             property_scale[iatom] /= property_atomic_prediction_scale
             property_shift[iatom] -= (
                 property_atomic_prediction_shift*property_scale[iatom])
+            #print(property_scale[iatom], property_shift[iatom])
 
     # Define energy computation and evaluation function
     def property_sum(
@@ -583,6 +585,9 @@ def compute_atomic_property_sum_scaling(
         # Set None fitting flag
         fit_complete = None
         fit_rmse = np.nan
+
+    #pars = np.append(property_shift, property_scale)
+    #print(system_property_eval(pars))
 
     # Assign atomic energies statistics
     for iatom, atomic_number in enumerate(atomic_numbers_list):

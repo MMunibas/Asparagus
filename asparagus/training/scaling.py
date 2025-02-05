@@ -211,20 +211,13 @@ def estimate_property_scaling(
             )
         properties_prediction = {}
         model_scaling = {}
-    # print(properties_reference)
-    # print(properties_prediction)
-    # Compute model property scaling parameters
+
     property_scaling = compute_property_scaling(
         properties_reference,
         properties_prediction,
         model_scaling,
         atomic_energies_guess)
-    # print(
-    #     model_scaling['atomic_energies'][1],
-    #     model_scaling['atomic_energies'][6],
-    #     model_scaling['atomic_energies'][7],
-    #     model_scaling['atomic_energies'][17])
-    # print(property_scaling)
+
     return property_scaling
 
 
@@ -289,6 +282,9 @@ def get_model_prediction_and_reference_properties(
         for prop in properties_system + properties_available:
             properties_reference[prop].append(
                 batch[prop].cpu().detach())
+
+        #if ib > 1:
+            #break
 
     # Concatenate prediction and reference results
     for prop, item in properties_prediction.items():
@@ -457,10 +453,12 @@ def compute_property_scaling(
 
                     # Prepare reference energy to scale output module atomic
                     # energies
-                    reference_output_energy = properties_reference['energy']
+                    reference_output_energy = (
+                        properties_reference['energy'].copy())
+                    property_tag = 'energy'
                     for prop, item in properties_prediction.items():
-                        if '_energy' in prop[-len('_energy'):]:
-                            if 'output' in prop:
+                        if property_tag in prop[-len(property_tag):]:
+                            if 'output_' in prop:
                                 continue
                             else:
                                 reference_output_energy -= item
@@ -478,9 +476,21 @@ def compute_property_scaling(
 
                 elif prop == 'atomic_energies':
 
+                    # Prepare reference atomic energies to scale with the 
+                    # output module atomic energies
+                    reference_output_atomic_energies = ( 
+                        properties_reference['atomic_energies'].copy())
+                    property_tag = '_atomic_energies'
+                    for prop, item in properties_prediction.items():
+                        if property_tag in prop[-len(property_tag):]:
+                            if 'output_' in prop:
+                                continue
+                            else:
+                                reference_output_atomic_energies -= item
+
                     properties_scaling[prop] = (
                         data.compute_system_property_scaling(
-                            properties_reference[prop],
+                            reference_output_atomic_energies,
                             properties_prediction.get(
                                 'output_atomic_energies'))
                         )
