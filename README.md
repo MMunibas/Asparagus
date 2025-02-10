@@ -1,6 +1,6 @@
 # Project Asparagus
 
-**Authors**: K. Toepfer, L.I. Vazquez-Salazar
+**Authors**: K. Toepfer, L.I. Vazquez-Salazar, ...
 
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
