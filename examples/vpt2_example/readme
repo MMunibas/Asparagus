@@ -1,0 +1,29 @@
+***
+Getting Started
+
+This example describes how to use Second Order Vibrational Pertrubation Theory (VPT2) to obtain anharmonic frequencies using Asparagus and Gaussian software.
+
+***
+With your Asparagus environment enabled, install the required package:
+
+pip install fortranformat==0.2.5
+
+***
+Geometry optimization using Gaussian with external potential:
+To do this, modify the opt_min.com file with your charge, multiplicity, and coordinates. Replace the .json file with your model .json file in asp_freq.py and asp_energy_forces.py
+Then submit the optimization job using gview:
+gview opt_min.com
+ctrl + g
+submit
+submit
+YES
+
+After optimization, replace the coordinates in asp_vpt2.com with the Cartesian coordinates of your optimized structure.
+Then submit the VPT2 calculation using gview:
+gview asp_vpt2.com
+ctrl + g
+submit
+submit
+YES
+
+
