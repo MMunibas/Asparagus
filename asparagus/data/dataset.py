@@ -309,6 +309,7 @@ class DataSet():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
+        data_keep_scaling: Optional[bool] = False,
     ):
         """
         Load properties from data source.
@@ -328,6 +329,10 @@ class DataSet():
         data_source_unit_properties: dictionary, optional, default None
             Dictionary from properties (keys) to corresponding unit as a 
             string (item) in the source data files.
+        data_keep_scaling: bool, optional, default False
+            If True, keep previous property and atomic energies scaling
+            parameter if available or take over from source database file.
+            Else, set flag for recomputation.
 
         """
 
@@ -363,16 +368,53 @@ class DataSet():
         if data_alt_property_labels is None:
             data_alt_property_labels = self.data_alt_property_labels
 
-        # Reset property scaling flag
-        metadata['data_property_scaling_uptodate'] = False
-        metadata['data_atom_energies_scaling_uptodate'] = False
-
         # Initialize DataReader
         datareader = data.DataReader(
             data_file=self.data_file,
             data_properties=data_properties,
             data_unit_properties=data_unit_properties,
             data_alt_property_labels=data_alt_property_labels)
+
+        # Get metadata from source database file
+        metadata_source = datareader.get_metadata(data_source)
+
+        # Take over property scaling or reset scaling flag
+        if (
+            data_keep_scaling
+            and metadata.get('data_property_scaling') is None
+            and metadata_source.get('data_property_scaling') is not None
+        ):
+            metadata['data_property_scaling'] = (
+                metadata_source['data_property_scaling'])
+            metadata['data_property_scaling_label'] = (
+                metadata_source['data_property_scaling_label'])
+            metadata['data_property_scaling_uptodate'] = True
+        elif (
+            data_keep_scaling
+            and metadata.get('data_property_scaling') is not None
+        ):
+            metadata['data_property_scaling_uptodate'] = True
+        else:
+            metadata['data_property_scaling_uptodate'] = False
+
+        # Take over atomic energies scaling or reset scaling flag
+        if (
+            data_keep_scaling
+            and metadata.get('data_atomic_energies_scaling') is None
+            and metadata_source.get('data_atomic_energies_scaling') is not None
+        ):
+            metadata['data_atomic_energies_scaling'] = (
+                metadata_source['data_atomic_energies_scaling'])
+            metadata['data_atomic_energies_scaling_label'] = (
+                metadata_source['data_atomic_energies_scaling_label'])
+            metadata['data_atomic_energies_scaling_uptodate'] = True
+        elif (
+            data_keep_scaling
+            and metadata.get('data_atomic_energies_scaling') is not None
+        ):
+            metadata['data_atomic_energies_scaling_uptodate'] = True
+        else:
+            metadata['data_atomic_energies_scaling_uptodate'] = False
 
         # Load data file
         datareader.load(

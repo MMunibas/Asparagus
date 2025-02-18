@@ -184,6 +184,13 @@ class DataReader():
             'ase.traj': self.load_traj,
             }
 
+        # Assign dataset format with respective metadata load function
+        self.data_file_format_get_metadata = {
+            'db.sql':   self.get_db_metadata,
+            'db.npz':   self.get_db_metadata,
+            'db.h5':    self.get_db_metadata,
+            }
+
         return
 
     def load(
@@ -245,6 +252,60 @@ class DataReader():
                 **kwargs)
 
         return
+
+    def get_metadata(
+        self,
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
+        data_unit_properties: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, List[str]]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Load data from respective dataset format.
+
+        Parameters
+        ----------
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file
+        data_properties: List(str), optional, default None
+            Subset of properties to load
+        data_unit_properties: dict, optional, default None
+            Dictionary from properties (keys) to corresponding unit as a
+            string (item), e.g.:
+                {property: unit}: { 'positions': 'Ang',
+                                    'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_alt_property_labels: dict, optional, default None
+            Dictionary of alternative property labeling to replace
+            non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        dict(str, any)
+            Source database file metadata
+
+        """
+
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
+        if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
+
+        # Load data from source of respective format
+        if self.data_file_format_get_metadata.get(data_source[1]) is None:
+            metadata = {}
+        else:
+            metadata = self.data_file_format_get_metadata[data_source[1]](
+                data_source,
+                data_properties=data_properties,
+                data_unit_properties=data_unit_properties,
+                data_alt_property_labels=data_alt_property_labels)
+
+        return metadata
 
     def load_db(
         self,
@@ -1185,17 +1246,18 @@ class DataReader():
 
     def get_unit_conversion(
         self,
-        data_properties,
-        data_unit_properties,
-        source_unit_properties,
+        data_properties: Dict[str, str],
+        data_unit_properties: Dict[str, float],
+        source_unit_properties: Dict[str, float],
     ) -> Dict[str, float]:
         """
         Assign source property to data property unit conversion factors.
 
         Parameters
         ----------
-        data_properties: List(str)
-            Subset of properties to load
+        data_properties: dict(str, str)
+            Property labels dictionary from data file (key) and data source
+            (item)
         data_unit_properties: dict
             Dictionary from data properties (keys) to corresponding unit as a
             string (item)
@@ -1659,5 +1721,90 @@ class DataReader():
 
         return SyntaxError(f"Invalid cell shape '{cell.shape:}'.")
 
+    def get_db_metadata(
+        self,
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
+        data_unit_properties: Optional[Dict[str, str]] = None,
+        data_alt_property_labels: Optional[Dict[str, List[str]]] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Load data from asparagus dataset format.
 
+        Parameters
+        ----------
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_properties: List(str), optional, default None
+            Subset of properties to load
+        data_unit_properties: dict, optional, default None
+            Dictionary from properties (keys) to corresponding unit as a
+            string (item), e.g.:
+                {property: unit}: { 'positions': 'Ang',
+                                    'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_alt_property_labels: dict, optional, default None
+            Dictionary of alternative property labeling to replace
+            non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        dict(str, any)
+            Source database file metadata
+
+        """
+
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
+        if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
+
+        # Get source data metadata
+        with data.connect(data_source[0], data_source[1], mode='r') as db:
+            source_metadata = db.get_metadata()
+            source_properties = db.get(1)[0].keys()
+            source_unit_properties = source_metadata['unit_properties']
+
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            data_source,
+            source_properties,
+            data_properties,
+            [],
+            data_alt_property_labels)
+
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            source_unit_properties,
+        )
+
+        # Convert property scaling
+        if source_metadata.get('data_property_scaling') is not None:
+            for prop in source_metadata['data_property_scaling']:
+                if unit_conversion[prop] is None:
+                    conversion = 1.0
+                else:
+                    conversion = unit_conversion[prop]
+                source_metadata['data_property_scaling'][prop] = [
+                    conversion*item
+                    for item in source_metadata['data_property_scaling'][prop]]
+
+        # Convert atomic energies scaling
+        if source_metadata.get('data_atomic_energies_scaling') is not None:
+            if unit_conversion['energy'] is None:
+                conversion = 1.0
+            else:
+                conversion = unit_conversion['energy']
+            for atom in source_metadata['data_atomic_energies_scaling']:
+                source_metadata['data_atomic_energies_scaling'][atom] = [
+                    conversion*item for item in
+                    source_metadata['data_atomic_energies_scaling'][atom]]
+
+        return source_metadata
 

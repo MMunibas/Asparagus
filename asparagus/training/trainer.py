@@ -498,7 +498,7 @@ class Trainer:
             # Assign model parameters
             self.model_calculator.load_state_dict(
                 loaded_checkpoint['model_state_dict'])
-            
+
             self.model_calculator.checkpoint_loaded = True
             self.model_calculator.checkpoint_file = checkpoint_file
             if verbose:
@@ -507,19 +507,16 @@ class Trainer:
 
             # If restart training enabled, assign optimizer, scheduler and
             # epoch parameter if available
+            optimizer_state, scheduler_state = "None", "None"
             if restart:
                 if loaded_checkpoint.get('optimizer_state_dict') is not None:
                     self.trainer_optimizer.load_state_dict(
                         loaded_checkpoint['optimizer_state_dict'])
                     optimizer_state = "Loaded"
-                else:
-                    optimizer_state = "None"
                 if loaded_checkpoint.get('scheduler_state_dict') is not None:
                     self.trainer_scheduler.load_state_dict(
                         loaded_checkpoint['scheduler_state_dict'])
                     scheduler_state = "Loaded"
-                else:
-                    scheduler_state = "None"
                 if loaded_checkpoint.get('epoch') is not None:
                     trainer_epoch_start = loaded_checkpoint['epoch'] + 1
 

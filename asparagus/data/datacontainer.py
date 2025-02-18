@@ -55,6 +55,11 @@ class DataContainer():
         #Property conditions to avoid/filter out data from data source which
         #fulfill the conditions, e.g., an 'energy' (key) larger than a threshold
         #value (item).
+    data_keep_scaling: bool, optional, default False
+        If True, keep or take over the property and atomic energies scaling
+        parameter either from the database file 'data_file' or, if not defined
+        in 'data_file', from the next available scaling parameter dictionary
+        of the source database files 'data_source' in order of the list order.
     data_num_train: (int, float), optional, default 0.8 (80% of data)
         Number of training data points [absolute (>1) or relative
         (<= 1.0)].
@@ -94,6 +99,7 @@ class DataContainer():
                                         'dipole': 'e*Ang'},
         'data_source_unit_properties':  None,
         #'data_source_property_filter':  None,
+        'data_keep_scaling':            False,
         'data_alt_property_labels':     {},
         'data_num_train':               0.8,
         'data_num_valid':               0.1,
@@ -113,6 +119,7 @@ class DataContainer():
         'data_unit_properties':         [utils.is_dictionary],
         'data_source_unit_properties':  [utils.is_dictionary, utils.is_None],
         #'data_source_property_filter':  [utils.is_dictionary, utils.is_None],
+        'data_keep_scaling':            [utils.is_bool],
         'data_alt_property_labels':     [utils.is_dictionary],
         'data_num_train':               [utils.is_numeric],
         'data_num_valid':               [utils.is_numeric],
@@ -131,6 +138,7 @@ class DataContainer():
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
+        data_keep_scaling: Optional[bool] = None,
         data_num_train: Optional[Union[int, float]] = None,
         data_num_valid: Optional[Union[int, float]] = None,
         data_num_test: Optional[Union[int, float]] = None,
@@ -697,6 +705,7 @@ class DataContainer():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, List[str]]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
+        data_keep_scaling: Optional[bool] = None,
         **kwargs,
     ) -> List[str]:
         """
@@ -718,6 +727,10 @@ class DataContainer():
         data_source_unit_properties: dictionary, optional, default None
             Dictionary from properties (keys) to corresponding unit as a 
             string (item) in the source data files.
+        data_keep_scaling: bool, optional, default None
+            If True, keep or take over the property and atomic energies scaling
+            parameter either from the database file 'data_file' or, if not
+            defined in 'data_file', from the  source database file.
 
         Returns
         -------
@@ -740,6 +753,8 @@ class DataContainer():
             data_alt_property_labels = self.data_alt_property_labels
         if data_source_unit_properties is None:
             data_source_unit_properties = self.data_source_unit_properties
+        if data_keep_scaling is None:
+            data_keep_scaling = self.data_keep_scaling
 
         # Load reference data set(s) from defined source data path(s)
         for source in data_source:
@@ -749,6 +764,7 @@ class DataContainer():
                 data_unit_properties=data_unit_properties,
                 data_alt_property_labels=data_alt_property_labels,
                 data_source_unit_properties=data_source_unit_properties,
+                data_keep_scaling=data_keep_scaling,
             )
 
         # Return data source information from metadata
@@ -1192,8 +1208,8 @@ class DataContainer():
             metadata['data_property_scaling'] = property_scaling
         else:
             metadata['data_property_scaling'].update(property_scaling)
-        metadata['data_property_scaling_uptodate'] = True
         metadata['data_property_scaling_label'] = data_label
+        metadata['data_property_scaling_uptodate'] = True
         self.dataset.set_metadata(metadata)
 
         return property_scaling
@@ -1304,8 +1320,8 @@ class DataContainer():
             else:
                 metadata['data_atomic_energies_scaling'].update(
                     atomic_energies_scaling)
-            metadata['data_atomic_energies_scaling_uptodate'] = True
             metadata['data_atomic_energies_scaling_label'] = data_label
+            metadata['data_atomic_energies_scaling_uptodate'] = True
             self.dataset.set_metadata(metadata)
 
         return atomic_energies_scaling
