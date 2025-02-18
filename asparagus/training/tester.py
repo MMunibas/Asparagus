@@ -367,6 +367,26 @@ class Tester:
         # # # Compute Properties # # #
         ##############################
 
+        # Get reference atomic energy shifts
+        metadata = self.data_container.get_metadata()
+        if 'data_atomic_energies_scaling' in metadata:
+            data_atomic_energies_scaling_str = metadata.get(
+                'data_atomic_energies_scaling')
+            data_atomic_energies_scaling = {}
+            for key, item in data_atomic_energies_scaling_str.items():
+                data_atomic_energies_scaling[int(key)] = item
+            max_atomic_number = max([
+                int(atomic_number)
+                for atomic_number in data_atomic_energies_scaling.keys()])
+            atomic_energies_shift = np.zeros(
+                max_atomic_number + 1, dtype=float)
+            for atomic_number in range(max_atomic_number + 1):
+                if atomic_number in data_atomic_energies_scaling:
+                    atomic_energies_shift[atomic_number] = (
+                        data_atomic_energies_scaling[atomic_number][0])
+        else:
+            atomic_energies_shift = None
+
         # Loop over all requested data set
         for label, datasubset in self.test_data.items():
 
@@ -379,8 +399,8 @@ class Tester:
                 device=self.device,
                 dtype=self.dtype)
 
-            # Prepare dictionary for property values and number of atoms per
-            # system
+            # Prepare dictionary for property values, number of atoms per
+            # system, and reference energy shifts
             test_prediction = {prop: [] for prop in eval_properties}
             if model_ensemble:
                 test_prediction.update(
@@ -390,6 +410,7 @@ class Tester:
                     })
             test_reference = {prop: [] for prop in eval_properties}
             test_prediction['atoms_number'] = []
+            test_shifts = {prop: [] for prop in ['energy', 'atomic_energies']}
 
             # Reset property metrics
             metrics_test = self.reset_metrics(
@@ -503,6 +524,26 @@ class Tester:
                 test_prediction['atoms_number'] += list(
                     batch['atoms_number'].cpu().numpy())
 
+                # Compute energy and atomic energies shifts
+                test_shifts_energy = np.zeros(Nsys, dtype=float)
+                test_shifts_atomic_energies = np.zeros(Natoms, dtype=float)
+                if atomic_energies_shift is None:
+                    test_shifts['energy'] += list(test_shifts_energy)
+                    test_shifts['atomic_energies'] += list(
+                        test_shifts_atomic_energies)
+                else:
+                    atomic_numbers = batch['atomic_numbers'].cpu().numpy()
+                    sys_i = batch['sys_i'].cpu().numpy()
+                    test_shifts_atomic_energies = (
+                        atomic_energies_shift[atomic_numbers])
+                    np.add.at(
+                        test_shifts_energy,
+                        sys_i,
+                        test_shifts_atomic_energies)
+                    test_shifts['energy'] += list(test_shifts_energy)
+                    test_shifts['atomic_energies'] += list(
+                        test_shifts_atomic_energies)
+
             # Print metrics
             if verbose:
                 self.print_metric(
@@ -521,6 +562,7 @@ class Tester:
                 self.save_csv(
                     test_prediction,
                     test_reference,
+                    test_shifts,
                     label,
                     test_directory,
                     test_csv_file)
@@ -533,6 +575,7 @@ class Tester:
                         self.save_csv(
                             test_prediction[imodel],
                             test_reference,
+                            test_shifts,
                             label,
                             test_directory_model,
                             test_csv_file,
@@ -541,6 +584,7 @@ class Tester:
                 self.save_npz(
                     test_prediction,
                     test_reference,
+                    test_shifts,
                     label,
                     test_directory,
                     test_npz_file)
@@ -553,6 +597,7 @@ class Tester:
                         self.save_npz(
                             test_prediction[imodel],
                             test_reference,
+                            test_shifts,
                             label,
                             test_directory_model,
                             test_npz_file,
@@ -696,6 +741,7 @@ class Tester:
         self,
         prediction: Dict[str, np.ndarray],
         reference: Dict[str, np.ndarray],
+        shifts: Dict[str, np.ndarray],
         label: str,
         test_directory: str,
         npz_file: str,
@@ -710,6 +756,8 @@ class Tester:
             Dictionary of the property predictions to save.
         prediction: dict
             Dictionary of the reference property values to save.
+        shifts: dict
+            Dictionary of the reference property shifts.
         label: str
             Dataset label for the npz file prefix.
         test_directory: str
@@ -736,14 +784,28 @@ class Tester:
             npz_file_prop = os.path.join(
                 test_directory, f"{label:s}_{prop:s}_{npz_file:s}")
 
-            # Prepare data as pandas data frame and save as npz
+            # Prepare data
+            if prop in shifts:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1),
+                    np.array(shifts[prop]).reshape(-1))
+                )
+                columns_np=[
+                    "prediction", "reference", "shift"]
+            else:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1))
+                )
+                columns_np=[
+                    "prediction", "reference"]
+            
+            # Store data in npz format generated via the pandas data frame
             if self.is_imported("pandas"):
                 results = pd.DataFrame(
-                    np.column_stack((
-                        np.array(pred).reshape(-1),
-                        np.array(reference[prop]).reshape(-1)
-                        )),
-                    columns=["prediction", " reference"]
+                    results_np,
+                    columns=columns_np
                     )
                 np.savez(
                     npz_file_prop,
@@ -772,6 +834,7 @@ class Tester:
         self,
         prediction: Dict[str, np.ndarray],
         reference: Dict[str, np.ndarray],
+        shifts: Dict[str, np.ndarray],
         label: str,
         test_directory: str,
         csv_file: str,
@@ -786,6 +849,8 @@ class Tester:
             Dictionary of the property predictions to save.
         prediction: dict
             Dictionary of the reference property values to save.
+        shifts: dict
+            Dictionary of the reference property shifts.
         label: str
             Dataset label for the csv file prefix.
         test_directory: str
@@ -812,14 +877,28 @@ class Tester:
             csv_file_prop = os.path.join(
                 test_directory, f"{label:s}_{prop:s}_{csv_file:s}")
 
-            # Prepare data as pandas data frame and save as csv
+            # Prepare data
+            if prop in shifts:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1),
+                    np.array(shifts[prop]).reshape(-1))
+                )
+                columns_np=[
+                    f"{prop:s} prediction", " reference", " shift"]
+            else:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1))
+                )
+                columns_np=[
+                    f"{prop:s} prediction", " reference"]
+            
+            # Store data in csv format generated via the pandas data frame
             if self.is_imported("pandas"):
                 results = pd.DataFrame(
-                    np.column_stack((
-                        np.array(pred).reshape(-1),
-                        np.array(reference[prop]).reshape(-1)
-                        )),
-                    columns=[f"{prop:s} prediction", " reference"]
+                    results_np,
+                    columns=columns_np
                     )
                 results.to_csv(csv_file_prop, index=False)
             else:
