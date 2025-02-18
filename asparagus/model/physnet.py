@@ -365,7 +365,7 @@ class Model_PhysNet(model.BaseModel):
             info = {**info, **self.output_module.get_info()}
         if (
             self.model_repulsion
-            and hasattr(self.electrostatic_module, "get_info")
+            and hasattr(self.repulsion_module, "get_info")
         ):
             info = {**info, **self.repulsion_module.get_info()}
         if (

@@ -248,9 +248,9 @@ class Tester:
         test_plot_format: Optional[str] = 'png',
         test_plot_dpi: Optional[int] = 300,
         test_save_csv: Optional[bool] = False,
-        test_csv_file: Optional[str] = 'model_prediction.csv',
+        test_csv_file: Optional[str] = 'results.csv',
         test_save_npz: Optional[bool] = False,
-        test_npz_file: Optional[str] = 'model_prediction.npz',
+        test_npz_file: Optional[str] = 'results.npz',
         test_scale_per_atom: Optional[Union[str, List[str]]] = ['energy'],
         verbose: Optional[bool] = True,
         **kwargs,
@@ -286,15 +286,19 @@ class Tester:
         test_plot_dpi: int, optional, default 300
             Plot figure dpi.
         test_save_csv: bool, optional, default False
-            Save all model prediction results in a csv file.
-        test_csv_file: str, optional, default 'model_prediction.csv'
-            Name tag of the csv file. The respective data set label will be
-            added as prefix to the tag ("{label:s}_{test_csv_file:s}").
+            Save all model prediction results and respective reference values
+            in a csv file.
+        test_csv_file: str, optional, default 'results.csv'
+            Name tag of the csv file. The respective data set label and 
+            property will be added as prefix to the tag:
+            "{label:s}_{property:s}_{test_csv_file:s}"
         test_save_npz: bool, optional, default False
-            Save all model prediction results in a binary npz file.
-        test_npz_file: str, optional, default 'model_prediction.npz'
-            Name tag of the npz file. The respective data set label will be
-            added as prefix to the tag ("{label:s}_{test_npz_file:s}").
+            Save all model prediction results and respective reference values
+            in a binary npz file.
+        test_npz_file: str, optional, default 'results.npz'
+            Name tag of the npz file. The respective data set label and 
+            property will be added as prefix to the tag:
+            "{label:s}_{property:s}_{test_csv_file:s}"
         test_scale_per_atom: (str list(str), optional, default ['energy']
             List of properties where the results will be scaled by the number
             of atoms in the particular system.
@@ -512,17 +516,21 @@ class Tester:
             # # # Save Properties # # #
             ###########################
 
-            # Check if both .csv and .npz files are saved else raise a warning
-            if test_save_npz and test_save_csv:
-                raise UserWarning(
-                    "You are saving both a .csv and a .npz file."
-                    + "This is not recommended!")
-
             # Save test prediction to files
             if test_save_csv:
-                self.save_csv(test_prediction, test_directory, test_csv_file)
+                self.save_csv(
+                    test_prediction,
+                    test_reference,
+                    label,
+                    test_directory,
+                    test_csv_file)
             if test_save_npz:
-                self.save_npz(test_prediction, test_directory, test_npz_file)
+                self.save_npz(
+                    test_prediction,
+                    test_reference,
+                    label,
+                    test_directory,
+                    test_npz_file)
 
             ###########################
             # # # Plot Properties # # #
@@ -660,84 +668,134 @@ class Tester:
 
     def save_npz(
         self,
-        vals: Dict,
+        prediction: Dict[str, np.ndarray],
+        reference: Dict[str, np.ndarray],
+        label: str,
         test_directory: str,
-        npz_name: str,
+        npz_file: str
     ):
         """
         Save results of the test set to a binary npz file.
 
         Parameters
         ----------
-        vals: dict
-            Dictionary of the test properties to save.
-        test_directory:
+        prediction: dict
+            Dictionary of the property predictions to save.
+        prediction: dict
+            Dictionary of the reference property values to save.
+        label: str
+            Dataset label for the npz file prefix.
+        test_directory: str
             Directory to save the npz file.
-        npz_name:
-            Name of the npz file.
+        npz_file:
+            Name tag of the npz file.
 
         """
 
-        path_to_save = os.path.join(test_directory, npz_name)
-        self.logger.info(
-            "Saving results of the test set to file "
-            + f"'{path_to_save:s}'!")
-        np.savez(path_to_save, **vals)
+        # Check for .npz file extension
+        if 'npz' != npz_file.split('.')[-1]:
+            npz_file += '.npz'
+
+        # Iterate over properties
+        for prop, pred in prediction.items():
+            
+            # Check property in reference data, if not skip
+            if not prop in reference:
+                continue
+            
+            # Prepare npz file name
+            npz_file_prop = os.path.join(
+                test_directory, f"{label:s}_{prop:s}_{npz_file:s}")
+
+            # Prepare data as pandas data frame and save as npz
+            if self.is_imported("pandas"):
+                results = pd.DataFrame(
+                    np.column_stack((
+                        np.array(pred).reshape(-1),
+                        np.array(reference[prop]).reshape(-1)
+                        )),
+                    columns=["prediction", " reference"]
+                    )
+                np.savez(
+                    npz_file_prop,
+                    **{
+                        column: results[column].values
+                        for column in results.columns}
+                    )
+            else:
+                self.logger.warning(
+                    "Module 'pandas' is not available. "
+                    + "Test properties are not written to a npz file!")
+
+            # Print info
+            self.logger.info(
+                "Prediction results and reference data for the dataset "
+                + f"'{label:s}' and property '{prop:s}' are saved in:\n"
+                + f"'{npz_file_prop:s}'.")
 
         return
 
     def save_csv(
         self,
-        vals: Dict,
+        prediction: Dict[str, np.ndarray],
+        reference: Dict[str, np.ndarray],
+        label: str,
         test_directory: str,
-        csv_name: str
+        csv_file: str
     ):
         """
-        Save results of the test set to a csv file.
+        Save results of the data set to a csv file.
 
         Parameters
         ----------
-        vals : dict
-            Dictionary of the test properties to save.
+        prediction: dict
+            Dictionary of the property predictions to save.
+        prediction: dict
+            Dictionary of the reference property values to save.
+        label: str
+            Dataset label for the csv file prefix.
         test_directory: str
             Directory to save the csv file.
-        csv_name:
-            Name of the csv file.
+        csv_file:
+            Name tag of the csv file.
 
         """
 
         # Check for .csv file extension
-        if '.csv' == csv_name[-4:]:
-            csv_name += '.csv'
-        path_to_save = os.path.join(test_directory, csv_name)
-        self.logger.info(
-            f"Saving results of the test set to file '{path_to_save:s}'!")
+        if 'csv' != csv_file.split('.')[-1]:
+            csv_file += '.csv'
 
-        # Check that all the keys have the same length
+        # Iterate over properties
+        for prop, pred in prediction.items():
+            
+            # Check property in reference data, if not skip
+            if not prop in reference:
+                continue
+            
+            # Prepare csv file name
+            csv_file_prop = os.path.join(
+                test_directory, f"{label:s}_{prop:s}_{csv_file:s}")
 
-        # First get the lenghts of each of the properties in the dictionary
-        lengths = [len(item) for key, item in vals.items()]
-        max_length = np.max(lengths)
-
-        # Pad the lenghts with nan
-        vals_padded = {}
-        for key, item in vals.items():
-            if len(item) < max_length:
-                vals_padded[key] = np.pad(
-                    vals[key],
-                    (0, max_length - len(vals[key])),
-                    'constant',
-                    constant_values=np.nan)
+            # Prepare data as pandas data frame and save as csv
+            if self.is_imported("pandas"):
+                results = pd.DataFrame(
+                    np.column_stack((
+                        np.array(pred).reshape(-1),
+                        np.array(reference[prop]).reshape(-1)
+                        )),
+                    columns=[f"{prop:s} prediction", " reference"]
+                    )
+                results.to_csv(csv_file_prop, index=False)
             else:
-                vals_padded[key] = item
+                self.logger.warning(
+                    "Module 'pandas' is not available. "
+                    + "Test properties are not written to a csv file!")
 
-        if self.is_imported("pandas"):
-            df = pd.DataFrame(vals_padded)
-            df.to_csv(path_to_save, index=False)
-        else:
-            self.logger.warning(
-                "Module 'pandas' is not available. "
-                + "Test properties are not written to a csv file!")
+            # Print info
+            self.logger.info(
+                "Prediction results and reference data for the dataset "
+                + f"'{label:s}' and property '{prop:s}' are saved in:\n"
+                + f"'{csv_file_prop:s}'.")
 
         return
 
