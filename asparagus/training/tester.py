@@ -524,6 +524,19 @@ class Tester:
                     label,
                     test_directory,
                     test_csv_file)
+                if model_ensemble:
+                    for imodel in range(model_ensemble_num):
+                        test_directory_model = os.path.join(
+                            test_directory, f"{imodel:d}")
+                        if not os.path.exists(test_directory_model):
+                            os.makedirs(test_directory_model)
+                        self.save_csv(
+                            test_prediction[imodel],
+                            test_reference,
+                            label,
+                            test_directory_model,
+                            test_csv_file,
+                            imodel=imodel)
             if test_save_npz:
                 self.save_npz(
                     test_prediction,
@@ -531,6 +544,19 @@ class Tester:
                     label,
                     test_directory,
                     test_npz_file)
+                if model_ensemble:
+                    for imodel in range(model_ensemble_num):
+                        test_directory_model = os.path.join(
+                            test_directory, f"{imodel:d}")
+                        if not os.path.exists(test_directory_model):
+                            os.makedirs(test_directory_model)
+                        self.save_npz(
+                            test_prediction[imodel],
+                            test_reference,
+                            label,
+                            test_directory_model,
+                            test_npz_file,
+                            imodel=imodel)
 
             ###########################
             # # # Plot Properties # # #
@@ -672,7 +698,8 @@ class Tester:
         reference: Dict[str, np.ndarray],
         label: str,
         test_directory: str,
-        npz_file: str
+        npz_file: str,
+        imodel: Optional[int] = None,
     ):
         """
         Save results of the test set to a binary npz file.
@@ -687,8 +714,10 @@ class Tester:
             Dataset label for the npz file prefix.
         test_directory: str
             Directory to save the npz file.
-        npz_file:
+        npz_file: str
             Name tag of the npz file.
+        imodel: int, optional, default None
+            Model index for the respective model in the model ensemble.
 
         """
 
@@ -728,10 +757,14 @@ class Tester:
                     + "Test properties are not written to a npz file!")
 
             # Print info
+            if imodel is None:
+                addition = ""
+            else:
+                addition = f" of model {imodel:d}"
             self.logger.info(
-                "Prediction results and reference data for the dataset "
-                + f"'{label:s}' and property '{prop:s}' are saved in:\n"
-                + f"'{npz_file_prop:s}'.")
+                f"Prediction results{addition:s} and reference data for the "
+                + f"dataset '{label:s}' and property '{prop:s}' are saved in:"
+                + f"\n'{npz_file_prop:s}'.")
 
         return
 
@@ -741,7 +774,8 @@ class Tester:
         reference: Dict[str, np.ndarray],
         label: str,
         test_directory: str,
-        csv_file: str
+        csv_file: str,
+        imodel: Optional[int] = None,
     ):
         """
         Save results of the data set to a csv file.
@@ -756,8 +790,10 @@ class Tester:
             Dataset label for the csv file prefix.
         test_directory: str
             Directory to save the csv file.
-        csv_file:
+        csv_file: str
             Name tag of the csv file.
+        imodel: int, optional, default None
+            Model index for the respective model in the model ensemble.
 
         """
 
@@ -792,10 +828,14 @@ class Tester:
                     + "Test properties are not written to a csv file!")
 
             # Print info
+            if imodel is None:
+                addition = ""
+            else:
+                addition = f" of model {imodel:d}"
             self.logger.info(
-                "Prediction results and reference data for the dataset "
-                + f"'{label:s}' and property '{prop:s}' are saved in:\n"
-                + f"'{csv_file_prop:s}'.")
+                f"Prediction results{addition:s} and reference data for the "
+                + f"dataset '{label:s}' and property '{prop:s}' are saved in:"
+                + f"\n'{csv_file_prop:s}'.")
 
         return
 
