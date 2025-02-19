@@ -261,6 +261,10 @@ class ASE_Calculator(ase_calc.Calculator):
                 "ASE atoms object is not defined!")
         elif atoms is None:
             atoms = self.atoms
+        elif self.atoms is None:
+            self.atoms = atoms
+            # Potential different atom system needs a reset of the atom batch
+            self.atoms_batch = {}
         elif not (
             len(atoms) == len(self.atoms)
             and np.all(atoms.numbers == self.atoms.numbers)

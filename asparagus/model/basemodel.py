@@ -621,7 +621,7 @@ class BaseModel(torch.nn.Module):
     def calculate(
         self,
         atoms: ase.Atoms,
-        charge: Optional[float] = 0.0,
+        charge: Optional[float] = None,
         **kwargs,
     ) -> Dict[str, torch.Tensor]:
 
@@ -632,8 +632,9 @@ class BaseModel(torch.nn.Module):
         ----------
         atoms: ase.Atoms
             ASE Atoms object to calculate properties
-        charge: float, optional, default 0.0
-            Total system charge
+        charge: float, optional, default None
+            Total system charge. If None, charge is estimated from atomic
+            charges, if available, Else, charge is set as zero.
 
         Returns
         -------
