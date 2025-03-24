@@ -1766,7 +1766,10 @@ class DataReader():
         # Get source data metadata
         with data.connect(data_source[0], data_source[1], mode='r') as db:
             source_metadata = db.get_metadata()
-            source_properties = db.get(1)[0].keys()
+            if db.get(1):
+                source_properties = db.get(1)[0].keys()
+            else:
+                source_properties = source_metadata['load_properties']
             source_unit_properties = source_metadata['unit_properties']
 
         # Assign data source property labels to valid property labels.
@@ -1787,7 +1790,7 @@ class DataReader():
         # Convert property scaling
         if source_metadata.get('data_property_scaling') is not None:
             for prop in source_metadata['data_property_scaling']:
-                if unit_conversion[prop] is None:
+                if unit_conversion.get(prop) is None:
                     conversion = 1.0
                 else:
                     conversion = unit_conversion[prop]
@@ -1797,7 +1800,7 @@ class DataReader():
 
         # Convert atomic energies scaling
         if source_metadata.get('data_atomic_energies_scaling') is not None:
-            if unit_conversion['energy'] is None:
+            if unit_conversion.get('energy') is None:
                 conversion = 1.0
             else:
                 conversion = unit_conversion['energy']

@@ -234,6 +234,8 @@ class PyCharmm_Calculator:
 
             self.electrostatics_calc = None
 
+        return
+
     def calculate_charmm(
         self,
         Natom: int,
@@ -358,26 +360,7 @@ class PyCharmm_Calculator:
         atoms_batch['pbc_idx_j'] = ml_idxjp
 
         # Compute model properties
-        results = {}
-        if self.model_ensemble:
-
-            # TODO Test
-            for ic, calc in enumerate(self.model_calculator_list):
-                results[ic] = calc(atoms_batch)
-            for prop in self.implemented_properties:
-                prop_std = f"std_{prop:s}"
-                results[prop_std], self.results[prop] = torch.std_mean(
-                    torch.cat(
-                        [
-                            results[ic][prop]
-                            for ic in range(self.model_calculator_num)
-                        ],
-                        dim=0),
-                    dim=0)
-
-        else:
-
-            results = self.model_calculator(atoms_batch)
+        results = self.model_calculator(atoms_batch)
 
         # Unit conversion
         self.results = {}
