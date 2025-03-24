@@ -73,7 +73,7 @@ for line in lines:
     # Else if forces section not found yet, look for closed shell MP2 marker
     elif mp2_closed_shell and 'MP2 GRADIENT FOR STATE' in line:
         flag_forces = True
-        counter_forces = 4
+        counter_forces = 3
         #print("Start", counter_forces, line)
     # Else if forces section not found yet, look for RMP2 marker
     elif (not mp2_closed_shell) and 'Numerical gradient for MP2' in line:
