@@ -87,7 +87,7 @@ class PyCharmm_Calculator:
 
         # ML atom indices
         self.ml_atom_indices = torch.tensor(ml_atom_indices, dtype=torch.int64)
-        self.tt = np.array(ml_atom_indices, dtype=int)
+
         # ML atomic numbers
         self.ml_atomic_numbers = torch.tensor(
             ml_atomic_numbers, dtype=torch.int64)
@@ -98,18 +98,17 @@ class PyCharmm_Calculator:
         # ML fluctuating charges
         self.ml_fluctuating_charges = ml_fluctuating_charges
 
+        # Assign ML-ML model cutoff
+        self.ml_cutoff = model_calculator.model_cutoff
+        self.ml_cutoff2 = self.ml_cutoff**2
+
         # ML and MM atom charges
         self.mlmm_atomic_charges = torch.tensor(
             mlmm_atomic_charges, dtype=self.dtype)
 
         # ML and MM number of atoms
         self.mlmm_num_atoms = len(mlmm_atomic_charges)
-        
-        # ML and MM atom indices
-        self.mlmm_atom_indices = torch.zeros(
-            self.mlmm_num_atoms, dtype=torch.int64)
-        self.mlmm_atom_indices[self.ml_atom_indices] = self.ml_atomic_numbers
-        
+
         # ML atoms - atom indices pointing from MLMM position to ML position
         # 0, 1, 2 ..., ml_num_atoms: ML atom 1, 2, 3 ... ml_num_atoms + 1
         # ml_num_atoms + 1: MM atoms
@@ -289,19 +288,19 @@ class PyCharmm_Calculator:
         Nmlmmp: int
             Number of ML/MM atom pairs in the system
         idxi: list(int)
-            List of ML atom indices for ML potential
+            List of ML atom pair indices for ML potential
         idxj: list(int)
-            List of ML atom indices for ML potential
+            List of ML atom pair indices for ML potential
         idxjp: list(int)
-            List of image to primary ML atom index pointer
+            List of image to primary ML atom pair index pointer
         idxu: list(int)
-            List of ML atom indices for ML-MM embedding potential
+            List of ML atom pair indices for ML-MM embedding potential
         idxv: list(int)
-            List of MM atom indices for ML-MM embedding potential
+            List of MM atom pair indices for ML-MM embedding potential
         idxup: list(int)
-            List of image to primary ML atom index pointer
+            List of image to primary ML atom pair index pointer
         idxvp: list(int)
-            List of image to primary MM atom index pointer
+            List of image to primary MM atom pair index pointer
 
         Return
         ------
@@ -309,30 +308,29 @@ class PyCharmm_Calculator:
             ML potential plus ML-MM embedding potential
         """
 
-        # Assign all positions
+        # Assign number of atoms
         if Ntrans:
-            mlmm_R = torch.transpose(
-                torch.tensor(
-                    [x[:Natim], y[:Natim], z[:Natim]], dtype=self.dtype
-                ),
-                0, 1)
-            mlmm_idxp = idxp[:Natim]
+            Nmlmm = Natim
         else:
-            mlmm_R = torch.transpose(
-                torch.tensor(
-                    [x[:Natom], y[:Natom], z[:Natom]], dtype=self.dtype
-                ),
-                0, 1)
-            mlmm_idxp = idxp[:Natom]
-        mlmm_R.requires_grad_(True)
+            Nmlmm = Natom
 
-        # Assign indices
-        # ML-ML pair indices
+        # Assign primary and primary to image atom index pointer
+        mlmm_idxp = torch.tensor(idxp[:Nmlmm], dtype=torch.int64)
+        
+        # Assign all positions
+        mlmm_R = torch.transpose(
+            torch.tensor(
+                [x[:Nmlmm], y[:Nmlmm], z[:Nmlmm]], dtype=self.dtype
+            ),
+            0, 1)
+
+        # Assign ML-ML pair indices
         ml_idxi = torch.tensor(idxi[:Nmlp], dtype=torch.int64)
         ml_idxj = torch.tensor(idxj[:Nmlp], dtype=torch.int64)
         ml_idxjp = torch.tensor(idxjp[:Nmlp], dtype=torch.int64)
         ml_sysi = torch.zeros(self.ml_num_atoms, dtype=torch.int64)
-        # ML-MM pair indices and pointer
+
+        # Assign ML-MM pair indices and pointer
         mlmm_idxu = torch.tensor(
             idxu[:Nmlmmp], dtype=torch.int64)
         mlmm_idxv = torch.tensor(
@@ -341,6 +339,17 @@ class PyCharmm_Calculator:
             idxup[:Nmlmmp], dtype=torch.int64)
         mlmm_idxvp = torch.tensor(
             idxvp[:Nmlmmp], dtype=torch.int64)
+
+        # Update ML-ML pair indices by cutoff distance
+        selection = (
+            torch.sum((mlmm_R[ml_idxi] - mlmm_R[ml_idxj])**2, dim=1)
+            <= 8.**2) #self.ml_cutoff2)
+        ml_idxi = ml_idxi[selection]
+        ml_idxj = ml_idxj[selection]
+        ml_idxjp = ml_idxjp[selection]
+
+        # Set gradient properties
+        mlmm_R.requires_grad_(True)
 
         # Create batch for evaluating the model
         atoms_batch = {}
@@ -381,7 +390,11 @@ class PyCharmm_Calculator:
             dz[ai] -= ml_F[ii+2]
 
         # Calculate electrostatic energy and force contribution
-        if self.electrostatics_calc is not None:
+        if self.electrostatics_calc is None:
+
+            self.mlmm_Eele = 0.0
+
+        else:
             
             mlmm_Eele, mlmm_gradient = self.electrostatics_calc.run(
                 mlmm_R,
