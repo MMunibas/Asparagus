@@ -35,6 +35,13 @@ flag_transfer_learning = True
 
 flag_train_cuda = False
 
+# Test for xtb package
+try:
+    from xtb.ase.calculator import XTB
+    flag_calculator_xtb = True
+except ImportError:
+    print("XTB calculator not available. Tests using XTB will be skipped!")
+    flag_calculator_xtb = False
 
 # ==============================================================================
 #  Test Asparagus Main Class Initialization
@@ -382,91 +389,96 @@ if flag_datareader:
 if flag_sampler_all:
     
     from asparagus.sampling import Sampler
-    
-    # Load single system from xyz file and compute properties using XTB default 
-    # calculator
-    sampler = Sampler(
-        config='test/smpl_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',
-        sample_calculator_args = {
-            'charge': 0,
-            'directory': 'test/xtb'},
-        sample_num_threads=1,
-        )
-    sampler.run()
-    
-    # Load two system from xyz file and compute properties using XTB default 
-    # calculator in parallel (still works without using other ASE functions)
-    sampler = Sampler(
-        config='test/smpl_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
-        sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
-        sample_systems_format='xyz',
-        sample_calculator='XTB',
-        sample_calculator_args = {
-            'charge': 0,
-            'directory': 'test/xtb'},
-        sample_num_threads=2,
-        )
-    sampler.run()
-
-    # Load two systems from xyz file and a ASE trajectory file and compute 
-    # properties using XTB default calculator
-    sampler = Sampler(
-        config='test/smpl_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
-        sample_systems=['data/nh3_c3v.xyz', 'data/meta_nh3.traj'],
-        sample_calculator='XTB',
-        sample_calculator_args = {
-            'charge': 0,
-            'directory': 'test/xtb'},
-        sample_num_threads=1,
-        )
-    sampler.run()
-    
-    # Load a selection of sample system from an Asparagus data file and compute
-    # properties using XTB default calculator
-    sampler = Sampler(
-        config='test/smpl_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
-        sample_systems='data/nms_nh3.db',
-        sample_systems_format='db',
-        sample_systems_indices=[0, 1, 2, 3, -4, -3, -2, -1],
-        sample_calculator='XTB',
-        sample_calculator_args = {
-            'charge': 0,
-            'directory': 'test/xtb'},
-        sample_num_threads=1,
-        )
-    sampler.run()
-
     from asparagus.sampling import MCSampler
+    from asparagus.sampling import MDSampler
+    from asparagus.sampling import MetaSampler
+    from asparagus.sampling import NormalModeScanner
+    from asparagus.sampling import NormalModeSampler
 
-    # Sample a single system loaded from a xyz file using the Monte-Carlo
-    # sampling method with the XTB calculator
-    sampler = MCSampler(
-        config='test/mc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/mc_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        mc_temperature=300.0,
-        mc_steps=100,
-        mc_max_displacement=0.1,
-        mc_save_interval=1,
-        )
-    sampler.run()
+    if flag_calculator_xtb:
+
+        # Load single system from xyz file and compute properties using XTB default
+        # calculator
+        sampler = Sampler(
+            config='test/smpl_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/smpl_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',
+            sample_calculator_args = {
+                'charge': 0,
+                'directory': 'test/xtb'},
+            sample_num_threads=1,
+            )
+        sampler.run()
+
+        # Load two system from xyz file and compute properties using XTB default
+        # calculator in parallel (still works without using other ASE functions)
+        sampler = Sampler(
+            config='test/smpl_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/smpl_nh3.db',
+            sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
+            sample_systems_format='xyz',
+            sample_calculator='XTB',
+            sample_calculator_args = {
+                'charge': 0,
+                'directory': 'test/xtb'},
+            sample_num_threads=2,
+            )
+        sampler.run()
+
+        # Load two systems from xyz file and a ASE trajectory file and compute
+        # properties using XTB default calculator
+        sampler = Sampler(
+            config='test/smpl_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/smpl_nh3.db',
+            sample_systems=['data/nh3_c3v.xyz', 'data/meta_nh3.traj'],
+            sample_calculator='XTB',
+            sample_calculator_args = {
+                'charge': 0,
+                'directory': 'test/xtb'},
+            sample_num_threads=1,
+            )
+        sampler.run()
+
+        # Load a selection of sample system from an Asparagus data file and compute
+        # properties using XTB default calculator
+        sampler = Sampler(
+            config='test/smpl_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/smpl_nh3.db',
+            sample_systems='data/nms_nh3.db',
+            sample_systems_format='db',
+            sample_systems_indices=[0, 1, 2, 3, -4, -3, -2, -1],
+            sample_calculator='XTB',
+            sample_calculator_args = {
+                'charge': 0,
+                'directory': 'test/xtb'},
+            sample_num_threads=1,
+            )
+        sampler.run()
+
+        # Sample a single system loaded from a xyz file using the Monte-Carlo
+        # sampling method with the XTB calculator
+        sampler = MCSampler(
+            config='test/mc_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/mc_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            mc_temperature=300.0,
+            mc_steps=100,
+            mc_max_displacement=0.1,
+            mc_save_interval=1,
+            )
+        sampler.run()
     
     # Sample two systems loaded from a xyz files in parallel using the
     # Monte-Carlo sampling method and the ORCA calculator (thread safe)
@@ -494,101 +506,101 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sampling import MDSampler
+    if flag_calculator_xtb:
 
-    # Sample a single system loaded from a xyz file using the Molecular 
-    # Dynamics sampling method with the XTB calculator
-    sampler = MDSampler(
-        config='test/md_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/md_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        md_temperature=500,
-        md_time_step=1.0,
-        md_simulation_time=100.0,
-        md_save_interval=10,
-        md_langevin_friction=0.01,
-        md_equilibration_time=0,
-        md_initial_velocities=False,
-        )
-    sampler.run()
+        # Sample a single system loaded from a xyz file using the Molecular
+        # Dynamics sampling method with the XTB calculator
+        sampler = MDSampler(
+            config='test/md_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/md_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            md_temperature=500,
+            md_time_step=1.0,
+            md_simulation_time=100.0,
+            md_save_interval=10,
+            md_langevin_friction=0.01,
+            md_equilibration_time=0,
+            md_initial_velocities=False,
+            )
+        sampler.run()
 
-    # Sample a single system loaded from a xyz file using the Molecular 
-    # Dynamics sampling method with the XTB calculator
-    sampler = MDSampler(
-        config='test/md_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/md_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        md_temperature={
-            'tstart': 10.0,
-            'tend': 100.0,
-            'tincrement': 10.0},
-        md_time_step=1.0,
-        md_simulation_time=10.0,
-        md_save_interval=10,
-        md_langevin_friction=0.01,
-        md_equilibration_time=0,
-        md_initial_velocities=False,
-        )
-    sampler.run()
+        # Sample a single system loaded from a xyz file using the Molecular
+        # Dynamics sampling method with the XTB calculator
+        sampler = MDSampler(
+            config='test/md_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/md_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            md_temperature={
+                'tstart': 10.0,
+                'tend': 100.0,
+                'tincrement': 10.0},
+            md_time_step=1.0,
+            md_simulation_time=10.0,
+            md_save_interval=10,
+            md_langevin_friction=0.01,
+            md_equilibration_time=0,
+            md_initial_velocities=False,
+            )
+        sampler.run()
 
-    # Sample a single system loaded from a xyz file using the Molecular 
-    # Dynamics sampling method with the XTB calculator
-    sampler = MDSampler(
-        config='test/md_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/md_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        md_temperature={
-            'tstart': 10.0,
-            'tinterval': 10.0},
-        md_time_step=1.0,
-        md_simulation_time=10.0,
-        md_save_interval=10,
-        md_langevin_friction=0.01,
-        md_equilibration_time=0,
-        md_initial_velocities=False,
-        )
-    sampler.run()
-    # Sample a single system loaded from a xyz file using the Molecular 
-    # Dynamics sampling method with the XTB calculator
-    sampler = MDSampler(
-        config='test/md_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/md_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        md_temperature={
-            'tstart': 10.0,
-            'tend': 100.0},
-        md_time_step=1.0,
-        md_simulation_time=10.0,
-        md_save_interval=10,
-        md_langevin_friction=0.01,
-        md_equilibration_time=0,
-        md_initial_velocities=False,
-        )
-    sampler.run()
+        # Sample a single system loaded from a xyz file using the Molecular
+        # Dynamics sampling method with the XTB calculator
+        sampler = MDSampler(
+            config='test/md_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/md_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            md_temperature={
+                'tstart': 10.0,
+                'tinterval': 10.0},
+            md_time_step=1.0,
+            md_simulation_time=10.0,
+            md_save_interval=10,
+            md_langevin_friction=0.01,
+            md_equilibration_time=0,
+            md_initial_velocities=False,
+            )
+        sampler.run()
+        # Sample a single system loaded from a xyz file using the Molecular
+        # Dynamics sampling method with the XTB calculator
+        sampler = MDSampler(
+            config='test/md_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/md_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            md_temperature={
+                'tstart': 10.0,
+                'tend': 100.0},
+            md_time_step=1.0,
+            md_simulation_time=10.0,
+            md_save_interval=10,
+            md_langevin_friction=0.01,
+            md_equilibration_time=0,
+            md_initial_velocities=False,
+            )
+        sampler.run()
 
     # Sample two systems loaded from a xyz files in parallel using the 
     # Molecular Dynamics sampling method and the ORCA calculator (thread safe)
@@ -620,32 +632,32 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sampling import MetaSampler
-    
-    # Sample a single system loaded from a xyz file using the Meta Dynamics
-    # sampling method with the XTB calculator
-    sampler = MetaSampler(
-        config='test/meta_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/meta_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_save_trajectory=True,
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        meta_cv=[[0, 1], [0, 2], [0, 3]],
-        meta_gaussian_height=0.10,
-        meta_gaussian_widths=0.1,
-        meta_gaussian_interval=10,
-        meta_hookean=[[0, 1, 4.0], [0, 2, 4.0], [0, 3, 4.0]],
-        meta_temperature=500,
-        meta_time_step=1.0,
-        meta_simulation_time=10_0.0,
-        meta_save_interval=10,
-        )
-    sampler.run()
+    if flag_calculator_xtb:
+
+        # Sample a single system loaded from a xyz file using the Meta Dynamics
+        # sampling method with the XTB calculator
+        sampler = MetaSampler(
+            config='test/meta_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/meta_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_save_trajectory=True,
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            meta_cv=[[0, 1], [0, 2], [0, 3]],
+            meta_gaussian_height=0.10,
+            meta_gaussian_widths=0.1,
+            meta_gaussian_interval=10,
+            meta_hookean=[[0, 1, 4.0], [0, 2, 4.0], [0, 3, 4.0]],
+            meta_temperature=500,
+            meta_time_step=1.0,
+            meta_simulation_time=10_0.0,
+            meta_save_interval=10,
+            )
+        sampler.run()
 
     # Sample a system loaded from a xyz files in parallel using the Meta
     # Dynamics sampling method and the ORCA calculator (thread safe)
@@ -714,28 +726,28 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sampling import NormalModeScanner
-    
-    # Sample a single system loaded from a xyz file using the Normal Mode
-    # Scanner sampling method with the XTB calculator
-    sampler = NormalModeScanner(
-        config='test/nms_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/nms_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        nms_harmonic_energy_step=0.10,
-        nms_energy_limits=0.50,
-        nms_number_of_coupling=1,
-        nms_limit_of_steps=10,
-        nms_limit_com_shift=0.01,
-        nms_save_displacements=True,
-        )
-    sampler.run()
+    if flag_calculator_xtb:
+
+        # Sample a single system loaded from a xyz file using the Normal Mode
+        # Scanner sampling method with the XTB calculator
+        sampler = NormalModeScanner(
+            config='test/nms_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/nms_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            nms_harmonic_energy_step=0.10,
+            nms_energy_limits=0.50,
+            nms_number_of_coupling=1,
+            nms_limit_of_steps=10,
+            nms_limit_com_shift=0.01,
+            nms_save_displacements=True,
+            )
+        sampler.run()
 
     # Sample two systems loaded from a xyz file using the Normal Mode
     # Scanner sampling method with the ORCA calculator (thread safe).
@@ -768,24 +780,24 @@ if flag_sampler_all:
         )
     sampler.run()
 
-    from asparagus.sampling import NormalModeSampler
-    
-    # Sample a single system loaded from a xyz file using the Normal Mode
-    # Sampler sampling method with the XTB calculator
-    sampler = NormalModeSampler(
-        config='test/nms_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/nms_nh3.db',
-        sample_systems='data/nh3_c3v.xyz',
-        sample_systems_format='xyz',
-        sample_calculator='XTB',   # Not thread save when using ASE modules
-        sample_num_threads=1,
-        sample_systems_optimize=True,
-        sample_systems_optimize_fmax=0.001,
-        nms_temperature=500.0,
-        nms_nsamples=100,
-        )
-    sampler.run()
+    if flag_calculator_xtb:
+
+        # Sample a single system loaded from a xyz file using the Normal Mode
+        # Sampler sampling method with the XTB calculator
+        sampler = NormalModeSampler(
+            config='test/nms_nh3.json',
+            sample_directory='test',
+            sample_data_file='test/nms_nh3.db',
+            sample_systems='data/nh3_c3v.xyz',
+            sample_systems_format='xyz',
+            sample_calculator='XTB',   # Not thread save when using ASE modules
+            sample_num_threads=1,
+            sample_systems_optimize=True,
+            sample_systems_optimize_fmax=0.001,
+            nms_temperature=500.0,
+            nms_nsamples=100,
+            )
+        sampler.run()
     
     # Sample a system loaded from a xyz file using the Normal Mode
     # Sampler sampling method with the ORCA calculator (thread safe).

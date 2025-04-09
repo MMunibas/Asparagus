@@ -1284,7 +1284,7 @@ class NormalModeSampler(sampling.Sampler):
             message += f"{system.get_chemical_formula():s}\n"
         else:
             message += f"{self.sample_data_file[0]:s}\n"
-        message = (
+        message += (
             f" {'Index':5s} |"
             + f" {'Frequency (cm**-1)':18s} |"
             + f" {'Vib. Mode':9s} |"
@@ -1387,7 +1387,7 @@ class NormalModeSampler(sampling.Sampler):
         # Print sampling info
         for ithread in range(self.sample_num_threads):
             if self.Nsamples[ithread] == 0:
-                message += f"No samples written to "
+                message = f"No samples written to "
             else:
                 message = (
                     f"Sampling method '{self.sample_tag:s}' complete for "

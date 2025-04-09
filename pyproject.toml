@@ -4,13 +4,14 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "asparagus"
+version = "0.5.0"
 authors = [{name="K. Toepfer", email="kai.toepfer@unibas.ch"},
            {name="L.I.Vazquez-Salazar", email="luisitza.vazquezsalazar@unibas.ch"},
            {name="Valerii Andreichev", email="valerii.andreichev@unibas.ch"},
            {name="Silvan Kaeser", email="silvan.kaeser@unibas.ch"},]
-dynamic = ["version", "description"]
+dynamic = ["description"]
 dependencies = [
-        'ase',
+        'ase==3.22.1',
         'numpy',
         'scipy',
         'ctype',
@@ -24,6 +25,7 @@ dependencies = [
         'matplotlib',
         'seaborn',
         'pytest']
+
 [project.urls]
 homepage = "https://github.com/MMunibas/Asparagus/releases"
 documentation = "http://Asparagus-bundle.readthedocs.io/en/latest/"

@@ -18,7 +18,7 @@ setup(
     packages=find_packages(include=['asparagus']),
     include_package_data=True,
     install_requires=[
-        'ase>=3.21.0',
+        'ase==3.22.1',
         'numpy',
         'scipy',
         'ctype',

@@ -1125,6 +1125,10 @@ class DataReader():
 
             # Collect properties
             for prop, item in atoms_properties.items():
+                if item is None:
+                    raise SyntaxError(
+                        f"Requested property '{prop:s}' not available "
+                        + "in results dictionary (None)!")
                 load_properties[prop] = (
                     unit_conversion[prop]*item)
 
@@ -1154,6 +1158,10 @@ class DataReader():
                 # Collect properties
                 for prop, item in atoms_properties.items():
                     if prop in data_properties:
+                        if item is None:
+                            raise SyntaxError(
+                                f"Requested property '{prop:s}' not available "
+                                + "in results dictionary (None)!")
                         load_properties[prop] = (
                             unit_conversion[prop]*item)
 
@@ -1460,6 +1468,10 @@ class DataReader():
         # Collect properties
         for prop, item in property_labels.items():
             if prop in load_properties:
+                if item is None:
+                    raise SyntaxError(
+                        f"Requested property '{prop:s}' not available "
+                        + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
 
@@ -1528,6 +1540,10 @@ class DataReader():
 
             # Collect properties
             for prop, item in source.items():
+                if item is None:
+                    raise SyntaxError(
+                        f"Requested property '{prop:s}' not available "
+                        + "in results dictionary (None)!")
                 if (
                     prop in load_properties
                     and item[idx].shape
@@ -1607,6 +1623,10 @@ class DataReader():
         # Collect properties
         for prop, item in property_labels.items():
             if prop in load_properties:
+                if item is None:
+                    raise SyntaxError(
+                        f"Requested property '{prop:s}' not available "
+                        + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
 
@@ -1670,6 +1690,10 @@ class DataReader():
         # Collect properties
         for prop, item in property_labels.items():
             if prop in properties.results:
+                if item is None:
+                    raise SyntaxError(
+                        f"Requested property '{prop:s}' not available "
+                        + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*properties.results[prop])
 
