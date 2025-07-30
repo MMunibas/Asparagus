@@ -181,16 +181,16 @@ class PyCharmm_Calculator:
                     + "\nMake sure parameters are loaded otherwise "
                     + "model predictions are random.")
 
-        #############################
-        # # # Set ML/MM Options # # #
-        #############################
-
         # Set model to evaluation mode
         if self.model_ensemble:
             for calc in self.model_calculator_list:
                 calc.eval()
         else:
             self.model_calculator.eval()
+
+        #############################
+        # # # Set ML/MM Options # # #
+        #############################
 
         # Get property unit conversions from model units to CHARMM units
         self.model_unit_properties = (
@@ -445,7 +445,7 @@ class Electrostatic_shift:
         Lower atom pair distance to start interaction switch-off for ML/MM
         electrostatic interactions
     ml_idxp: torch.Tensor
-        ML atoms ti atom indices pointing from MLMM position to ML position.
+        ML atoms to atom indices pointing from MLMM position to ML position.
     mlmm_atomic_charges: torch.Tensor
         List of all atomic charges of the system loaded to CHARMM.
     kehalf: torch.Tensor

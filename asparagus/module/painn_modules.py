@@ -527,14 +527,16 @@ class Output_PaiNN(torch.nn.Module):
         settings.config class object of Asparagus parameters
     config_file: str, optional, default see settings.default['config_file']
         Path to json file (str)
-    output_properties: list(str), optional '['energy', 'forces']'
+    output_properties: list(str), optional None
         List of output properties to compute by the model
         e.g. ['energy', 'forces', 'atomic_charges']
     output_properties_options: dict(str, Any), optional, default {}
         Dictionary of output block options (item) for a property (key).
+        The defined property ouptut block options will update the default
+        output block options.
         Dictionary inputs are, e.g.:
         output_properties_options = {
-            'atomic_energies': {    # Output of a scalar type output block
+            'atomic_energies': { # Same options as the default scalar ones
                 'output_type':          'scalar',
                 'n_property':           1,
                 'n_layer':              2,
@@ -547,23 +549,14 @@ class Output_PaiNN(torch.nn.Module):
                 'bias_init_layer':      torch.nn.init.zeros_,
                 'bias_init_last':       torch.nn.init.zeros_,
                 }
-            'atomic_charges': { # Scalar output of tensor type output block
+            'atomic_charges': { # Scalar output of a tensor type output block
                 'output_type':          'tensor',
+                # 'properties': [scalar output property, tensor ouutput prop.]
                 'properties':           ['atomic_charges', 'atomic_dipoles'],
-                'n_property':           1,
-                'n_layer':              2,
-                'n_neurons':            None,
-                'scalar_activation_fn': 'silu',
-                'hidden_activation_fn': 'silu',
-                'bias_layer':           True,
-                'bias_last':            True,
-                'weight_init_layer':    torch.nn.init.xavier_uniform_,
-                'weight_init_last':     torch.nn.init.xavier_uniform_,
-                'bias_init_layer':      torch.nn.init.zeros_,
-                'bias_init_last':       torch.nn.init.zeros_,
                 },
             'atomic_dipoles': { # Tensor output of tensor type output block
                 'output_type':          'tensor',
+                # The options of the tensor property dict have priority
                 'properties':           ['atomic_charges', 'atomic_dipoles'],
                 'n_property':           1,
                 'n_layer':              2,
@@ -572,8 +565,8 @@ class Output_PaiNN(torch.nn.Module):
                 'hidden_activation_fn': 'silu',
                 'bias_layer':           True,
                 'bias_last':            True,
-                'weight_init_layer':    torch.nn.init.xavier_uniform_,
-                'weight_init_last':     torch.nn.init.xavier_uniform_,
+                'weight_init_layer':    torch.nn.init.zeros_,
+                'weight_init_last':     torch.nn.init.zeros_,
                 'bias_init_layer':      torch.nn.init.zeros_,
                 'bias_init_last':       torch.nn.init.zeros_,
                 },
@@ -612,62 +605,132 @@ class Output_PaiNN(torch.nn.Module):
     # Default output block options for atom-wise scalar properties such as, 
     # e.g., 'atomic_energies'.
     _default_output_scalar = {
-        'output_type':          'scalar',
-        'n_property':           1,
-        'n_layer':              2,
-        'n_neurons':            None,
-        'activation_fn':        'silu',
-        'bias_layer':           True,
-        'bias_last':            True,
-        'weight_init_layer':    torch.nn.init.xavier_uniform_,
-        'weight_init_last':     torch.nn.init.xavier_uniform_,
-        'bias_init_layer':      torch.nn.init.zeros_,
-        'bias_init_last':       torch.nn.init.zeros_,
+        'output_type':              'scalar',
+        'n_property':               1,
+        'n_layer':                  2,
+        'n_neurons':                None,
+        'activation_fn':            'silu',
+        'bias_layer':               True,
+        'bias_last':                True,
+        'weight_init_layer':        torch.nn.init.xavier_uniform_,
+        'weight_init_last':         torch.nn.init.xavier_uniform_,
+        'bias_init_layer':          torch.nn.init.zeros_,
+        'bias_init_last':           torch.nn.init.zeros_,
+        'kwargs_weight_init_layer': {},
+        'kwargs_weight_init_last':  {},
+        'kwargs_bias_init_layer':   {},
+        'kwargs_bias_init_last':    {},
         }
     
     # Default output block options for atom-wise tensor properties such as, 
     # e.g., 'atomic_dipole'.
     _default_output_tensor = {
-        'output_type':          'tensor',
-        'properties':           [None, None],
-        'n_property':           1,
-        'n_layer':              2,
-        'n_neurons':            None,
-        'scalar_activation_fn': 'silu',
-        'hidden_activation_fn': 'silu',
-        'bias_layer':           True,
-        'bias_last':            True,
-        'weight_init_layer':    torch.nn.init.xavier_uniform_,
-        'weight_init_last':     torch.nn.init.xavier_uniform_,
-        'bias_init_layer':      torch.nn.init.zeros_,
-        'bias_init_last':       torch.nn.init.zeros_,
+        'output_type':              'tensor',
+        'scalar_property':          'atomic_charges',
+        'n_property':               1,
+        'n_layer':                  2,
+        'n_neurons':                None,
+        'scalar_activation_fn':     'silu',
+        'hidden_activation_fn':     'silu',
+        'bias_layer':               True,
+        'bias_last':                True,
+        'weight_init_layer':        torch.nn.init.xavier_uniform_,
+        'weight_init_last':         torch.nn.init.xavier_uniform_,
+        'bias_init_layer':          torch.nn.init.zeros_,
+        'bias_init_last':           torch.nn.init.zeros_,
+        'kwargs_weight_init_layer': {},
+        'kwargs_weight_init_last':  {},
+        'kwargs_bias_init_layer':   {},
+        'kwargs_bias_init_last':    {},
+        }
+    
+    # Property dependent output block options
+    _property_output_options = {
+        'atomic_charges': {
+            **_default_output_scalar,
+            'weight_init_layer':        torch.nn.init.xavier_uniform_,
+            'weight_init_last':         torch.nn.init.xavier_uniform_,
+            'kwargs_weight_init_layer': {'gain': 1.E-3},
+            'kwargs_weight_init_last':  {'gain': 1.E-3},
+            },
+        'atomic_dipoles': {
+            **_default_output_tensor,
+            'weight_init_layer':        torch.nn.init.xavier_uniform_,
+            'weight_init_last':         torch.nn.init.xavier_uniform_,
+            'kwargs_weight_init_layer': {'gain': 1.E-3},
+            'kwargs_weight_init_last':  {'gain': 1.E-3},
+            },
         }
     
     
     # Default output block assignment to properties
     # key: output property
-    # item: list -> [0]:    str, Output block type 'scalar' or 'tensor'
-    #                       None, no output block (skip property)
-    #               [1]:    dict, output block options if [0] str
-    #                       str, dependency to other property if [0] None
-    #               [2]:    optional, int: scalar or tensor result from a
-    #                           'tensor' type output block
-    #       dict -> key:    str, either default case or case if respective
-    #                           property included in output properties list
+    # item: list -> [0]:    dict or None, output block options including the
+    #                       information about the output block type 
+    #                       'output_type': 'scalar' or 'tensor'.
+    #                       If None, no output block for this property, but
+    #                       the property is expected to get build up from other
+    #                       output properties.
+    #               [1]:    int or list of property str, if [0] is a dict of
+    #                       output block options and the output block has the
+    #                       type of 'tensor' providing a scalar and tensor 
+    #                       prediction, the integer assigns the scalar '0' or
+    #                       tensor '1' to the key property. For 'scalar' types,
+    #                       no entry is expected.
+    #                       If [0] is None, it is a list of property strings
+    #                       regarding required property output blocks to
+    #                       compute the key property.
+    #       dict -> key:    str, case dependent output block properties if
+    #                       this other key property is included in the property
+    #                       list. It will take the instructions of the first
+    #                       match in the dictionary.
+    #                       If none of them, use the 'default' output
+    #                       block properties
     #               item:   list -> [0]: Output block type (see item -> list)
     #                               [1]: Output block options ...
     #                               [2]: 'Vector' output block result ...
     _default_property_assignment = {
-        'energy': [None, ['atomic_energies']],
-        'atomic_energies': [_default_output_scalar],
-        'forces': [None, ['energy']],
-        'dipole': [None, ['atomic_charges', 'atomic_dipoles']],
+        'energy': [
+            None,
+            ['atomic_energies']
+            ],
+        'atomic_energies': [
+            _default_output_scalar
+            ],
+        'forces': [
+            None,
+            ['energy']
+            ],
+        'dipole': [
+            None,
+            ['atomic_charges', 'atomic_dipoles']
+            ],
         'atomic_charges': {
-            'default': [_default_output_scalar],
-            'atomic_dipoles': [_default_output_tensor, 0],
+            'default': [
+                _property_output_options['atomic_charges']
+                ],
+            'atomic_dipoles': [
+                _property_output_options['atomic_dipoles'],
+                0
+                ],
             },
-        'atomic_dipoles': [_default_output_tensor, 1],
+        'atomic_dipoles': [
+            _property_output_options['atomic_dipoles'],
+            1
+            ],
         }
+    
+    # _default_property_assignment = {
+    #     'energy': [None, ['atomic_energies']],
+    #     'atomic_energies': [_default_output_scalar],
+    #     'forces': [None, ['energy']],
+    #     'dipole': [None, ['atomic_charges', 'atomic_dipoles']],
+    #     'atomic_charges': {
+    #         'default': [_default_output_scalar],
+    #         'atomic_dipoles': [_default_output_tensor, 0],
+    #         },
+    #     'atomic_dipoles': [_default_output_tensor, 1],
+    #     }
     
     def __init__(
         self,
@@ -726,109 +789,137 @@ class Output_PaiNN(torch.nn.Module):
         ##########################################
 
         # Get model properties to check with output module properties
-        model_properties = config.get('model_properties')
-        properties_all = []
-        if self.output_properties is not None:
-            properties_all += list(self.output_properties) 
-        if model_properties is not None:
-            properties_all += list(model_properties)
+        
+        # collect output properties and model properties
+        if self.output_properties is None:
+            properties_all = []
+        else:
+            properties_all = list(self.output_properties) 
+        if config.get('model_properties') is not None:
+            properties_all += list(config['model_properties'])
 
-        # Initialize output module properties
+        # Check for property completeness
+        for prop in properties_all:
+            if (
+                prop in self._default_property_assignment
+                and utils.is_array_like(
+                    self._default_property_assignment[prop])
+                and self._default_property_assignment[prop][0] is None
+            ):
+                properties_all += list(
+                    self._default_property_assignment[prop][1])
+
+        # Initialize output block module properties
         properties_list = []
         properties_options_scalar = {}
         properties_options_tensor = {}
         
-        # Check defined output properties
+        # Check defined output block properties
         for prop in properties_all:
+
             # Prevent property repetition 
             if prop in properties_list:
                 continue
+
             # Check if property is available
             elif prop in self._default_property_assignment:
-                
-                # Get default property output block instruction
-                instructions = self._default_property_assignment[prop]
-                
-                # Check and get instruction for certain conditions
-                if utils.is_dictionary(instructions):
-                    # Select property-dependent output instructions
-                    for case_prop, case_instructions in instructions.items():
-                        if case_prop == 'default':
-                            instructions = instructions.get('default')
-                        elif case_prop in properties_all:
-                            instructions = case_instructions
-                            break
+
+                # Get default property output block options
+                options = self._default_property_assignment[prop]
+
+                # Check and get options for certain conditions
+                if utils.is_dictionary(options):
+                    # Select property-dependent output options
+                    if any([prop in properties_all for prop in options]):
+                        for case_prop, case_options in options.items():
+                            if case_prop in properties_all:
+                                break
+                        options = case_options
+                    else:
+                        options = options.get('default')
+
+                # Check if ouptut block options is now a list
+                if not utils.is_array_like(options) or options is None:
+                    raise SyntaxError(
+                        f"Output block options for '{prop:s}' is not a list!")
+
+                # Skip properties which are not predicted by an output block
+                if options[0] is None:
+                    continue
                 
                 # Add custom output options if defined
                 if prop in self.output_properties_options:
                     
-                    # Add property and output options
-                    properties_list.append(prop)
-                    
                     # Check output options for completeness by adding 
                     # default options for undefined keyword arguments
-                    option = self.output_properties_options[prop]
-                    if instructions[0] is not None:
-                        option = {**instructions[0], **option}
+                    custom_options = self.output_properties_options[prop]
+                    if options[0] is not None:
+                        options[0] = {**options[0], **custom_options}
 
-                    # Assign output block to scalar or tensor property list
-                    out_type = option.get('output_type')
-                    if out_type == 'scalar':
-                        properties_options_scalar[prop] = option
-                    elif out_type == 'tensor':                        
-                        properties_options_tensor[prop] = option
-                    else:
-                        raise SyntaxError(
-                            "Costum output block options for property "
-                            + f"{prop:s} has unknown type '{out_type:s}'!")
+                # If skip label None is found, check for dependencies
+                elif options[0] is None and utils.is_array_like(options[1]):
 
-                # If skip label is found in instructions
-                elif instructions[0] is None:
-
-                    # Check dependencies and skip property
                     if any([
                         prop_required not in properties_all
-                        for prop_required in instructions[1]]
+                        for prop_required in options[1]]
                     ):
                         raise SyntaxError(
                             f"Model property prediction for '{prop:s}' "
-                            + f"requires property '{instructions[1]}', "
-                            + "which is not defined!")
-                    else:
-                        pass
+                            + f"requires property(ies) {options[1]}, "
+                            + "which is not satisified!")
 
-                # Else  output instructions are given
+                # Check output block options and to the property list
+                if options[0].get('output_type') is None:
+                
+                    raise SyntaxError(
+                        "Mising output block type in the options for property "
+                        + f"'{prop:s}'")
+
+                elif (
+                    options[0].get('output_type').lower() == 'tensor'
+                    and options[0].get('scalar_property') is None
+                ):
+
+                    raise SyntaxError(
+                        "Mising output block 'scalar_property' entry for the "
+                        + f"'tensor' output block of property '{prop:s}'!")
+
                 else:
 
-                    # Add property
+                    # Add scalar property to list
                     properties_list.append(prop)
+                    if options[0].get('scalar_property') is not None:
+                        properties_list.append(
+                            options[0].get('scalar_property'))
 
-                    # Prepare output block options
-                    option = instructions[0]
-                    if len(instructions) == 1:
-                        properties_options_scalar[prop] = option
-                    elif len(instructions) > 1 and 'properties' in option:
-                        option['properties'][instructions[1]] = prop
-                        properties_options_tensor[prop] = option
-                    else:
-                        raise SyntaxError()
+                    # Add options to repsective dictionary
+                    if options[0].get('output_type').lower() == 'scalar':
+                        properties_options_scalar[prop] = options[0]
+                    elif options[0].get('output_type').lower() == 'tensor':
+                        properties_options_tensor[prop] = options[0]
 
             else:
-                raise NotImplementedError(
-                    f"Output module of type {self.output_type:s} does not "
-                    + f"support the property prediction of {prop:s}!")
 
-        # Update output property list and global configuration dictionary
+                raise NotImplementedError(
+                    f"Output module of type '{self.output_type:s}' does not "
+                    + f"support the property prediction of '{prop:s}'!")
+
+        # Update output property list and output block options
         self.output_properties = properties_list
-        self.output_properties_options = {
-            **properties_options_scalar, **properties_options_tensor}
+        self.output_properties_options = properties_options_scalar.copy()
+        for prop, options in properties_options_tensor.items():
+            self.output_properties_options[prop] = options
+            self.output_properties_options[options['scalar_property']] = (
+                options)
+
+        # Update global configuration dictionary
         config_update = {
             'output_properties': self.output_properties,
             'output_properties_options': self.output_properties_options}
         config.update(
             config_update,
             verbose=verbose)
-        
+
         #####################################
         # # # Output Module Class Setup # # #
         #####################################
@@ -837,92 +928,111 @@ class Output_PaiNN(torch.nn.Module):
         self.output_property_scalar_block = torch.nn.ModuleDict({})
         self.output_property_tensor_block = torch.nn.ModuleDict({})
         
-        # Initialize number of property per output block dictionary and 
-        # output block tag list
+        # Initialize number of property per output block dictionary and
+        # scalar property of the tensor output block
         self.output_n_property = {}
-        self.output_tag_properties = {}
-        
-        # Add output blocks for scalar properties
-        for prop, options in properties_options_scalar.items():
+        self.output_tensor_scalar = {}
 
-            # Get activation function
-            activation_fn = layer.get_activation_fn(
-                options.get('activation_fn'))
-
-            # Check essential number of property output parameter
+        # Add output blocks for scalar and tensor properties
+        for prop, options in self.output_properties_options.items():
+            
+            # Check optional number of property output parameter
             if options.get('n_property') is None:
-                raise SynaxError(
-                    "Number of output properties 'n_property' for property "
-                    + f"{prop:s} is not defined!")
-            self.output_n_property[prop] = options.get('n_property')
+                self.output_n_property[prop] = 1
+            else:
+                self.output_n_property[prop] = options.get('n_property')
 
-            # Initialize scalar output block
-            self.output_property_scalar_block[prop] = (
-                layers_painn.PaiNNOutput_scalar(
-                    self.n_atombasis,
-                    options.get('n_property'),
-                    self.device,
-                    self.dtype,
-                    n_layer=options.get('n_layer'),
-                    n_neurons=options.get('n_neurons'),
-                    activation_fn=activation_fn,
-                    bias_layer=options.get('bias_last'),
-                    bias_last=options.get('bias_last'),
-                    weight_init_layer=options.get('weight_init_layer'),
-                    weight_init_last=options.get('weight_init_last'),
-                    bias_init_layer=options.get('bias_init_layer'),
-                    bias_init_last=options.get('bias_init_last'),
+            # Initialize scalar and tensor output blocks
+            if options.get('output_type').lower() == 'scalar':
+                
+                # Get activation function
+                activation_fn = layer.get_activation_fn(
+                    options.get('activation_fn'))
+
+                # Initialize scalar output block
+                self.output_property_scalar_block[prop] = (
+                    layers_painn.PaiNNOutput_scalar(
+                        self.n_atombasis,
+                        self.output_n_property[prop],
+                        self.device,
+                        self.dtype,
+                        n_layer=options.get('n_layer'),
+                        n_neurons=options.get('n_neurons'),
+                        activation_fn=activation_fn,
+                        bias_layer=options.get('bias_last'),
+                        bias_last=options.get('bias_last'),
+                        weight_init_layer=options.get('weight_init_layer'),
+                        weight_init_last=options.get('weight_init_last'),
+                        bias_init_layer=options.get('bias_init_layer'),
+                        bias_init_last=options.get('bias_init_last'),
+                        kwargs_weight_init_layer=options.get(
+                            'kwargs_weight_init_layer'),
+                        kwargs_weight_init_last=options.get(
+                            'kwargs_weight_init_last'),
+                        kwargs_bias_init_layer=options.get(
+                            'kwargs_bias_init_layer'),
+                        kwargs_bias_init_last=options.get(
+                            'kwargs_bias_init_last'),
+                        )
                     )
-                )
-        
-        # Add output blocks for (scalar +) tensor properties
-        for prop, options in properties_options_tensor.items():
 
-            # Get activation function
-            scalar_activation_fn = layer.get_activation_fn(
-                options.get('scalar_activation_fn'))
-            hidden_activation_fn = layer.get_activation_fn(
-                options.get('hidden_activation_fn'))
+            elif (
+                options.get('output_type').lower() == 'tensor'
+                and prop != options['scalar_property']
+            ):
 
-            # Check essential number of property output parameter
-            if options.get('n_property') is None:
-                raise SynaxError(
-                    "Number of output properties 'n_property' for property "
-                    + f"{prop:s} is not defined!")
-            self.output_n_property[prop] = options.get('n_property')
+                # Assing scalar property to and tensor property tag
+                self.output_tensor_scalar[prop] = options['scalar_property']
 
-            # Get combined scalar and tensor property tag, skip if already done
-            prop_tuple = tuple(options.get('properties'))
-            prop_tag = '_&_'.join([str(p) for p in prop_tuple])
-            if prop_tag in self.output_tag_properties:
-                continue
-            self.output_tag_properties[prop_tag] = prop_tuple
+                # Get scalar and hidden activation function
+                scalar_activation_fn = layer.get_activation_fn(
+                    options['scalar_activation_fn'])
+                hidden_activation_fn = layer.get_activation_fn(
+                    options['hidden_activation_fn'])
 
-            # Initialize scalar output block
-            self.output_property_tensor_block[prop_tag] = (
-                layers_painn.PaiNNOutput_tensor(
-                    self.n_atombasis,
-                    options.get('n_property'),
-                    self.device,
-                    self.dtype,
-                    n_layer=options.get('n_layer'),
-                    n_neurons=options.get('n_neurons'),
-                    scalar_activation_fn=scalar_activation_fn,
-                    hidden_activation_fn=hidden_activation_fn,
-                    bias_layer=options.get('bias_last'),
-                    bias_last=options.get('bias_last'),
-                    weight_init_layer=options.get('weight_init_layer'),
-                    weight_init_last=options.get('weight_init_last'),
-                    bias_init_layer=options.get('bias_init_layer'),
-                    bias_init_last=options.get('bias_init_last'),
+                # Initialize tensor output block
+                self.output_property_tensor_block[prop] = (
+                    layers_painn.PaiNNOutput_tensor(
+                        self.n_atombasis,
+                        self.output_n_property[prop],
+                        self.device,
+                        self.dtype,
+                        n_layer=options.get('n_layer'),
+                        n_neurons=options.get('n_neurons'),
+                        scalar_activation_fn=scalar_activation_fn,
+                        hidden_activation_fn=hidden_activation_fn,
+                        bias_layer=options.get('bias_last'),
+                        bias_last=options.get('bias_last'),
+                        weight_init_layer=options.get('weight_init_layer'),
+                        weight_init_last=options.get('weight_init_last'),
+                        bias_init_layer=options.get('bias_init_layer'),
+                        bias_init_last=options.get('bias_init_last'),
+                        kwargs_weight_init_layer=options.get(
+                            'kwargs_weight_init_layer'),
+                        kwargs_weight_init_last=options.get(
+                            'kwargs_weight_init_last'),
+                        kwargs_bias_init_layer=options.get(
+                            'kwargs_bias_init_layer'),
+                        kwargs_bias_init_last=options.get(
+                            'kwargs_bias_init_last'),
+                        )
                     )
-                )
 
         # Initialize property and atomic properties scaling dictionary
         self.output_scaling = torch.nn.ParameterDict()
 
         # Assign property and atomic properties scaling parameters
         self.set_property_scaling(self.output_property_scaling)
+
+        # Add class variables
+        for prop, n_property in self.output_n_property.items():
+            self.register_buffer(
+                f"output_n_property:{prop:s}",
+                torch.tensor(
+                    n_property,
+                    device=self.device,
+                    dtype=torch.int64)
+                    )
 
         return
 
@@ -1128,7 +1238,9 @@ class Output_PaiNN(torch.nn.Module):
         for prop, output_block in self.output_property_tensor_block.items():
             
             # Get scalar and tensor property tags
-            (sprop, vprop) = self.output_tag_properties[prop]
+            sprop = self.output_tensor_scalar[prop]
+            vprop = prop
+            
             
             # Skip if property not requested
             if (

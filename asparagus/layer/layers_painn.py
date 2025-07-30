@@ -1,4 +1,4 @@
-from typing import Optional, Union, List, Dict, Callable
+from typing import Optional, Union, List, Dict, Callable, Any
 
 import torch
 
@@ -236,6 +236,10 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         weights are used.
     bias_init: callable, optional, default 'torch.nn.init.zeros_'
         By Default, zero bias values are initialized.
+    kwargs_weight_init: dict, optional, default {}
+        Additional keyword arguments for weight values initialization
+    kwargs_bias_init: dict, optional, default {}
+        Additional keyword arguments for bias values initialization
 
     """
     def __init__(
@@ -252,6 +256,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         dtype: 'dtype',
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
+        kwargs_weight_init: Optional[dict[str, Any]] = {},
+        kwargs_bias_init: Optional[dict[str, Any]] = {},
     ):
         """
         Initialize gated equivariant block.
@@ -291,6 +297,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
                 dtype,
                 weight_init=weight_init,
                 bias_init=bias_init,
+                kwargs_weight_init=kwargs_weight_init,
+                kwargs_bias_init=kwargs_bias_init,
                 ),
             DenseLayer(
                 hidden_n_neurons,
@@ -301,6 +309,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
                 dtype,
                 weight_init=weight_init,
                 bias_init=bias_init,
+                kwargs_weight_init=kwargs_weight_init,
+                kwargs_bias_init=kwargs_bias_init,
                 ),                
         )
 
@@ -383,19 +393,47 @@ class PaiNNOutput_scalar(torch.nn.Module):
         Number of neurons of the hidden layers (int) or per hidden layer (list)
     activation_fn: callable, optional, default None
         Residual layer activation function.
-    
+    bias_layer: bool, optional, default True
+        Add bias parameter for hidden layer neurons
+    bias_last: bool, optional, default True
+        Add bias parameter for last layer neuron(s)
+    weight_init_layer: callable, optional, default 'torch.nn.init.zeros_'
+        Weight parameter initialization function of the hidden layer
+    weight_init_last: callable, optional, default 'torch.nn.init.zeros_'
+        Weight parameter initialization function of the last layer
+    bias_init_layer: callable, optional, default 'torch.nn.init.zeros_'
+        Bias parameter initialization function of the hidden layer
+    bias_init_last: callable, optional, default 'torch.nn.init.zeros_'
+        Bias parameter initialization function of the last layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the last layer
+    kwargs_bias_init_layer: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the last layer
+
     """
     
     _default_output_scalar = {
-        'n_layer':              2,
-        'n_neurons':            None,
-        'activation_fn':        None,
-        'bias_layer':           True,
-        'bias_last':            True,
-        'weight_init_layer':    torch.nn.init.zeros_,
-        'weight_init_last':     torch.nn.init.zeros_,
-        'bias_init_layer':      torch.nn.init.zeros_,
-        'bias_init_last':       torch.nn.init.zeros_,
+        'n_layer':                  2,
+        'n_neurons':                None,
+        'activation_fn':            None,
+        'bias_layer':               True,
+        'bias_last':                True,
+        'weight_init_layer':        torch.nn.init.zeros_,
+        'weight_init_last':         torch.nn.init.zeros_,
+        'bias_init_layer':          torch.nn.init.zeros_,
+        'bias_init_last':           torch.nn.init.zeros_,
+        'kwargs_weight_init_layer': {},
+        'kwargs_weight_init_last':  {},
+        'kwargs_bias_init_layer':   {},
+        'kwargs_bias_init_last':    {},
         }
     
     def __init__(
@@ -413,6 +451,10 @@ class PaiNNOutput_scalar(torch.nn.Module):
         weight_init_last: Optional[Callable] = None,
         bias_init_layer: Optional[Callable] = None,
         bias_init_last: Optional[Callable] = None,
+        kwargs_weight_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_weight_init_last: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_last: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize PaiNN scalar output block.
@@ -461,6 +503,8 @@ class PaiNNOutput_scalar(torch.nn.Module):
                     dtype,
                     weight_init=self.weight_init_layer,
                     bias_init=self.bias_init_layer,
+                    kwargs_weight_init=self.kwargs_weight_init_layer,
+                    kwargs_bias_init_layer=self.kwargs_bias_init_layer,
                     ),
                 )
         
@@ -475,6 +519,8 @@ class PaiNNOutput_scalar(torch.nn.Module):
                 dtype,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
+                kwargs_weight_init=self.kwargs_weight_init_last,
+                kwargs_bias_init=self.kwargs_bias_init_last,
                 ),
             )
         
@@ -544,21 +590,37 @@ class PaiNNOutput_tensor(torch.nn.Module):
         Bias parameter initialization function of the hidden layer
     bias_init_last: callable, optional, default 'torch.nn.init.zeros_'
         Bias parameter initialization function of the last layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the last layer
+    kwargs_bias_init_layer: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the last layer
     
     """
     
     _default_output_tensor = {
-        'n_layer':              2,
-        'n_neurons':            None,
-        'hidden_n_neurons':     None,
-        'scalar_activation_fn': None,
-        'hidden_activation_fn': None,
-        'bias_layer':           True,
-        'bias_last':            True,
-        'weight_init_layer':    torch.nn.init.zeros_,
-        'weight_init_last':     torch.nn.init.zeros_,
-        'bias_init_layer':      torch.nn.init.zeros_,
-        'bias_init_last':       torch.nn.init.zeros_,
+        'n_layer':                  2,
+        'n_neurons':                None,
+        'hidden_n_neurons':         None,
+        'scalar_activation_fn':     None,
+        'hidden_activation_fn':     None,
+        'bias_layer':               True,
+        'bias_last':                True,
+        'weight_init_layer':        torch.nn.init.zeros_,
+        'weight_init_last':         torch.nn.init.zeros_,
+        'bias_init_layer':          torch.nn.init.zeros_,
+        'bias_init_last':           torch.nn.init.zeros_,
+        'kwargs_weight_init_layer': {},
+        'kwargs_weight_init_last':  {},
+        'kwargs_bias_init_layer':   {},
+        'kwargs_bias_init_last':    {},
         }
     
     def __init__(
@@ -572,12 +634,16 @@ class PaiNNOutput_tensor(torch.nn.Module):
         hidden_n_neurons: Optional[Union[int, List[int]]] = None,
         scalar_activation_fn: Optional[Callable] = None,
         hidden_activation_fn: Optional[Callable] = None,
-        bias_layer: Optional[bool] = True,
-        bias_last: Optional[bool] = True,
-        weight_init_layer: Optional[Callable] = torch.nn.init.zeros_,
-        weight_init_last: Optional[Callable] = torch.nn.init.zeros_,
-        bias_init_layer: Optional[Callable] = torch.nn.init.zeros_,
-        bias_init_last: Optional[Callable] = torch.nn.init.zeros_,
+        bias_layer: Optional[bool] = None,
+        bias_last: Optional[bool] = None,
+        weight_init_layer: Optional[Callable] = None,
+        weight_init_last: Optional[Callable] = None,
+        bias_init_layer: Optional[Callable] = None,
+        bias_init_last: Optional[Callable] = None,
+        kwargs_weight_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_weight_init_last: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_last: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize PaiNN tensor output block.
@@ -640,6 +706,8 @@ class PaiNNOutput_tensor(torch.nn.Module):
                     dtype,
                     weight_init=self.weight_init_layer,
                     bias_init=self.bias_init_layer,
+                    kwargs_weight_init=self.kwargs_weight_init_layer,
+                    kwargs_bias_init_layer=self.kwargs_bias_init_layer,
                     ),
                 )
         
@@ -658,6 +726,8 @@ class PaiNNOutput_tensor(torch.nn.Module):
                 dtype,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
+                kwargs_weight_init=self.kwargs_weight_init_last,
+                kwargs_bias_init=self.kwargs_bias_init_last
                 ),
             )
 

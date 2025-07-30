@@ -96,7 +96,8 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
             if atomic_numbers_cumsum is None:
                 atomic_numbers_cumsum = torch.cat(
                     [
-                        torch.zeros((1,), dtype=sys_i.dtype),
+                        torch.zeros(
+                            (1,), device=self.device, dtype=sys_i.dtype),
                         torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
                     ],
                     dim=0)
@@ -105,7 +106,8 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         else:
 
             # Assign cumulative atomic number list and system index
-            atomic_numbers_cumsum = torch.zeros((1,), dtype=sys_i.dtype)
+            atomic_numbers_cumsum = torch.zeros(
+                (1,), device=self.device, dtype=sys_i.dtype)
             sys_i = torch.zeros_like(atomic_numbers)
 
             # Extend periodic system data
@@ -139,7 +141,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
             coll_batch['idcs_k'] = [idx_i.detach() for idx_i in idcs_i]
             coll_batch['idcs_l'] = [idx_j.detach() for idx_j in idcs_j]
             if pbc_offsets is not None:
-                coll_batch['pbc_offsets_l'] = [
+                coll_batch['pbc_offsets_kl'] = [
                     pbc_offset.detach() for pbc_offset in pbc_offsets]
 
         return coll_batch
@@ -180,7 +182,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                     cell_seg, pbc[iseg], self.max_cutoff)
             else:
                 seg_offsets = torch.zeros(
-                    0, 3, device=positions.device, dtype=positions.dtype)
+                    0, 3, device=self.device, dtype=positions.dtype)
 
             # Compute pair indices
             sys_idcs_i, sys_idcs_j, seg_offsets = self._get_neighbor_pairs(
@@ -447,7 +449,8 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
             if atomic_numbers_cumsum is None:
                 atomic_numbers_cumsum = torch.cat(
                     [
-                        torch.zeros((1,), dtype=sys_i.dtype),
+                        torch.zeros(
+                            (1,), device=self.device, dtype=sys_i.dtype),
                         torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
                     ],
                     dim=0)
@@ -493,7 +496,7 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
             coll_batch['idcs_k'] = [idx_i.detach() for idx_i in idcs_i[2:]]
             coll_batch['idcs_l'] = [idx_j.detach() for idx_j in idcs_j[2:]]
             if pbc_offsets is not None:
-                coll_batch['pbc_offsets_l'] = [
+                coll_batch['pbc_offsets_kl'] = [
                     pbc_offset.detach() for pbc_offset in pbc_offsets]
             coll_batch['fidx_k'] = [fidx_i.detach() for fidx_i in fidcs_i[2:]]
 

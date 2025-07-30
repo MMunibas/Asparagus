@@ -1,4 +1,4 @@
-from typing import Optional, Union, Callable
+from typing import Optional, Union, Callable, Any
 
 import torch
 
@@ -28,6 +28,10 @@ class DenseLayer(torch.nn.Linear):
         weights are used.
     bias_init: callable, optional, default 'torch.nn.init.zeros_'
         By Default, zero bias values are initialized.
+    kwargs_weight_init: dict, optional, default {}
+        Additional keyword arguments for weight values initialization
+    kwargs_bias_init: dict, optional, default {}
+        Additional keyword arguments for bias values initialization
     device: str, optional, default 'cpu'
         Device type for model variable allocation
     dtype: dtype object, optional, default 'torch.float64'
@@ -45,7 +49,8 @@ class DenseLayer(torch.nn.Linear):
         dtype: 'dtype',
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
-        
+        kwargs_weight_init: Optional[dict[str, Any]] = {},
+        kwargs_bias_init: Optional[dict[str, Any]] = {},
     ):
         """
         Initialize dense layer.
@@ -54,6 +59,8 @@ class DenseLayer(torch.nn.Linear):
 
         self.weight_init = weight_init
         self.bias_init = bias_init
+        self.kwargs_bias_init = kwargs_bias_init
+        self.kwargs_weight_init = kwargs_weight_init
         super(DenseLayer, self).__init__(
             n_input, n_output, bias=bias, device=device, dtype=dtype)
 
@@ -71,9 +78,9 @@ class DenseLayer(torch.nn.Linear):
         """
         Initialize dense layer variables.
         """
-        self.weight_init(self.weight)
+        self.weight_init(self.weight, **self.kwargs_weight_init)
         if self.bias is not None:
-            self.bias_init(self.bias)
+            self.bias_init(self.bias, **self.kwargs_bias_init)
         
         return
 
