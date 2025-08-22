@@ -44,6 +44,17 @@ class BaseModel(torch.nn.Module):
     ):
         """
         Initialize BaseModel Calculator
+
+        Parameters
+        ----------
+        config: (str, dict, object), optional, default None
+            Either the path to json file (str), dictionary (dict) or
+            settings.config class object of Asparagus parameters
+        device: str, optional, default global setting
+            Device type for model variable allocation
+        dtype: dtype object, optional, default global setting
+            Model variables data type
+
         """
 
         super(BaseModel, self).__init__()
@@ -52,6 +63,16 @@ class BaseModel(torch.nn.Module):
         # Initialize loaded checkpoint flag
         self.checkpoint_loaded = False
         self.checkpoint_file = None
+
+        # Initialize general flags
+        self.model_energy = False
+        self.model_forces = False
+        self.model_repulsion = False
+        self.model_electrostatic = False
+        self.model_dispersion = False
+        self.model_atomic_charges = False
+        self.model_atomic_dipoles = False
+        self.model_dipole = False
 
         return
 
@@ -349,9 +370,9 @@ class BaseModel(torch.nn.Module):
         """
 
         long_range_cutoff = self.model_cutoff
-        if hasattr(self.input_module, 'input_radial_cutoff'):
+        if hasattr(self.module_dict['input'], 'input_radial_cutoff'):
             short_range_cutoff = (
-                self.input_module.input_radial_cutoff)
+                self.module_dict['input'].input_radial_cutoff)
             if short_range_cutoff != long_range_cutoff:
                 cutoffs = [short_range_cutoff, long_range_cutoff]
         else:
@@ -452,7 +473,7 @@ class BaseModel(torch.nn.Module):
             Scalable model properties
 
         """
-        return self.output_module.output_properties
+        return self.module_dict['output'].output_properties
 
     def set_property_scaling(
         self,
@@ -483,10 +504,10 @@ class BaseModel(torch.nn.Module):
         # Set property scaling factors and shift terms
         if (
             property_scaling is not None
-            and hasattr(self.output_module, "set_property_scaling")
+            and hasattr(self.module_dict['output'], "set_property_scaling")
         ):
 
-            self.output_module.set_property_scaling(
+            self.module_dict['output'].set_property_scaling(
                 property_scaling,
                 set_shift_term=set_shift_term,
                 set_scaling_factor=set_scaling_factor)
@@ -508,8 +529,8 @@ class BaseModel(torch.nn.Module):
         """
 
         # Get property scaling factors and shift terms
-        if hasattr(self.output_module, "get_property_scaling"):
-            property_scaling = self.output_module.get_property_scaling()
+        if hasattr(self.module_dict['output'], "get_property_scaling"):
+            property_scaling = self.module_dict['output'].get_property_scaling()
         else:
             property_scaling = {}
 
@@ -570,8 +591,6 @@ class BaseModel(torch.nn.Module):
 
         return trainable_parameters
 
-    # @torch.compile # Not supporting backwards propagation with torch.float64
-    # @torch.jit.export  # No effect, as 'forward' already is
     def forward(
         self,
         batch: Dict[str, torch.Tensor]
@@ -691,7 +710,7 @@ class BaseModel(torch.nn.Module):
 
         # Number of atoms
         batch['atoms_number'] = torch.tensor(
-            [len(atms) for atms in atoms],
+            [len(image) for image in atoms],
             device=self.device, dtype=torch.int64)
 
         # System segment index of atom i
@@ -703,8 +722,8 @@ class BaseModel(torch.nn.Module):
         # Atomic numbers properties
         batch['atomic_numbers'] = torch.cat(
             [
-                torch.tensor(atms.get_atomic_numbers(), dtype=torch.int64)
-                for atms in atoms
+                torch.tensor(image.get_atomic_numbers(), dtype=torch.int64)
+                for image in atoms
             ], 0).to(
                 device=self.device, dtype=torch.int64)
 
@@ -715,14 +734,14 @@ class BaseModel(torch.nn.Module):
             fconv = conversion['positions']
         batch['positions'] = torch.cat(
             [
-                torch.tensor(atms.get_positions()*fconv, dtype=self.dtype)
-                for atms in atoms
+                torch.tensor(image.get_positions()*fconv, dtype=self.dtype)
+                for image in atoms
             ], 0).to(
                 device=self.device, dtype=self.dtype)
 
         # Atom periodic boundary conditions
         batch['pbc'] = torch.tensor(
-            np.array([atms.get_pbc() for atms in atoms]),
+            np.array([image.get_pbc() for image in atoms]),
             dtype=torch.bool, device=self.device)
 
         # Atom cell information
@@ -731,7 +750,7 @@ class BaseModel(torch.nn.Module):
         else:
             fconv = conversion['positions']
         batch['cell'] = torch.tensor(
-            np.array([atms.get_cell()[:]*fconv for atms in atoms]),
+            np.array([image.get_cell()[:]*fconv for image in atoms]),
             dtype=self.dtype, device=self.device)
 
         # Total atomic system charge
@@ -741,17 +760,17 @@ class BaseModel(torch.nn.Module):
             fconv = conversion['charge']
         if charge is None:
             try:
-                charge = [np.sum(atms.get_charges())*fconv for atms in atoms]
+                charge = [np.sum(image.get_charges())*fconv for image in atoms]
             except RuntimeError:
                 charge = [
-                    np.sum(atms.get_initial_charges())*fconv
-                    for atms in atoms]
+                    np.sum(image.get_initial_charges())*fconv
+                    for image in atoms]
         elif utils.is_numeric(charge):
             charge = [charge*fconv]*len(atoms)
         elif utils.is_numeric_array(charge):
             charge = np.array(charge)*fconv
         else:
-            charge = [0.0]*len(atoms)
+            raise ValueError("Input 'charge' is not a numeric value or array!")
         batch['charge'] = torch.tensor(
             charge, dtype=self.dtype, device=self.device)
 
@@ -923,7 +942,7 @@ class BaseModel(torch.nn.Module):
         dataset: Union[data.DataContainer, data.DataSet, data.DataSubSet],
         batch_size: Optional[int] = 32,
         num_workers: Optional[int] = 1,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, torch.Tensor]:
 
         """
@@ -949,6 +968,7 @@ class BaseModel(torch.nn.Module):
         dataloader = data.DataLoader(
             dataset,
             batch_size,
+            [],
             False,
             num_workers,
             self.device,
@@ -961,20 +981,182 @@ class BaseModel(torch.nn.Module):
             prediction = self.forward(batch, **kwargs)
 
             # Append prediction to result dictionary
-            for prop, item in prediction.items():
+            for prop in self.model_properties:
                 if results.get(prop) is None:
-                    results[prop] = [item.cpu().detach()]
+                    results[prop] = [prediction[prop].cpu().detach()]
                 else:
-                    results[prop].append(item.cpu().detach())
+                    results[prop].append(prediction[prop].cpu().detach())
     
         # Concatenate results
-        for prop, item in results.items():
-            if ib and item[0].shape:
-                results[prop] = torch.cat(item)
+        for prop in self.model_properties:
+            if ib and prediction[prop][0].shape:
+                results[prop] = torch.cat(prediction[prop])
             elif ib:
                 results[prop] = torch.cat(
-                    [item_i.reshape(1) for item_i in item], dim=0)
+                    [result.reshape(1) for result in prediction[prop]], dim=0)
             else:
-                results[prop] = item[0]
+                results[prop] = prediction[prop][0]
 
         return prediction
+
+    def compute_energy(
+        self,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute system energy from atomic energy contributions
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input and result data tensors
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+        
+        # Compute system energy
+        batch['energy'] = torch.zeros_like(batch['charge']).scatter_add_(
+            0,
+            batch['sys_i'],
+            batch['atomic_energies'])
+
+        # If verbose, store system energy of each single atomic energy
+        # contribution known
+        if verbose:
+            verbose_properties = [
+                'output',
+                'repulsion',
+                'dispersion',
+                'electrostatic'
+                ]
+            for prop in verbose_properties:
+                verbose_prop = '{:s}_atomic_energies'.format(prop)
+                if verbose_prop in batch:
+                    verbose_prop_energy = '{:s}_energy'.format(prop)
+                    batch[verbose_prop_energy] = torch.zeros_like(
+                        batch['energy']
+                        ).scatter_add_(
+                            0,
+                            batch['sys_i'],
+                            batch[verbose_prop]
+                        )
+
+        return batch
+
+    def compute_forces(
+        self,
+        batch: Dict[str, torch.Tensor],
+        create_graph: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute forces and, eventually, Hessian of the potential energy with
+        respect to atom positions
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input and result data tensors for gradient and 
+            Hessian computation
+        create_graph: bool, optional, default False
+            Parameter for 'torch.autograd.grad' to force keeping derivative
+            graph if set to true.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+        
+        # Compute energy gradient, keep backpropagation graph only if model
+        # is in training mode or Hessian is demanded
+        gradient = torch.autograd.grad(
+            [torch.sum(batch['energy']),],
+            [batch['positions'],],
+            create_graph=(
+                self.training or self.model_hessian or create_graph)
+        )[0]
+        
+        # Provoke crashing if forces are none
+        assert gradient is not None
+        batch['forces'] = -gradient
+        
+        # If demanded, compute Hessian (computationally expensive!)
+        if self.model_hessian:
+            dim_hessian = 3*batch['positions'].size(0)
+            hessian = batch['energy'].new_zeros((dim_hessian, dim_hessian))
+            for ig, grad_i in enumerate(gradient.view(-1)):
+                hessian_ig = torch.autograd.grad(
+                    [grad_i],
+                    [batch['positions']],
+                    retain_graph=(ig < dim_hessian))[0]
+                if hessian_ig is not None:
+                    hessian[ig] = hessian_ig.view(-1)
+            batch['hessian'] = hessian
+
+        return batch
+
+    def compute_dipole(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute the molecular dipole moment from atom-centred charges and
+        atomic dipole moments
+        
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input data and predicted properties
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Dictionary with additional molecular dipole prediction
+
+        """
+        
+        # For supercluster method, just use primary cell atom positions
+        if 'pbc_atoms' in batch:
+            positions_dipole = batch['positions'][batch['pbc_atoms']]
+        else:
+            positions_dipole = batch['positions']
+
+        # In case of non-zero system charges, shift origin to center of
+        # mass
+        atomic_masses = self.atomic_masses[batch['atomic_numbers']]
+        system_mass = torch.zeros_like(batch['charge']).scatter_add_(
+            0, batch['sys_i'], atomic_masses)
+
+        system_com = torch.zeros(
+            (batch['atoms_number'].size(0), 3),
+            device=self.device, dtype=self.dtype)
+        system_com = (
+            system_com.scatter_add_(
+                0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                atomic_masses.unsqueeze(-1)*positions_dipole
+                ).reshape(-1, 3)
+            / system_mass.unsqueeze(-1)
+            )
+        positions_com = positions_dipole - system_com[batch['sys_i']]
+
+        # Compute molecular dipole moment from atomic charges
+        batch['dipole'] = torch.zeros_like(system_com).scatter_add_(
+            0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+            batch['atomic_charges'].unsqueeze(-1)*positions_com)
+
+        # Refine molecular dipole moment with atomic dipole moments
+        if self.model_atomic_dipoles:
+            batch['dipole'] = batch['dipole'].scatter_add_(
+                0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                batch['atomic_dipoles'])
+
+        return batch

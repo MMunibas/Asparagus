@@ -236,7 +236,7 @@ def estimate_property_scaling(
 def get_model_prediction_and_reference_properties(
     model_calculator: model.BaseModel,
     data_loader: data.DataLoader,
-    properties_available: List[str],
+    properties: List[str],
     model_conversion: Dict[str, float],
 ) -> (Dict[str, np.ndarray], Dict[str, np.ndarray]):
     """
@@ -248,9 +248,8 @@ def get_model_prediction_and_reference_properties(
         Asparagus model calculator object
     data_loader: data.Dataloader
         Reference data loader to provide reference system data
-    properties_available: list(str)
-        Properties list generally predicted by the output module
-        where the property scaling is usually applied.
+    properties: list(str)
+        Properties list available in the reference system data
     model_conversion: dict(str, float)
         Dictionary of model to data property unit conversion factors
 
@@ -268,7 +267,7 @@ def get_model_prediction_and_reference_properties(
     properties_system = ['atoms_number', 'atomic_numbers', 'sys_i']
     for prop in properties_system:
         properties_reference[prop] = []
-    for prop in properties_available:
+    for prop in properties:
         properties_reference[prop] = []
 
     # Prepare prediction dictionary
@@ -278,22 +277,27 @@ def get_model_prediction_and_reference_properties(
     for ib, batch in enumerate(data_loader):
 
         # Predict model properties from data batch
-        prediction = model_calculator(
+        batch = model_calculator(
             batch,
             no_derivation=True,
             verbose_results=True)
 
         # Append prediction to library
-        for prop, item in prediction.items():
+        for prop in batch:
+            if not utils.is_torch_tensor(batch[prop]):
+                continue
             if properties_prediction.get(prop) is None:
                 properties_prediction[prop] = []
             properties_prediction[prop].append(
-                item.cpu().detach().reshape(-1))
+                batch[prop].cpu().detach().reshape(-1))
 
         # Append system information and reference properties
-        for prop in properties_system + properties_available:
+        for prop in properties_system:
             properties_reference[prop].append(
                 batch[prop].cpu().detach())
+        for prop in properties:
+            properties_reference[prop].append(
+                batch['reference'][prop].cpu().detach())
 
     # Concatenate prediction and reference results
     for prop, item in properties_prediction.items():
@@ -302,7 +306,7 @@ def get_model_prediction_and_reference_properties(
         else:
             properties_prediction[prop] = (item[0].numpy())
 
-    for prop in properties_system + properties_available:
+    for prop in properties_system + properties:
         if ib:
             if prop == 'sys_i':
                 sys_i = []
@@ -471,15 +475,13 @@ def compute_property_scaling(
                     # energies
                     reference_output_energy = (
                         properties_reference['energy'].copy())
+                    prediction_without_output_energy = (
+                        properties_prediction['energy'].copy())
                     property_tag = '_energy'
-                    property_list = []
-                    for prop, item in properties_prediction.items():
-                        if property_tag in prop[-len(property_tag):]:
-                            if 'output_' in prop:
-                                continue
-                            else:
-                                property_list.append(prop)
-                                reference_output_energy -= item
+                    if 'output_energy' in properties_prediction:
+                        prediction_without_output_energy -= (
+                            properties_prediction['output_energy'])
+                    reference_output_energy -= prediction_without_output_energy
 
                     # Scale atomic energies output to best match total system
                     # energy

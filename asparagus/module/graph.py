@@ -6,11 +6,11 @@ import torch
 #======================================
 
 def get_Graph_PhysNet():
-    from .physnet_modules import Graph_PhysNet
+    from .module_physnet import Graph_PhysNet
     return Graph_PhysNet
 
 def get_Graph_PaiNN():
-    from .painn_modules import Graph_PaiNN
+    from .module_painn import Graph_PaiNN
     return Graph_PaiNN
 
 

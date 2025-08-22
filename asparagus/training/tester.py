@@ -75,7 +75,7 @@ class Tester:
         'test_datasets':                ['test'],
         'test_properties':              None,
         'test_batch_size':              128,
-        'test_num_batch_workers':       1,
+        'test_num_batch_workers':       0,
         'test_directory':               '.',
         }
 
@@ -151,6 +151,19 @@ class Tester:
         self.data_properties = self.data_container.data_properties
         self.data_units = self.data_container.data_unit_properties
 
+        ##########################
+        # # # Prepare Tester # # #
+        ##########################
+
+        # Check test properties if defined
+        self.test_properties = self.check_test_properties(
+            self.test_properties,
+            self.data_properties)
+
+        # Check test directory
+        if not os.path.exists(self.test_directory):
+            os.makedirs(self.test_directory)
+
         #########################################
         # # # Prepare Reference Data Loader # # #
         #########################################
@@ -160,6 +173,7 @@ class Tester:
             self.test_batch_size,
             self.test_batch_size,
             self.test_batch_size,
+            reference_properties=self.test_properties,
             num_workers=self.test_num_batch_workers,
             device=self.device,
             dtype=self.dtype)
@@ -174,19 +188,6 @@ class Tester:
         self.test_data = {
             label: self.data_container.get_dataloader(label)
             for label in self.test_datasets}
-
-        ##########################
-        # # # Prepare Tester # # #
-        ##########################
-
-        # Check test properties if defined
-        self.test_properties = self.check_test_properties(
-            self.test_properties,
-            self.data_properties)
-
-        # Check test directory
-        if not os.path.exists(self.test_directory):
-            os.makedirs(self.test_directory)
 
         return
 
@@ -331,6 +332,8 @@ class Tester:
             test_properties = self.check_test_properties(
                 test_properties,
                 self.data_properties)
+            for dataloader in self.test_data:
+                dataloader.set_reference_properties(test_properties)
 
         # Check test properties model to reference data conversion
         test_conversion = {}
@@ -394,10 +397,13 @@ class Tester:
             cutoffs = model_calculator.get_cutoff_ranges()
             
             # Set maximum model cutoff for neighbor list calculation
-            datasubset.init_neighbor_list(
-                cutoff=cutoffs,
-                device=self.device,
-                dtype=self.dtype)
+            if datasubset.neighbor_list is None:
+                datasubset.init_neighbor_list(
+                    cutoff=cutoffs,
+                    device=self.device,
+                    dtype=self.dtype)
+            else:
+                datasubset.neighbor_list.set_cutoffs(cutoffs)
 
             # Prepare dictionary for property values, number of atoms per
             # system, and reference energy shifts
@@ -420,14 +426,14 @@ class Tester:
             for batch in datasubset:
 
                 # Predict model properties from data batch
-                prediction = model_calculator(
+                batch = model_calculator(
                     batch,
                     verbose_results=True)
 
                 # Compute metrics for test properties
                 metrics_batch = self.compute_metrics(
-                    prediction,
                     batch,
+                    batch['reference'],
                     eval_properties,
                     test_conversion,
                     model_ensemble,
@@ -448,8 +454,9 @@ class Tester:
                 for prop in eval_properties:
                     
                     # Detach prediction and reference data
-                    data_prediction = prediction[prop].detach().cpu().numpy()
-                    data_reference = batch[prop].detach().cpu().numpy()
+                    data_prediction = batch[prop].detach().cpu().numpy()
+                    data_reference = (
+                        batch['reference'][prop].detach().cpu().numpy())
 
                     # Apply unit conversion of model prediction
                     data_prediction *= test_conversion[prop]
@@ -491,7 +498,7 @@ class Tester:
                             
                             # Detach prediction and reference data
                             data_prediction = (
-                                prediction[imodel][prop].detach().cpu().numpy()
+                                batch[imodel][prop].detach().cpu().numpy()
                                 )
 
                             # Apply unit conversion of model prediction
@@ -610,15 +617,15 @@ class Tester:
             # Check input for scaling per atom and prepare atom number scaling
             if utils.is_string(test_scale_per_atom):
                 test_scale_per_atom = [test_scale_per_atom]
-            test_property_scaling = {}
+            test_property_atoms_scaling = {}
             for prop in eval_properties:
                 if prop in test_scale_per_atom:
-                    test_property_scaling[prop] = (
+                    test_property_atoms_scaling[prop] = (
                         1./np.array(
                             test_prediction['atoms_number'], dtype=float)
                         )
                 else:
-                    test_property_scaling[prop] = None
+                    test_property_atoms_scaling[prop] = None
 
             # Plot correlation between model and reference properties
             if test_plot_correlation:
@@ -630,7 +637,7 @@ class Tester:
                         self.plain_data(test_reference[prop]),
                         self.data_units[prop],
                         metrics_test[prop],
-                        test_property_scaling[prop],
+                        test_property_atoms_scaling[prop],
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
@@ -647,7 +654,7 @@ class Tester:
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
-                                test_property_scaling[prop],
+                                test_property_atoms_scaling[prop],
                                 test_directory_model,
                                 test_plot_format,
                                 test_plot_dpi)
@@ -692,7 +699,7 @@ class Tester:
                         self.plain_data(test_reference[prop]),
                         self.data_units[prop],
                         metrics_test[prop],
-                        test_property_scaling[prop],
+                        test_property_atoms_scaling[prop],
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
@@ -709,7 +716,7 @@ class Tester:
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
-                                test_property_scaling[prop],
+                                test_property_atoms_scaling[prop],
                                 test_directory_model,
                                 test_plot_format,
                                 test_plot_dpi)
@@ -1192,7 +1199,7 @@ class Tester:
         data_reference: List[float],
         unit_property: str,
         data_metrics: Dict[str, float],
-        test_scaling: List[float],
+        test_atoms_scaling: List[float],
         test_directory: str,
         test_plot_format: str,
         test_plot_dpi: int,
@@ -1219,7 +1226,7 @@ class Tester:
             Unit of the property
         data_metrics: dict
             Dictionary of the metrics
-        test_scaling: list(float)
+        test_atoms_scaling: list(float)
             List of the scaling factors
         test_directory: str
             Directory to save the plot
@@ -1269,10 +1276,10 @@ class Tester:
                 f"\nStd = {data_metrics['std']:3.2e} {unit_property:s}")
 
         # Scale data if requested
-        if test_scaling is not None:
-            data_prediction = data_prediction*test_scaling
-            data_reference = data_reference*test_scaling
-            scale_label = "per atom "
+        if test_atoms_scaling is not None:
+            data_prediction = data_prediction*test_atoms_scaling
+            data_reference = data_reference*test_atoms_scaling
+            scale_label = "/atom"
         else:
             scale_label = ""
 
@@ -1306,11 +1313,11 @@ class Tester:
 
         # Axis labels
         axs1.set_xlabel(
-            f"Reference {label_property:s} {scale_label:s}({unit_property:s})",
+            f"Reference {label_property:s} ({unit_property:s}{scale_label:s})",
             fontweight='bold')
         axs1.get_xaxis().set_label_coords(0.5, -0.12)
         axs1.set_ylabel(
-            f"Model {label_property:s} {scale_label:s}({unit_property:s})",
+            f"Model {label_property:s} ({unit_property:s}{scale_label:s})",
             fontweight='bold')
         axs1.get_yaxis().set_label_coords(-0.18, 0.5)
 
@@ -1559,9 +1566,7 @@ class Tester:
             color='black',
             marker='None', linestyle='--')
         data_deviation = data_reference - data_prediction
-        data_devmin = np.nanmin(data_deviation)
-        data_devmax = np.nanmax(data_deviation)
-        data_devdif = data_devmax - data_devmin
+        data_devmaxabs = np.nanmax(np.abs(data_deviation))
         axs1.plot(
             data_reference,
             data_deviation,
@@ -1573,7 +1578,7 @@ class Tester:
         axs1.set_xlim(
             data_min - data_dif*0.05, data_max + data_dif*0.05)
         axs1.set_ylim(
-            data_devmin - data_devdif*0.05, data_devmax + data_devdif*0.05)
+            -data_devmaxabs*1.05, +data_devmaxabs*1.05)
 
         # Figure title
         title = f"Residual plot\n{label_property:s} ({label_dataset:s})"

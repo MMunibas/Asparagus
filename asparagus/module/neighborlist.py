@@ -6,7 +6,7 @@ from asparagus import utils
 
 __all__ = [
     "TorchNeighborListRangeSeparated",
-    "TorchNeighborListRangeSeparatedFragments"
+    "TorchNeighborListRangeSeparatedMLMM",
     ]
 
 class TorchNeighborListRangeSeparated(torch.nn.Module):
@@ -21,14 +21,14 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
     Parameters
     ----------
-    cutoff: list(float)
-        List of Cutoff distances
+    cutoffs: list(float)
+        List of cutoff distances
 
     """
 
     def __init__(
         self,
-        cutoff: List[float],
+        cutoffs: List[float],
         device: str,
         dtype: object,
     ):
@@ -42,32 +42,55 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         self.device = device
         self.dtype = dtype
 
-        # Check cutoffs
-        if utils.is_numeric(cutoff):
-            self.cutoff = torch.tensor(
-                [cutoff], device=self.device, dtype=self.dtype)
+        # Check and set cutoffs
+        self.set_cutoffs(cutoffs)
+
+        return
+
+    def set_cutoffs(
+        self,
+        cutoffs: List[float],
+    ):
+        """
+        Set cutoff values,
+        
+        Parameters
+        ----------
+        cutoffs: list(float)
+            List of cutoff distances
+
+        """
+        
+        # Check and set cutoffs
+        if utils.is_torch_tensor(cutoffs):
+            if cutoffs.dim():
+                self.cutoffs = cutoffs.clone().detach().to(
+                    device=self.device, dtype=self.dtype)
+            else:
+                self.cutoffs = cutoffs.clone().detach().unsqueeze(0).to(
+                    device=self.device, dtype=self.dtype)
+        elif utils.is_numeric(cutoffs):
+            self.cutoffs = torch.tensor(
+                [cutoffs], device=self.device, dtype=self.dtype)
         else:
-            self.cutoff = torch.tensor(
-                cutoff, device=self.device, dtype=self.dtype)
+            self.cutoffs = torch.tensor(
+                cutoffs, device=self.device, dtype=self.dtype)
 
-        self.max_cutoff = torch.max(self.cutoff)
-
+        self.max_cutoff = torch.max(self.cutoffs)
+        
         return
 
     def forward(
         self,
-        coll_batch: Dict[str, torch.Tensor],
-        atomic_numbers_cumsum: Optional[torch.Tensor] = None
+        batch: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         """
         Build neighbor list for a batch of systems.
+
         Parameters
         ----------
-        coll_batch: dict
+        batch: dict
             System property batch
-        atomic_numbers_cumsum: torch.Tensor, optional, default None
-            Cumulative atomic number sum serving as starting index for atom
-            length system data lists.
 
         Returns
         -------
@@ -76,94 +99,121 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
         """
 
-        # Extract system data
-        atomic_numbers = coll_batch['atomic_numbers']
-        positions = coll_batch['positions']
-        cell = coll_batch['cell']
-        pbc = coll_batch['pbc']
+        # Assign batch data
+        atomic_numbers = batch['atomic_numbers']
+        positions = batch['positions']
+        cell = batch['cell']
+        pbc = batch['pbc']
 
         # Check system indices
-        if coll_batch.get("sys_i") is None:
-            sys_i = torch.zeros_like(atomic_numbers)
+        if 'sys_i' in batch:
+            sys_i = batch['sys_i']
         else:
-            sys_i = coll_batch["sys_i"]
+            sys_i = torch.zeros_like(atomic_numbers)
 
         # Check for system batch or single system input
         # System batch:
-        if coll_batch["atoms_number"].dim():
+        if batch["atoms_number"].dim():
 
-            # Compute, eventually, cumulative atomic number list
-            if atomic_numbers_cumsum is None:
-                atomic_numbers_cumsum = torch.cat(
-                    [
-                        torch.zeros(
-                            (1,), device=self.device, dtype=sys_i.dtype),
-                        torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
-                    ],
-                    dim=0)
-
+            # Compute cumulative atoms number list
+            atoms_numbers_cumsum = torch.cat(
+                [
+                    torch.zeros(
+                        (1,), device=self.device, dtype=sys_i.dtype),
+                    torch.cumsum(batch["atoms_number"][:-1], dim=0)
+                ],
+                dim=0)
+            
         # Single system
         else:
 
-            # Assign cumulative atomic number list and system index
-            atomic_numbers_cumsum = torch.zeros(
+            # Assign cumulative atoms number list and system index
+            atoms_numbers_cumsum = torch.zeros(
                 (1,), device=self.device, dtype=sys_i.dtype)
-            sys_i = torch.zeros_like(atomic_numbers)
 
-            # Extend periodic system data
-            cell = cell[None, ...]
-            pbc = pbc[None, ...]
+            # Extend periodic system data size
+            cell = cell.unsqueeze(0)
+            pbc = pbc.unsqueeze(0)
 
         # Compute atom pair neighbor list
         idcs_i, idcs_j, pbc_offsets = self._build_neighbor_list(
-            self.cutoff,
+            self.cutoffs,
             atomic_numbers,
             positions,
             cell,
             pbc,
             sys_i,
-            atomic_numbers_cumsum)
+            atoms_numbers_cumsum)
 
         # Add neighbor lists to batch data
         # 1: Neighbor list of first cutoff (usually short range)
-        coll_batch['idx_i'] = idcs_i[0].detach()
-        coll_batch['idx_j'] = idcs_j[0].detach()
-        if pbc_offsets is not None:
-            coll_batch['pbc_offset_ij'] = pbc_offsets[0].detach()
+        batch['idx_i'] = idcs_i[0].detach()
+        batch['idx_j'] = idcs_j[0].detach()
+        batch['pbc_offset_ij'] = pbc_offsets[0].detach()
         # 2: If demanded, neighbor list of second cutoff (usually long range)
-        if len(idcs_i) > 1:
-            coll_batch['idx_u'] = idcs_i[1].detach()
-            coll_batch['idx_v'] = idcs_j[1].detach()
-            if pbc_offsets is not None:
-                coll_batch['pbc_offset_uv'] = pbc_offsets[1].detach()
+        if len(self.cutoffs) > 1:
+            batch['idx_u'] = idcs_i[1].detach()
+            batch['idx_v'] = idcs_j[1].detach()
+            batch['pbc_offset_uv'] = pbc_offsets[1].detach()
         # 3+: If demanded, list of neighbor lists of further cutoffs
-        if len(idcs_i) > 2:
-            coll_batch['idcs_k'] = [idx_i.detach() for idx_i in idcs_i]
-            coll_batch['idcs_l'] = [idx_j.detach() for idx_j in idcs_j]
-            if pbc_offsets is not None:
-                coll_batch['pbc_offsets_kl'] = [
-                    pbc_offset.detach() for pbc_offset in pbc_offsets]
+        if len(self.cutoffs) > 2:
+            for icut, (idx_i, idx_j) in enumerate(zip(idcs_i[2:], idcs_j[2:])):
+                batch['idcs_k:{:d}'.format(icut + 2)] = idx_i.detach()
+                batch['idcs_l:{:d}'.format(icut + 2)] = idx_j.detach()
+                batch['pbc_offsets_kl:{:d}'.format(icut + 2)] = (
+                    pbc_offsets[icut].detach())
 
-        return coll_batch
+        return batch
 
     def _build_neighbor_list(
         self,
-        cutoff: List[float],
+        cutoffs: torch.Tensor,
         atomic_numbers: torch.Tensor,
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
         sys_i: torch.Tensor,
-        atomic_numbers_cumsum: torch.Tensor,
-    ) -> (List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]):
+        atoms_numbers_cumsum: torch.Tensor,
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
+        """
+        Execute neighbor list generation
 
+        Parameters
+        ----------
+        cutoffs: torch.Tensor
+            Cutoff ranges
+        atomic_numbers: torch.Tensor
+            Atomic numbers for integer data type information
+        positions: torch.Tensor
+            Atom positions
+        cell: torch.Tensor
+            Systm cell parameter
+        pbc: torch.Tensor
+            Systm periodic boundary conditions
+        atoms_numbers_cumsum: torch.Tensor
+            Cumulative atoms number sum serving as starting index for atom
+            length system data lists.
+        atom_indices: torch.Tensor
+            Indices of the atoms in the positions list to build neighbor list
+            only between a subset of atoms.
+
+        Returns
+        -------
+        torch.Tensor
+            List of atom pair indices i for every cutoff distance
+        torch.Tensor
+            List of atom pair indices j for every cutoff distance
+        torch.Tensor
+            List of atom pair position offsets
+
+        """
         # Initialize result lists
-        idcs_i = [[] for _ in cutoff]
-        idcs_j = [[] for _ in cutoff]
-        offsets = [[] for _ in cutoff]
+        idcs_i = [[] for _ in cutoffs]
+        idcs_j = [[] for _ in cutoffs]
+        offsets = [[] for _ in cutoffs]
 
         # Iterate over system segments
-        for iseg, idx_off in enumerate(atomic_numbers_cumsum):
+        for iseg, idx_off in enumerate(atoms_numbers_cumsum):
 
             # Atom system selection
             select = sys_i == iseg
@@ -186,7 +236,10 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
             # Compute pair indices
             sys_idcs_i, sys_idcs_j, seg_offsets = self._get_neighbor_pairs(
-                positions[select], cell_seg, seg_offsets, cutoff)
+                positions[select],
+                cell_seg,
+                seg_offsets,
+                cutoffs)
 
             # Create bidirectional id arrays, similar to what the ASE
             # neighbor list returns
@@ -231,24 +284,34 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         positions: torch.Tensor,
         cell: torch.Tensor,
         shifts: torch.Tensor,
-        cutoff: torch.Tensor,
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+        cutoffs: torch.Tensor,
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
         """
         Compute pairs of atoms that are neighbors.
 
         Copyright 2018- Xiang Gao and other ANI developers
         (https://github.com/aiqm/torchani/blob/master/torchani/aev.py)
 
-        Arguments:
-            positions (:class:`torch.Tensor`): tensor of shape
-                (molecules, atoms, 3) for atom coordinates.
-            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the
-                three vectors defining unit cell:
-                tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            shifts (:class:`torch.Tensor`): tensor of shape (?, 3) storing
-                shifts
-            cutoff (:class:`torch.Tensor`): tensor of shape (?) storing
-                cutoff radii
+        Parameters
+        ----------
+        positions: torch.Tensor
+            Atom positions
+        cell: torch.Tensor
+            Systm cell parameter
+        shifts: torch.Tensor
+            Systm cell shift parameter
+        cutoffs: torch.Tensor
+            Cutoff ranges
+
+        Returns
+        -------
+        torch.Tensor
+            List of atom pair indices i for every cutoff distance
+        torch.Tensor
+            List of atom pair indices j for every cutoff distance
+        torch.Tensor
+            List of atom pair position offsets
+
         """
 
         num_atoms = positions.shape[0]
@@ -276,28 +339,27 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         shift_values = torch.mm(shifts_all.to(cell.dtype), cell)
         Rij_all = positions[pi_all] - positions[pj_all] + shift_values
 
-        # 5) Compute distances, and find all pairs within cutoff
+        # 5) Compute distances, and find all pairs within cutoffs
         # torch.norm(Rij_all, dim=1)
         distances2 = torch.sum(Rij_all**2, dim=1)
         in_cutoffs = [
-            torch.nonzero(distances2 < cutoff_i**2, as_tuple=True)
-            for cutoff_i in cutoff]
+            torch.nonzero(distances2 < cutoff_i**2).flatten()
+            for cutoff_i in cutoffs]
 
         # 6) Reduce tensors to relevant components
         atom_indices_i, atom_indices_j, offsets = [], [], []
-        for in_cutoff in in_cutoffs:
-            pair_index = in_cutoff
-            atom_indices_i.append(pi_all[pair_index])
-            atom_indices_j.append(pj_all[pair_index])
-            offsets.append(shifts_all[pair_index])
+        for in_cutoff_i in in_cutoffs:
+            atom_indices_i.append(pi_all[in_cutoff_i])
+            atom_indices_j.append(pj_all[in_cutoff_i])
+            offsets.append(shifts_all[in_cutoff_i])
 
         return atom_indices_i, atom_indices_j, offsets
 
     def _get_shifts(
         self,
-        cell,
-        pbc,
-        cutoff
+        cell: torch.Tensor,
+        pbc: torch.Tensor,
+        max_cutoff: float,
     ) -> torch.Tensor:
         """
         Compute the shifts of unit cell along the given cell vectors to make it
@@ -307,27 +369,33 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         Copyright 2018- Xiang Gao and other ANI developers
         (https://github.com/aiqm/torchani/blob/master/torchani/aev.py)
 
-        Arguments:
-            cell (:class:`torch.Tensor`): tensor of shape (3, 3)
-                of the three vectors defining unit cell:
-                    tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
-                if pbc is enabled for that direction.
-            cutoff (:class:`torch.Tensor`): tensor of shape (1) storing
-                cutoff radius
+        Parameters
+        ----------
+        cell: torch.Tensor
+            Systm cell parameter
+        pbc: torch.Tensor
+            Systm periodic boundary conditions
+        max_cutoff: float
+            Maximum cutoff range
+        ml_atom_indices: torch.Tensor
+            Indices of the ML atoms in the positions list
 
-        Returns:
-            :class:`torch.Tensor`: long tensor of shifts. the center cell and
-                symmetric cells are not included.
+        Returns
+        -------
+        torch.Tensor 
+            Tensor of shifts. the center cell and symmetric cells are not
+            included.
+
         """
+
         reciprocal_cell = cell.inverse().t()
         inverse_lengths = torch.norm(reciprocal_cell, dim=1)
 
-        num_repeats = torch.ceil(cutoff*inverse_lengths).to(cell.dtype)
+        num_repeats = torch.ceil(max_cutoff*inverse_lengths).to(cell.dtype)
         num_repeats = torch.where(
             pbc.flatten(),
             num_repeats,
-            torch.Tensor([0], device=cell.device).to(cell.dtype)
+            torch.tensor([0.0], device=cell.device, dtype=cell.dtype)
         )
 
         r1 = torch.arange(
@@ -357,10 +425,11 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         )
 
 
-class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
+class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
     """
-    Environment provider making use of neighbor lists as implemented in
-    TorchAni. Modified to provide neighbor lists for a set of cutoff radii and atom system fragment definition.
+    Environment provider making use of neighbor lists between two sets of atom
+    positions adopted from the TorchAni implementation.
+    Modified to provide neighbor lists for a set of cutoff radii.
 
     Supports cutoffs and PBCs and can be performed on either CPU or GPU.
 
@@ -369,14 +438,18 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
 
     Parameters
     ----------
-    cutoff: list(float)
+    cutoffs: list(float)
         List of Cutoff distances
+    device: str, optional, default global setting
+        Device type for model variable allocation
+    dtype: dtype object, optional, default global setting
+        Model variables data type
 
     """
 
     def __init__(
         self,
-        cutoff: List[float],
+        cutoffs: Union[float, List[float]],
         device: str,
         dtype: object,
     ):
@@ -390,31 +463,49 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
         self.device = device
         self.dtype = dtype
 
-        # Check cutoffs
-        if utils.is_numeric(cutoff):
-            self.cutoff = torch.tensor(
-                [cutoff], device=self.device, dtype=self.dtype)
-        else:
-            self.cutoff = torch.tensor(
-                cutoff, device=self.device, dtype=self.dtype)
-        self.max_cutoff = torch.max(self.cutoff)
+        
+        # Check and set cutoffs
+        self.set_cutoffs(cutoffs)
 
+        return
+
+    def set_cutoffs(
+        self,
+        cutoffs: List[float],
+    ):
+        """
+        Set cutoff values,
+        
+        Parameters
+        ----------
+        cutoffs: list(float)
+            List of cutoff distances
+
+        """
+        
+        # Check and set cutoffs
+        if utils.is_numeric(cutoffs):
+            self.cutoffs = torch.tensor(
+                [cutoffs], device=self.device, dtype=self.dtype)
+        else:
+            self.cutoffs = torch.tensor(
+                cutoffs, device=self.device, dtype=self.dtype)
+
+        self.max_cutoff = torch.max(self.cutoffs)
+        
         return
 
     def forward(
         self,
-        coll_batch: Dict[str, torch.Tensor],
-        atomic_numbers_cumsum: Optional[torch.Tensor] = None
+        batch: Dict[str, torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         """
-        Build neighbor list for a batch of systems.
+        Generate neighbor list for a batch of systems.
+
         Parameters
         ----------
-        coll_batch: dict
+        batch: dict
             System property batch
-        atomic_numbers_cumsum: torch.Tensor, optional, default None
-            Cumulative atomic number sum serving as starting index for atom
-            length system data lists.
 
         Returns
         -------
@@ -423,110 +514,140 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
 
         """
 
-        # Extract system data
-        atomic_numbers = coll_batch['atomic_numbers']
-        positions = coll_batch['positions']
-        cell = coll_batch['cell']
-        pbc = coll_batch['pbc']
+        # Assign batch data
+        atomic_numbers = batch['atomic_numbers']
+        ml_positions = batch['positions']
+        mm_positions = batch['mm_positions']
+        cell = batch['cell']
+        pbc = batch['pbc']
 
-        # Check system indices
-        if coll_batch.get("sys_i") is None:
-            sys_i = torch.zeros_like(atomic_numbers)
+        # Check ML and MM system indices
+        if 'sys_i' in batch:
+            ml_sys_i = batch['sys_i']
         else:
-            sys_i = coll_batch["sys_i"]
-
-        # Check system fragments
-        if coll_batch.get("fragments") is None:
-            fragments = torch.zeros_like(atomic_numbers)
+            ml_sys_i = torch.zeros_like(atomic_numbers)
+        if 'mm_sys_i' in batch:
+            mm_sys_i = batch['mm_sys_i']
         else:
-            fragments = coll_batch["fragments"]
+            mm_sys_i = torch.zeros(
+                mm_positions.size(0), device=self.device, dtype=ml_sys_i.dtype)
 
         # Check for system batch or single system input
         # System batch:
-        if coll_batch["atoms_number"].dim():
+        if batch["atoms_number"].dim():
 
-            # Compute, eventually, cumulative atomic number list
-            if atomic_numbers_cumsum is None:
-                atomic_numbers_cumsum = torch.cat(
-                    [
-                        torch.zeros(
-                            (1,), device=self.device, dtype=sys_i.dtype),
-                        torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
-                    ],
-                    dim=0)
+            # Compute cumulative atoms number list
+            atoms_numbers_cumsum = torch.cat(
+                [
+                    torch.zeros(
+                        (1,), device=self.device, dtype=ml_sys_i.dtype),
+                    torch.cumsum(batch["atoms_number"][:-1], dim=0)
+                ],
+                dim=0)
 
         # Single system
         else:
 
-            # Assign cumulative atomic number list and system index
-            atomic_numbers_cumsum = torch.zeros((1,), dtype=sys_i.dtype)
-            sys_i = torch.zeros_like(atomic_numbers)
+            # Assign cumulative atoms number list and system index
+            atoms_numbers_cumsum = torch.zeros(
+                (1,), device=self.device, dtype=ml_sys_i.dtype)
 
             # Extend periodic system data
-            cell = cell[None, ...]
-            pbc = pbc[None, ...]
+            cell = cell.unsqueeze(0)
+            pbc = pbc.unsqueeze(0)
 
         # Compute atom pair neighbor list
-        idcs_i, idcs_j, pbc_offsets, fidcs_i = self._build_neighbor_list(
-            self.cutoff,
+        idcs_i, idcs_j, pbc_offsets = self._build_neighbor_list(
+            self.cutoffs,
             atomic_numbers,
-            positions,
+            ml_positions,
+            mm_positions,
             cell,
             pbc,
-            sys_i,
-            fragments,
-            atomic_numbers_cumsum)
+            ml_sys_i,
+            mm_sys_i,
+            atoms_numbers_cumsum)
 
         # Add neighbor lists to batch data
         # 1: Neighbor list of first cutoff (usually short range)
-        coll_batch['idx_i'] = idcs_i[0].detach()
-        coll_batch['idx_j'] = idcs_j[0].detach()
-        if pbc_offsets is not None:
-            coll_batch['pbc_offset_ij'] = pbc_offsets[0].detach()
-        coll_batch['fidx_i'] = fidcs_i[0].detach()
+        batch['mlmm_idx_i'] = idcs_i[0].detach()
+        batch['mlmm_idx_j'] = idcs_j[0].detach()
+        batch['mlmm_pbc_offset_ij'] = pbc_offsets[0].detach()
         # 2: If demanded, neighbor list of second cutoff (usually long range)
-        if len(idcs_i) > 1:
-            coll_batch['idx_u'] = idcs_i[1].detach()
-            coll_batch['idx_v'] = idcs_j[1].detach()
-            if pbc_offsets is not None:
-                coll_batch['pbc_offset_uv'] = pbc_offsets[1].detach()
-            coll_batch['fidx_u'] = fidcs_i[1].detach()
+        if len(self.cutoffs) > 1:
+            batch['mlmm_idx_u'] = idcs_i[1].detach()
+            batch['mlmm_idx_v'] = idcs_j[1].detach()
+            batch['mlmm_pbc_offset_uv'] = pbc_offsets[1].detach()
         # 3+: If demanded, list of neighbor lists of further cutoffs
-        if len(idcs_i) > 2:
-            coll_batch['idcs_k'] = [idx_i.detach() for idx_i in idcs_i[2:]]
-            coll_batch['idcs_l'] = [idx_j.detach() for idx_j in idcs_j[2:]]
-            if pbc_offsets is not None:
-                coll_batch['pbc_offsets_kl'] = [
-                    pbc_offset.detach() for pbc_offset in pbc_offsets]
-            coll_batch['fidx_k'] = [fidx_i.detach() for fidx_i in fidcs_i[2:]]
+        if len(self.cutoffs) > 2:
+            for icut, (idx_i, idx_j) in enumerate(zip(idcs_i[2:], idcs_j[2:])):
+                batch['idcs_k:{:d}'.format(icut + 2)] = idx_i.detach()
+                batch['idcs_l:{:d}'.format(icut + 2)] = idx_j.detach()
+                batch['pbc_offsets_kl:{:d}'.format(icut + 2)] = (
+                    pbc_offsets[icut].detach())
 
-        return coll_batch
+        return batch
 
     def _build_neighbor_list(
         self,
-        cutoff: List[float],
+        cutoffs: torch.Tensor,
         atomic_numbers: torch.Tensor,
-        positions: torch.Tensor,
+        ml_positions: torch.Tensor,
+        mm_positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
-        sys_i: torch.Tensor,
-        fragments: torch.Tensor,
-        atomic_numbers_cumsum: torch.Tensor,
-    ) -> (
-            List[torch.Tensor], List[torch.Tensor],
-            List[torch.Tensor], List[torch.Tensor]
-        ):
+        ml_sys_i: torch.Tensor,
+        mm_sys_i: torch.Tensor,
+        atoms_numbers_cumsum: torch.Tensor,
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
+        """
+        Execute neighbor list generation
+
+        Parameters
+        ----------
+        cutoffs: torch.Tensor
+            Cutoff ranges
+        atomic_numbers: torch.Tensor
+            Atomic numbers for integer data type information
+        ml_positions: torch.Tensor
+            ML Atom positions
+        mm_positions: torch.Tensor
+            MM Atom positions
+        cell: torch.Tensor
+            Systm cell parameter
+        pbc: torch.Tensor
+            Systm periodic boundary conditions
+        ml_sys_i: torch.Tensor
+            System indices of ML atoms
+        mm_sys_i: torch.Tensor
+            System indices of MM atoms
+
+        atoms_numbers_cumsum: torch.Tensor
+            Cumulative atoms number sum serving as starting index for atom
+            length system data lists.
+
+        Returns
+        -------
+        torch.Tensor
+            List of atom pair indices i for every cutoff distance
+        torch.Tensor
+            List of atom pair indices j for every cutoff distance
+        torch.Tensor
+            List of atom pair position offsets
+
+        """
 
         # Initialize result lists
-        idcs_i = [[] for _ in cutoff]
-        idcs_j = [[] for _ in cutoff]
-        offsets = [[] for _ in cutoff]
+        idcs_i = [[] for _ in cutoffs]
+        idcs_j = [[] for _ in cutoffs]
+        offsets = [[] for _ in cutoffs]
 
         # Iterate over system segments
-        for iseg, idx_off in enumerate(atomic_numbers_cumsum):
+        for iseg, idx_off in enumerate(atoms_numbers_cumsum):
 
             # Atom system selection
-            select = sys_i == iseg
+            ml_select = ml_sys_i == iseg
+            mm_select = mm_sys_i == iseg
 
             # Check if shifts are needed for periodic boundary conditions
             if cell[iseg].dim() == 1:
@@ -542,28 +663,23 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
                     cell_seg, pbc[iseg], self.max_cutoff)
             else:
                 seg_offsets = torch.zeros(
-                    0, 3, device=positions.device, dtype=positions.dtype)
+                    0, 3, device=self.device, dtype=ml_positions.dtype)
 
             # Compute pair indices
             sys_idcs_i, sys_idcs_j, seg_offsets = self._get_neighbor_pairs(
-                positions[select], cell_seg, seg_offsets, cutoff)
-
-            # Create bidirectional id arrays, similar to what the ASE
-            # neighbor list returns
-            bi_idcs_i = [
-                torch.cat((sys_idx_i, sys_idx_j), dim=0)
-                for sys_idx_i, sys_idx_j in zip(sys_idcs_i, sys_idcs_j)]
-            bi_idcs_j = [
-                torch.cat((sys_idx_j, sys_idx_i), dim=0)
-                for sys_idx_j, sys_idx_i in zip(sys_idcs_j, sys_idcs_i)]
+                ml_positions[ml_select],
+                mm_positions[mm_select],
+                cell_seg,
+                seg_offsets,
+                cutoffs)
 
             # Sort along first dimension (necessary for atom-wise pooling)
-            for ic, (bi_idx_i, bi_idx_j, seg_offset) in enumerate(
-                zip(bi_idcs_i, bi_idcs_j, seg_offsets)
+            for ic, (sys_idx_i, sys_idx_j, seg_offset) in enumerate(
+                zip(sys_idcs_i, sys_idcs_j, seg_offsets)
             ):
-                sorted_idx = torch.argsort(bi_idx_i)
-                sys_idx_i = bi_idx_i[sorted_idx]
-                sys_idx_j = bi_idx_j[sorted_idx]
+                sorted_idx = torch.argsort(sys_idx_i)
+                sys_idx_i = sys_idx_i[sorted_idx]
+                sys_idx_j = sys_idx_j[sorted_idx]
 
                 bi_offset = torch.cat((-seg_offset, seg_offset), dim=0)
                 seg_offset = bi_offset[sorted_idx]
@@ -581,44 +697,70 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
             torch.cat(idx_j, dim=0).to(dtype=atomic_numbers.dtype)
             for idx_j in idcs_j]
         offsets = [
-            torch.cat(offset, dim=0).to(dtype=positions.dtype)
+            torch.cat(offset, dim=0).to(dtype=ml_positions.dtype)
             for offset in offsets]
-        fidcs_i = [
-            fragments[idx_i].to(dtype=fragments.dtype)
-            for idx_i in idcs_i]
 
-        return idcs_i, idcs_j, offsets, fidcs_i
+        return idcs_i, idcs_j, offsets
 
     def _get_neighbor_pairs(
         self,
-        positions: torch.Tensor,
+        ml_positions: torch.Tensor,
+        mm_positions: torch.Tensor,
         cell: torch.Tensor,
         shifts: torch.Tensor,
-        cutoff: torch.Tensor,
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+        cutoffs: torch.Tensor,
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
         """
         Compute pairs of atoms that are neighbors.
 
         Copyright 2018- Xiang Gao and other ANI developers
         (https://github.com/aiqm/torchani/blob/master/torchani/aev.py)
 
-        Arguments:
-            positions (:class:`torch.Tensor`): tensor of shape
-                (molecules, atoms, 3) for atom coordinates.
-            cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the
-                three vectors defining unit cell:
-                tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            shifts (:class:`torch.Tensor`): tensor of shape (?, 3) storing
-                shifts
-            cutoff (:class:`torch.Tensor`): tensor of shape (?) storing
-                cutoff radii
+        Parameters
+        ----------
+        ml_positions: torch.Tensor
+            ML Atom positions
+        mm_positions: torch.Tensor
+            MM Atom positions
+        cell: torch.Tensor
+            Systm cell parameter
+        shifts: torch.Tensor
+            Systm cell shift parameter
+        cutoffs: torch.Tensor
+            Cutoff ranges
+
+        Returns
+        -------
+        torch.Tensor
+            List of atom pair indices i for every cutoff distance
+        torch.Tensor
+            List of atom pair indices j for every cutoff distance
+        torch.Tensor
+            List of atom pair position offsets
+
         """
 
-        num_atoms = positions.shape[0]
-        all_atoms = torch.arange(num_atoms, device=cell.device)
+        # Get ML and MM atom information
+        ml_num_atoms = ml_positions.shape[0]
+        mm_num_atoms = mm_positions.shape[0]
+        ml_all_atoms = torch.arange(ml_num_atoms, device=cell.device)
+        mm_all_atoms = torch.arange(mm_num_atoms, device=cell.device)
+
+        # Return empty list if either ML or MM atoms are missing
+        if not ml_num_atoms or not mm_num_atoms:
+            atom_indices_i, atom_indices_j, offsets = [], [], []
+            for _ in cutoffs:
+                atom_indices_i.append(
+                    torch.empty(0, device=cell.device, dtype=torch.int64))
+                atom_indices_j.append(
+                    torch.empty(0, device=cell.device, dtype=torch.int64))
+                offsets.append(
+                    torch.empty((0, 3,), device=cell.device, dtype=cell.dtype))
+            return atom_indices_i, atom_indices_j, offsets
 
         # 1) Central cell
-        pi_center, pj_center = torch.combinations(all_atoms).unbind(-1)
+        pi_center, pj_center = torch.cartesian_prod(
+            ml_all_atoms, mm_all_atoms).unbind(-1)
         shifts_center = shifts.new_zeros(pi_center.shape[0], 3)
 
         # 2) cells with shifts
@@ -626,7 +768,7 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
         num_shifts = shifts.shape[0]
         all_shifts = torch.arange(num_shifts, device=cell.device)
         shift_index, pi, pj = torch.cartesian_prod(
-            all_shifts, all_atoms, all_atoms
+            all_shifts, ml_all_atoms, mm_all_atoms
         ).unbind(-1)
         shifts_outside = shifts.index_select(0, shift_index)
 
@@ -637,30 +779,28 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
 
         # 4) Compute shifts and distance vectors
         shift_values = torch.mm(shifts_all.to(cell.dtype), cell)
-        Rij_all = positions[pi_all] - positions[pj_all] + shift_values
+        Rij_all = ml_positions[pi_all] - mm_positions[pj_all] + shift_values
 
-        # 5) Compute distances, and find all pairs within cutoff
-        # torch.norm(Rij_all, dim=1)
+        # 5) Compute squared distances, and find all pairs within cutoff
         distances2 = torch.sum(Rij_all**2, dim=1)
         in_cutoffs = [
-            torch.nonzero(distances2 < cutoff_i**2, as_tuple=True)
-            for cutoff_i in cutoff]
+            torch.nonzero(distances2 < cutoff_i**2).flatten()
+            for cutoff_i in cutoffs]
 
         # 6) Reduce tensors to relevant components
         atom_indices_i, atom_indices_j, offsets = [], [], []
-        for in_cutoff in in_cutoffs:
-            pair_index = in_cutoff
-            atom_indices_i.append(pi_all[pair_index])
-            atom_indices_j.append(pj_all[pair_index])
-            offsets.append(shifts_all[pair_index])
+        for in_cutoff_i in in_cutoffs:
+            atom_indices_i.append(pi_all[in_cutoff_i])
+            atom_indices_j.append(pj_all[in_cutoff_i])
+            offsets.append(shifts_all[in_cutoff_i])
 
         return atom_indices_i, atom_indices_j, offsets
 
     def _get_shifts(
         self,
-        cell,
-        pbc,
-        cutoff
+        cell: torch.Tensor,
+        pbc: torch.Tensor,
+        max_cutoff: float,
     ) -> torch.Tensor:
         """
         Compute the shifts of unit cell along the given cell vectors to make it
@@ -670,27 +810,31 @@ class TorchNeighborListRangeSeparatedFragments(torch.nn.Module):
         Copyright 2018- Xiang Gao and other ANI developers
         (https://github.com/aiqm/torchani/blob/master/torchani/aev.py)
 
-        Arguments:
-            cell (:class:`torch.Tensor`): tensor of shape (3, 3)
-                of the three vectors defining unit cell:
-                    tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-            pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
-                if pbc is enabled for that direction.
-            cutoff (:class:`torch.Tensor`): tensor of shape (1) storing
-                cutoff radius
+        Parameters
+        ----------
+        cell: torch.Tensor
+            Systm cell parameter
+        pbc: torch.Tensor
+            Systm periodic boundary conditions
+        max_cutoff: float
+            Maximum cutoff range
 
-        Returns:
-            :class:`torch.Tensor`: long tensor of shifts. the center cell and
-                symmetric cells are not included.
+        Returns
+        -------
+        torch.Tensor 
+            Tensor of shifts. the center cell and symmetric cells are not
+            included.
+
         """
+
         reciprocal_cell = cell.inverse().t()
         inverse_lengths = torch.norm(reciprocal_cell, dim=1)
 
-        num_repeats = torch.ceil(cutoff*inverse_lengths).to(cell.dtype)
+        num_repeats = torch.ceil(max_cutoff*inverse_lengths).to(cell.dtype)
         num_repeats = torch.where(
             pbc.flatten(),
             num_repeats,
-            torch.Tensor([0], device=cell.device).to(cell.dtype)
+            torch.tensor([0.0], device=cell.device, dtype=cell.dtype)
         )
 
         r1 = torch.arange(

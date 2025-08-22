@@ -12,7 +12,7 @@ from asparagus import layer
 from asparagus import settings
 from asparagus import utils
 
-from asparagus.layer import layers_physnet
+from asparagus.layer import layer_physnet
 
 __all__ = ['Input_PhysNet', 'Graph_PhysNet', 'Output_PhysNet']
 
@@ -160,13 +160,15 @@ class Input_PhysNet(torch.nn.Module):
             self.input_n_maxatom + 1,
             self.input_n_atombasis,
             padding_idx=0,
-            max_norm=self.input_n_atombasis,
+            max_norm=float(self.input_n_atombasis),
             device=self.device, 
             dtype=self.dtype)
 
         # Initialize radial cutoff function
         self.cutoff = layer.get_cutoff_fn(self.input_cutoff_fn)(
-            self.input_radial_cutoff, device=self.device, dtype=self.dtype)
+            self.input_radial_cutoff,
+            device=self.device,
+            dtype=self.dtype)
         
         # Get upper RBF center range
         if self.input_rbf_center_end is None:
@@ -203,74 +205,100 @@ class Input_PhysNet(torch.nn.Module):
             }
 
     def forward(
-        self, 
-        atomic_numbers: torch.Tensor,
-        positions: torch.Tensor,
-        idx_i: torch.Tensor,
-        idx_j: torch.Tensor,
-        pbc_offset_ij: Optional[torch.Tensor] = None,
-        idx_u: Optional[torch.Tensor] = None,
-        idx_v: Optional[torch.Tensor] = None,
-        pbc_offset_uv: Optional[torch.Tensor] = None,
-    ) -> List[torch.Tensor]:
+        self,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of the input module.
 
         Parameters
         ----------
-        atomic_numbers : torch.Tensor(N_atoms)
-            Atomic numbers of the system
-        positions : torch.Tensor(N_atoms, 3)
-            Atomic positions of the system
-        idx_i : torch.Tensor(N_pairs)
-            Atom i pair index
-        idx_j : torch.Tensor(N_pairs)
-            Atom j pair index
-        pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
-            Position offset from periodic boundary condition
-        idx_u : torch.Tensor(N_pairs), optional, default None
-            Long-range atom u pair index
-        idx_v : torch.Tensor(N_pairs), optional, default None
-            Long-range atom v pair index
-        pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
-            Long-range position offset from periodic boundary condition
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            atomic_numbers : torch.Tensor(N_atoms)
+                Atomic numbers of the system
+            positions : torch.Tensor(N_atoms, 3)
+                Atomic positions of the system
+            idx_i : torch.Tensor(N_pairs)
+                Atom i pair index
+            idx_j : torch.Tensor(N_pairs)
+                Atom j pair index
+            pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
+                Position offset from periodic boundary condition
+            idx_u : torch.Tensor(N_pairs), optional, default None
+                Long-range atom u pair index
+            idx_v : torch.Tensor(N_pairs), optional, default None
+                Long-range atom v pair index
+            pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
+                Long-range position offset from periodic boundary condition
 
         Returns
         -------
-        features: torch.tensor(N_atoms, n_atombasis)
-            Atomic feature vectors
-        distances: torch.tensor(N_pairs)
-            Atom pair distances
-        cutoffs: torch.tensor(N_pairs)
-            Atom pair distance cutoffs
-        rbfs: torch.tensor(N_pairs, n_radialbasis)
-            Atom pair radial basis functions
-        distances_uv: torch.tensor(N_pairs_uv)
-            Long-range atom pair distances
+        dict(str, torch.Tensor)
+            Dictionary added by module results:
+            features: torch.tensor(N_atoms, n_atombasis)
+                Atomic feature vectors
+            distances: torch.tensor(N_pairs)
+                Atom pair distances
+            cutoffs: torch.tensor(N_pairs)
+                Atom pair distance cutoffs
+            rbfs: torch.tensor(N_pairs, n_radialbasis)
+                Atom pair radial basis functions
+            distances_uv: torch.tensor(N_pairs_uv)
+                Long-range atom pair distances
 
         """
-        
+
+        # Assign input data
+        atomic_numbers = batch['atomic_numbers']
+        positions = batch['positions']
+        idx_i = batch['idx_i']
+        idx_j = batch['idx_j']
+
         # Collect atom feature vectors
         features = self.atom_features(atomic_numbers)
 
         # Compute atom pair distances
-        if pbc_offset_ij is None:
-            distances = torch.norm(
-                positions[idx_j] - positions[idx_i],
-                dim=-1)
+        if 'pbc_offset_ij' in batch:
+            vectors = (
+                positions[idx_j] - positions[idx_i] + batch['pbc_offset_ij'])
         else:
-            distances = torch.norm(
-                positions[idx_j] - positions[idx_i] + pbc_offset_ij,
-                dim=-1)
+            vectors = positions[idx_j] - positions[idx_i]
+        distances = torch.norm(vectors, dim=-1)
 
-        # Compute long-range cutoffs
-        if pbc_offset_uv is None and idx_u is not None:
-            distances_uv = torch.norm(
-                positions[idx_u] - positions[idx_v], dim=-1)
-        elif idx_u is not None:
-            distances_uv = torch.norm(
-                positions[idx_v] - positions[idx_u] + pbc_offset_uv, dim=-1)
+        # PBC: Supercluster approach - Point from eventual image atoms to 
+        # respective primary atoms but keep distances
+        if 'pbc_idx_pointer' in batch:
+            batch['idx_i'] = batch['pbc_idx_pointer'][batch['idx_i']]
+            batch['idx_j'] = batch['pbc_idx_pointer'][batch['pbc_idx_j']]
+
+        # Check long-range atom pair indices
+        if 'idx_u' in batch:
+
+            # Assign input data
+            idx_u = batch['idx_u']
+            idx_v = batch['idx_v']
+
+            # Compute long-range cutoffs
+            if 'pbc_offset_uv' in batch:
+                vectors_uv = (
+                    positions[idx_v] - positions[idx_u]
+                    + batch['pbc_offset_uv'])
+            else:
+                vectors_uv = positions[idx_v] - positions[idx_u]
+            distances_uv = torch.norm(vectors_uv, dim=-1)
+            
+            # PBC: Supercluster approach - Point from eventual image atoms to 
+            # respective primary atoms but keep primary-image atoms distances
+            if 'pbc_idx_pointer' in batch:
+                batch['idx_u'] = batch['pbc_idx_pointer'][batch['idx_u']]
+                batch['idx_v'] = batch['pbc_idx_pointer'][batch['pbc_v']]
+
         else:
+            
+            batch['idx_u'] = batch['idx_i']
+            batch['idx_v'] = batch['idx_j']
             distances_uv = distances
 
         # Compute distance cutoff values
@@ -279,7 +307,14 @@ class Input_PhysNet(torch.nn.Module):
         # Compute radial basis functions
         rbfs = self.radial_fn(distances)
 
-        return features, distances, cutoffs, rbfs, distances_uv
+        # Assign result data
+        batch['features'] = features
+        batch['distances'] = distances
+        batch['cutoffs'] = cutoffs
+        batch['rbfs'] = rbfs
+        batch['distances_uv'] = distances_uv
+
+        return batch
 
 
 #======================================
@@ -388,7 +423,7 @@ class Graph_PhysNet(torch.nn.Module):
 
         # Initialize message passing blocks
         self.interaction_blocks = torch.nn.ModuleList([
-            layers_physnet.InteractionBlock(
+            layer_physnet.InteractionBlock(
                 self.n_atombasis, 
                 self.n_radialbasis, 
                 self.graph_n_residual_interaction,
@@ -418,52 +453,66 @@ class Graph_PhysNet(torch.nn.Module):
             }
 
     def forward(
-        self, 
-        features: torch.Tensor,
-        distances: torch.Tensor,
-        cutoffs: torch.Tensor,
-        rbfs: torch.Tensor, 
-        idx_i: torch.Tensor, 
-        idx_j: torch.Tensor,
-    ) -> List[torch.Tensor]:
+        self,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of the graph module.
         
         Parameters
         ----------
-        features: torch.tensor(N_atoms, n_atombasis)
-            Atomic feature vectors
-        distances: torch.tensor(N_pairs)
-            Atom pair distances
-        cutoffs: torch.tensor(N_pairs)
-            Atom pair distance cutoffs
-        rbfs: torch.tensor(N_pairs, n_radialbasis)
-            Atom pair radial basis functions
-        idx_i : torch.Tensor(N_pairs)
-            Atom i pair index
-        idx_j : torch.Tensor(N_pairs)
-            Atom j pair index
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            features: torch.tensor(N_atoms, n_atombasis)
+                Atomic feature vectors
+            distances: torch.tensor(N_pairs)
+                Atom pair distances
+            cutoffs: torch.tensor(N_pairs)
+                Atom pair distance cutoffs
+            rbfs: torch.tensor(N_pairs, n_radialbasis)
+                Atom pair radial basis functions
+            idx_i : torch.Tensor(N_pairs)
+                Atom i pair index
+            idx_j : torch.Tensor(N_pairs)
+                Atom j pair index
 
         Returns
         -------
-        features_list: [torch.tensor(N_atoms, n_atombasis)]*n_blocks
-            List of modified atomic feature vectors
+        dict(str, torch.Tensor)
+            Dictionary added by module results:
+            features_list: [torch.tensor(N_atoms, n_atombasis)]*n_blocks
+                List of modified atomic feature vectors
 
         """
-        
+
+        # Assign input data
+        features = batch['features']
+        distances = batch['distances']
+        cutoffs = batch['cutoffs']
+        rbfs = batch['rbfs']
+        idx_i = batch['idx_i']
+        idx_j = batch['idx_j']
+
         # Compute descriptor vectors
-        descriptors = cutoffs[..., None]*rbfs
+        descriptors = cutoffs.unsqueeze(-1)*rbfs
         
         # Initialize refined feature vector list
-        x_list = []
+        x_list = torch.zeros(
+            (self.graph_n_blocks, features.shape[0], features.shape[1]),
+            device=self.device,
+            dtype=self.dtype)
         
         # Apply message passing model
         x = features
-        for interaction_block in self.interaction_blocks:
+        for iblock, interaction_block in enumerate(self.interaction_blocks):
             x = interaction_block(x, descriptors, idx_i, idx_j)
-            x_list.append(x)
+            x_list[iblock] = x.clone()
 
-        return x_list
+        # Assign result data
+        batch['features_list'] = x_list
+
+        return batch
 
 
 #======================================
@@ -621,15 +670,16 @@ class Output_PhysNet(torch.nn.Module):
         # # # Output Module Class Setup # # #
         #####################################
 
+        # Initialize case flags
+        self.output_energies_charges = False
+        self.output_atomic_charges = False
+
         # Initialize activation function
         self.activation_fn = layer.get_activation_fn(
             self.output_activation_fn)
 
         # Initialize property to output block dictionary
         self.output_property_block = torch.nn.ModuleDict({})
-
-        # Initialize property to number of output block predictions dictionary
-        self.output_n_property = {}
 
         # Check special case: atom energies and charges from one output block
         if all([
@@ -639,19 +689,24 @@ class Output_PhysNet(torch.nn.Module):
             # Set case flag for output module predicting atomic energies and
             # charges
             self.output_energies_charges = True
-            self.output_n_property['atomic_energies_charges'] = 2
+            self.output_atomic_charges = True
+
+            # Number of property outputs
+            output_n_property = 2
 
             # PhysNet energy and atom charges output block
-            output_block = torch.nn.ModuleList([
-                layers_physnet.OutputBlock(
-                    n_atombasis,
-                    self.output_n_property['atomic_energies_charges'],
-                    self.output_n_residual,
-                    self.activation_fn,
-                    device=self.device,
-                    dtype=self.dtype)
-                for _ in range(graph_n_blocks)]
-                )
+            output_block = layer_physnet.OutputBlock(
+                graph_n_blocks,
+                n_atombasis,
+                self.n_maxatom,
+                output_n_property,
+                self.output_n_residual,
+                self.activation_fn,
+                True,
+                True,
+                True,
+                device=self.device,
+                dtype=self.dtype)
 
             # Assign output block to dictionary
             self.output_property_block['atomic_energies_charges'] = (
@@ -667,32 +722,27 @@ class Output_PhysNet(torch.nn.Module):
                 prop = 'atomic_energies'
             else:
                 prop = 'atomic_charges'
+                self.output_atomic_charges = True
 
-            # Set case flag for output module predicting just atomic energies
-            # or charges
-            self.output_energies_charges = False
-            self.output_n_property[prop] = 1
+            # Number of property outputs
+            output_n_property = 1
 
             # PhysNet energy only output block
-            output_block = torch.nn.ModuleList([
-                layers_physnet.OutputBlock(
-                    n_atombasis,
-                    self.output_n_property[prop],
-                    self.output_n_residual,
-                    self.activation_fn,
-                    device=self.device,
-                    dtype=self.dtype)
-                for _ in range(graph_n_blocks)
-                ])
+            output_block = layer_physnet.OutputBlock(
+                graph_n_blocks,
+                n_atombasis,
+                self.n_maxatom,
+                output_n_property,
+                self.output_n_residual,
+                self.activation_fn,
+                True,
+                True,
+                False,
+                device=self.device,
+                dtype=self.dtype)
 
             # Assign output block to dictionary
             self.output_property_block[prop] = output_block
-
-        else:
-
-            # Set case flag for output module predicting just atomic energies
-            # or charges
-            self.output_energies_charges = False
 
         # Create further output blocks for properties with certain exceptions
         for prop in self.output_properties:
@@ -705,27 +755,29 @@ class Output_PhysNet(torch.nn.Module):
             if prop in self._property_special:
                 continue
 
+            # Number of property outputs
+            output_n_property = 1
+
             # Initialize output block
-            self.output_n_property[prop] = 1
-            output_block = torch.nn.ModuleList([
-                layers_physnet.OutputBlock(
-                    n_atombasis,
-                    self.output_n_property[prop],
-                    self.output_n_residual,
-                    self.activation_fn,
-                    device=self.device,
-                    dtype=self.dtype)
-                for _ in range(graph_n_blocks)
-                ])
+            output_block = layer_physnet.OutputBlock(
+                graph_n_blocks,
+                n_atombasis,
+                self.n_maxatom,
+                output_n_property,
+                self.output_n_residual,
+                self.activation_fn,
+                True,
+                True,
+                False,
+                device=self.device,
+                dtype=self.dtype)
 
             # Assign output block to dictionary
             self.output_property_block[prop] = output_block
 
-        # Initialize property and atomic properties scaling dictionary
-        self.output_scaling = torch.nn.ParameterDict()
-
         # Assign property and atomic properties scaling parameters
-        self.set_property_scaling(self.output_property_scaling)
+        if self.output_property_scaling is not None:
+            self.set_property_scaling(self.output_property_scaling)
 
         return
 
@@ -746,9 +798,7 @@ class Output_PhysNet(torch.nn.Module):
 
     def set_property_scaling(
         self,
-        scaling_parameters:
-            Dict[str, Union[List[float], Dict[int, List[float]]]],
-        trainable: Optional[bool] = True,
+        scaling_parameters: Dict[str, List[float]],
         set_shift_term: Optional[bool] = True,
         set_scaling_factor: Optional[bool] = True,
     ):
@@ -762,8 +812,6 @@ class Output_PhysNet(torch.nn.Module):
             ({'property': [shift, scaling]}) or shift term and scaling factor
             of a model property for each atom type
             ({'atomic property': {'atomic number': [shift, scaling]}}).
-        trainable: bool, optional, default True
-            If True the scaling factor and shift term parameters are trainable.
         set_shift_term: bool, optional, default True
             If True, set or update the shift term. Else, keep previous
             value.
@@ -773,66 +821,71 @@ class Output_PhysNet(torch.nn.Module):
 
         """
 
-        # Set scaling factor and shifts for output properties
-        for prop in self.output_properties:
-
-            # Initialize or get output property scaling parameter list
-            if self.output_scaling.get(prop) is None:
-                if 'atomic' in prop:
-                    prop_scaling = np.array(
-                        [[0.0, 1.0] for _ in range(self.n_maxatom + 1)],
-                        dtype=float)
-                else:
-                    prop_scaling = np.array([0.0, 1.0], dtype=float)
-            else:
-                prop_scaling = (
-                    self.output_scaling[prop].detach().cpu().numpy())
-
-            # Assign scaling factor and shift
-            if (
-                scaling_parameters is not None
-                and scaling_parameters.get(prop) is not None
+        for prop in scaling_parameters:
+            
+            # Get current scaling parameter from output block
+            if prop in self.output_property_block:
+                block = self.output_property_block[prop]
+                scaling = block.scaling.detach().cpu().numpy()
+                atomic_scaling = block.atomic_scaling
+                split_scaling = block.split_scaling
+            elif (
+                prop == 'atomic_energies'
+                and 'atomic_energies_charges' in self.output_property_block
             ):
-
-                if utils.is_dictionary(scaling_parameters.get(prop)):
-
-                    # Iterate over atom type specific scaling factor and shifts
-                    for ai, pars in scaling_parameters.get(prop).items():
-                    
-                        if set_shift_term:
-                            prop_scaling[ai, 0] = pars[0]
-                        if set_scaling_factor:
-                            prop_scaling[ai, 1] = pars[1]
-
-                else:
-
-                    pars = scaling_parameters.get(prop)
-                    if set_shift_term:
-                        prop_scaling[0] = pars[0]
-                    if set_scaling_factor:
-                        prop_scaling[1] = pars[1]
-
-            # Add list to property scaling dictionary
-            prop_scaling = torch.tensor(
-                prop_scaling,
-                device=self.device,
-                dtype=self.dtype)
-            if trainable:
-                if self.output_scaling.get(prop) is None:
-                    self.output_scaling[prop] = (
-                        torch.nn.Parameter(prop_scaling))
-                else:
-                    with torch.no_grad():
-                        self.output_scaling[prop][:] = prop_scaling
+                block = self.output_property_block['atomic_energies_charges']
+                scaling = block.scaling.detach().cpu().numpy()
+                atomic_scaling = block.atomic_scaling
+                split_scaling = block.split_scaling
             else:
-                if self.output_scaling.get(prop) is None:
-                    self.output_scaling[prop] = (
-                        self.register_buffer(
-                            f"output_scaling:{prop:s}",
-                            prop_scaling)
-                        )
+                raise SyntaxError(
+                    f"No output block avaiable for property {prop:s}!")
+
+            # Assign new scaling parameter
+            if atomic_scaling:
+                
+                for ai, pars in scaling_parameters.get(prop).items():
+                    
+                    if split_scaling and prop == 'atomic_energies':
+                        if set_shift_term:
+                            scaling[ai, 0, 0] = pars[0]
+                        if set_scaling_factor:
+                            scaling[ai, 0, 1] = pars[1]
+
+                    elif split_scaling and prop == 'atomic_charges':
+                        if set_shift_term:
+                            scaling[ai, 1, 0] = pars[0]
+                        if set_scaling_factor:
+                            scaling[ai, 1, 1] = pars[1]
+                    else:
+                        if set_shift_term:
+                            scaling[ai, 0] = pars[0]
+                        if set_scaling_factor:
+                            scaling[ai, 1] = pars[1]
+
+            else:
+                
+                pars = scaling_parameters.get(prop)
+
+                if split_scaling and prop == 'atomic_energies':
+                    if set_shift_term:
+                        scaling[0, 0] = pars[0]
+                    if set_scaling_factor:
+                        scaling[0, 1] = pars[1]
+                if split_scaling and prop == 'atomic_charges':
+                    if set_shift_term:
+                        scaling[1, 0] = pars[0]
+                    if set_scaling_factor:
+                        scaling[1, 1] = pars[1]
                 else:
-                    self.output_scaling[prop][:] = prop_scaling
+                    if set_shift_term:
+                        scaling[0] = pars[0]
+                    if set_scaling_factor:
+                        scaling[1] = pars[1]
+
+            # Set new scaling parameter to output block
+            block.set_scaling(
+                torch.tensor(scaling, device=self.device, dtype=self.dtype))
 
         return
 
@@ -854,27 +907,73 @@ class Output_PhysNet(torch.nn.Module):
 
         # Get scaling factor and shifts for output properties
         scaling_parameters = {}
-        for prop in self.output_properties:
+        for prop in self.output_property_block:
 
-            # Get output property scaling
-            prop_scaling = (
-                self.output_scaling[prop].detach().cpu().numpy())
+            block = self.output_property_block[prop]
+            scaling = block.scaling.detach().cpu().numpy()
 
             # Check for atom or system resolved scaling
-            if prop_scaling.ndim == 1:
-                scaling_parameters[prop] = prop_scaling
+            if block.atomic_scaling:
+                if block.split_scaling and prop == 'atomic_energies_charges':
+                    scaling_parameters['atomic_energies'] = {}
+                    scaling_parameters['atomic_charges'] = {}
+                    for ai, pars in enumerate(scaling):
+                        scaling_parameters['atomic_energies'][ai] = pars[0]
+                        scaling_parameters['atomic_charges'][ai] = pars[1]
+                    pass
+                else:
+                    scaling_parameters[prop] = {}
+                    for ai, pars in enumerate(scaling):
+                        scaling_parameters[prop][ai] = pars
             else:
-                scaling_parameters[prop] = {}
-                for ai, pars in enumerate(prop_scaling):
-                    scaling_parameters[prop][ai] = pars
+                if block.split_scaling and prop == 'atomic_energies_charges':
+                    scaling_parameters['atomic_energies'] = scaling[0]
+                    scaling_parameters['atomic_charges'] = scaling[1]
+                else:
+                    scaling_parameters[prop] = scaling
 
         return scaling_parameters
 
+    def conserve_charge(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Atomic charge manipulation to conserve molecular charge
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            atoms_numbers: torch.Tensor(N_atoms)
+                List of atom numbers per system
+            atomic_charges: torch.Tensor(N_atoms)
+                List of atomic charges
+            charge: torch.Tesnsor(N_system)
+                Total charge of molecules in batch
+            sys_i: torch.Tensor(N_atoms)
+                System indices of atoms in batch
+
+        Returns
+        -------
+        batch: dict(str, torch.Tensor)
+            Dictionary added by module results
+
+        """
+
+        # Apply charge manipulation
+        charge_deviation = batch['charge'].clone()
+        charge_deviation = charge_deviation.scatter_add_(
+            0, batch['sys_i'], -batch['atomic_charges'])/batch['atoms_number']
+        batch['atomic_charges'] = (
+            batch['atomic_charges'] + charge_deviation[batch['sys_i']])
+
+        return batch
+
     def forward(
         self,
-        features_list: List[torch.Tensor],
-        atomic_numbers: Optional[torch.Tensor] = None,
-        properties: Optional[List[str]] = None,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
     ) -> Dict[str, torch.Tensor]:
 
         """
@@ -882,13 +981,17 @@ class Output_PhysNet(torch.nn.Module):
 
         Parameters
         ----------
-        features_list : [torch.Tensor(N_atoms, n_atombasis)]*n_blocks
-            List of atom feature vectors
-        atomic_numbers: torch.Tensor(N_atoms), optional, default None
-            List of atomic numbers
-        properties: list(str), optional, default None
-            List of properties to compute by the model. If None, all properties
-            are predicted.
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            features_list : torch.Tensor(n_blocks, N_atoms, n_atombasis)
+                List of atom feature vectors
+            atomic_numbers: torch.Tensor(N_atoms)
+                List of atomic numbers
+            charge: torch.Tesnsor(N_system)
+                Total charge of molecules in batch
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
 
         Returns
         -------
@@ -897,76 +1000,48 @@ class Output_PhysNet(torch.nn.Module):
 
         """
 
-        # Initialize predicted properties dictionary
-        output_prediction = {}
-        
-        # Check requested properties
-        if properties is None:
-            predict_all = True
-        else:
-            predict_all = False
+       # Assign input data
+        atomic_numbers = batch['atomic_numbers']
+        features_list = batch['features_list']
 
-        # Initialize training properties
+        # Initialize additional loss value if training mode is active
         if self.training:
-            nhloss = 0.0
-            last_prediction_squared = 0.0
-        
+            batch['model_loss'] = torch.tensor(
+                0.0, device=self.device, dtype=self.dtype)
+
         # Iterate over output blocks
         for prop, output_block in self.output_property_block.items():
 
-            # Skip if property not requested
-            if not predict_all and prop not in properties:
-                continue
-
             # Compute prediction and loss function contribution
-            for iblock, (features, output) in enumerate(
-                zip(features_list, output_block)
-            ):
+            batch[prop], model_loss = output_block(
+                features_list, atomic_numbers)
 
-                prediction = output(features)
-                if iblock:
-                    output_prediction[prop] = (
-                        output_prediction[prop] + prediction)
-                else:
-                    output_prediction[prop] = prediction
-                
-                # If training mode is active, compute nhloss contribution
-                if self.training:
-                    prediction_squared = prediction**2
-                    if iblock:
-                        nhloss = nhloss + torch.mean(
-                            prediction_squared
-                            / (
-                                prediction_squared 
-                                + last_prediction_squared 
-                                + 1.0e-7)
-                            )
-                    last_prediction_squared = prediction_squared
-            
-            # Flatten prediction for scalar properties
-            if self.output_n_property[prop] == 1:
-                output_prediction[prop] = torch.flatten(
-                    output_prediction[prop], start_dim=0)
-            
-        # Save nhloss if training mode is active
-        if self.training:
-            output_prediction['nhloss'] = nhloss
-        
+            # Update additional loss value if training mode is active
+            if self.training:
+                batch['model_loss'] = batch['model_loss'] + model_loss
+
         # Post-process atomic energies/charges case
         if self.output_energies_charges:
 
-            output_prediction['atomic_energies'], \
-                output_prediction['atomic_charges'] = (
-                    output_prediction['atomic_energies_charges'][:, 0],
-                    output_prediction['atomic_energies_charges'][:, 1])
+            batch['atomic_energies'], \
+                batch['atomic_charges'] = (
+                    batch['atomic_energies_charges'][:, 0],
+                    batch['atomic_energies_charges'][:, 1])
 
-        # Apply property and atomic properties scaling
-        for prop, scaling in self.output_scaling.items():
-            if scaling.dim() == 1:
-                (shift, scale) = scaling
-            else:
-                (shift, scale) = scaling[atomic_numbers].T
-            output_prediction[prop] = (
-                output_prediction[prop]*scale + shift)
+        # Scale atomic charges to conserve correct molecular charge
+        if self.output_atomic_charges:
+            batch = self.conserve_charge(batch)
 
-        return output_prediction
+        # If verbose, store a copy of the output block prediction
+        if verbose:
+            for prop in self.output_property_block:
+                if prop == 'atomic_energies_charges':
+                    batch['output_atomic_energies'] = (
+                        batch['atomic_energies'].detach())
+                    batch['output_atomic_charges'] = (
+                        batch['atomic_charges'].detach())
+                else:
+                    verbose_prop = 'output_{:s}'.format(prop)
+                    batch[verbose_prop] = batch[prop].detach()
+
+        return batch

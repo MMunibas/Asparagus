@@ -6,16 +6,16 @@ import torch
 #======================================
 
 def get_Input_PhysNet():
-    from .physnet_modules import Input_PhysNet
+    from .module_physnet import Input_PhysNet
     return Input_PhysNet
 
 def get_Input_PhysNet_original():
     raise NotImplementedError()
-    from .physnet_modules import Input_PhysNet_original
+    from .module_physnet import Input_PhysNet_original
     return Input_PhysNet_original
 
 def get_Input_PaiNN():
-    from .painn_modules import Input_PaiNN
+    from .module_painn import Input_PaiNN
     return Input_PaiNN
 
 

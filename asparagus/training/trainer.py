@@ -261,23 +261,6 @@ class Trainer:
         # Get reference data property units
         self.data_units = self.data_container.data_unit_properties
 
-        #########################################
-        # # # Prepare Reference Data Loader # # #
-        #########################################
-
-        # Initialize training, validation and test data loader
-        self.data_container.init_dataloader(
-            self.trainer_train_batch_size,
-            self.trainer_valid_batch_size,
-            self.trainer_test_batch_size,
-            num_workers=self.trainer_num_batch_workers,
-            device=self.device,
-            dtype=self.dtype)
-
-        # Get training and validation data loader
-        self.data_train = self.data_container.get_dataloader('train')
-        self.data_valid = self.data_container.get_dataloader('valid')
-
         ##################################
         # # # Check Model Calculator # # #
         ##################################
@@ -334,6 +317,24 @@ class Trainer:
         # Assign potentially new property units to the model
         if hasattr(self.model_calculator, 'set_unit_properties'):
             self.model_calculator.set_unit_properties(self.model_units)
+
+        #########################################
+        # # # Prepare Reference Data Loader # # #
+        #########################################
+
+        # Initialize training, validation and test data loader
+        self.data_container.init_dataloader(
+            self.trainer_train_batch_size,
+            self.trainer_valid_batch_size,
+            self.trainer_test_batch_size,
+            reference_properties=self.trainer_properties,
+            num_workers=self.trainer_num_batch_workers,
+            device=self.device,
+            dtype=self.dtype)
+
+        # Get training and validation data loader
+        self.data_train = self.data_container.get_dataloader('train')
+        self.data_valid = self.data_container.get_dataloader('valid')
 
         ###################################################################
         # # # Prepare Optimizer, Scheduler and Gradient Normalization # # #
@@ -555,14 +556,6 @@ class Trainer:
                     + f" Scheduler state: {scheduler_state:s}")
                 self.logger.info(message)
 
-        # Skip if max epochs are already reached
-        if trainer_epoch_start > self.trainer_max_epochs:
-            if verbose:
-                self.logger.info(
-                    f"Max Epochs ({self.trainer_max_epochs:d}) already "
-                    + f"reached ({trainer_epoch_start:d}).")
-            return
-
         ################################
         # # # Prepare Model Cutoff # # #
         ################################
@@ -612,6 +605,9 @@ class Trainer:
                 model_calculator=self.model_calculator,
                 data_loader=self.data_train,
                 properties=properties_scaleable,
+                use_model_prediction=True,
+                model_conversion=self.model_conversion,
+                atomic_energies_guess=True,
                 set_shift_term=True,
                 set_scaling_factor=False,
                 )
@@ -643,7 +639,11 @@ class Trainer:
             training.set_property_scaling_estimation(
                 model_calculator=self.model_calculator,
                 data_loader=self.data_train,
-                properties=self.model_calculator.get_scaleable_properties())
+                properties=self.model_calculator.get_scaleable_properties(),
+                use_model_prediction=True,
+                model_conversion=self.model_conversion,
+                atomic_energies_guess=True,
+                )
 
         #############################################
         # # # Prepare Model Training and Metric # # #
@@ -693,6 +693,14 @@ class Trainer:
                 test_plot_residual=True,
                 **kwargs)
 
+        # Skip if max epochs are already reached
+        if trainer_epoch_start > self.trainer_max_epochs:
+            if verbose:
+                self.logger.info(
+                    f"Max Epochs ({self.trainer_max_epochs:d}) already "
+                    + f"reached ({trainer_epoch_start:d}).")
+            return
+
         # Loop over epochs
         for epoch in torch.arange(
             trainer_epoch_start, self.trainer_max_epochs + 1
@@ -731,21 +739,25 @@ class Trainer:
                     )
 
                 # Predict model properties from data batch
-                prediction = self.model_calculator(batch)
+                batch = self.model_calculator(batch)
 
                 # Check for NaN predictions
                 if self.trainer_debug_mode:
-                    for prop, item in prediction.items():
-                        if torch.any(torch.isnan(item)):
+                    for prop in self.model_properties:
+                        if torch.any(torch.isnan(batch[prop])):
+                            num_nan = torch.sum(torch.isnan(batch[prop]))
                             raise SyntaxError(
                                 f"Property prediction of '{prop:s}' contains "
-                                + f"{torch.sum(torch.isnan(item))} elements "
-                                + "of value 'NaN'!")
+                                + f"{num_nan:d} elements of value 'NaN'!")
 
                 # Compute total and single loss values for training properties
                 metrics_batch = self.compute_metrics(
-                    prediction, batch, loss_fn=loss_fn)
+                    batch, batch['reference'], loss_fn=loss_fn)
                 loss = metrics_batch['loss']
+                
+                # Add custom model loss values if available
+                if 'model_loss' in batch:
+                    loss = loss + batch['model_loss']
 
                 # Check for NaN loss value
                 if torch.isnan(loss):
@@ -754,7 +766,7 @@ class Trainer:
 
                 # Predict parameter gradients by backwards propagation
                 loss.backward()
-                
+
                 # Clip parameter gradients norm and values
                 if self.gradient_clipping_value:
                     torch.nn.utils.clip_grad_value_(
@@ -843,11 +855,11 @@ class Trainer:
             # Perform model validation each interval
             if not (epoch % self.trainer_validation_interval):
 
-                # Change to evaluation mode for calculator
-                self.model_calculator.eval()
-
                 # Reset property metrics
                 metrics_valid = self.reset_metrics()
+
+                # Change to evaluation mode for calculator
+                self.model_calculator.eval()
 
                 # If EMA is active
                 if self.trainer_ema:
@@ -857,17 +869,17 @@ class Trainer:
                     # Load EMA model parameter set
                     self.trainer_ema_model.copy_to(
                         self.model_calculator.parameters())
-    
+
                 # Loop over validation batches
                 for batch in self.data_valid:
 
                     # Predict model properties from data batch
-                    prediction = self.model_calculator(batch)
+                    batch = self.model_calculator(batch)
 
                     # Compute total and single loss values for
                     # validation properties
                     metrics_batch = self.compute_metrics(
-                        prediction, batch,
+                        batch, batch['reference'],
                         loss_fn=loss_fn, loss_only=False)
 
                     # Update average metrics
@@ -939,11 +951,10 @@ class Trainer:
                                     metrics_best[prop],
                                     global_step=epoch)
 
-                    # If EMA is active
-                    if self.trainer_ema:
-                        # Restore last model parameter set
-                        self.trainer_ema_model.restore(
-                            self.model_calculator.parameters())
+                # If EMA is active, restore last model parameter set
+                if self.trainer_ema:
+                    self.trainer_ema_model.restore(
+                        self.model_calculator.parameters())
 
                 # Print validation metrics summary
                 if print_progress and verbose:
@@ -977,33 +988,6 @@ class Trainer:
                         + f"  Best Loss valid: {metrics_best['loss']:.2E}")
 
         return
-
-    def predict_batch(self, batch):
-        """
-        Predict properties from data batch.
-
-        Parameters
-        ----------
-        batch: dict
-            Data batch dictionary
-
-        Returns
-        -------
-        dict(str, torch.Tensor)
-            Model Calculator prediction of properties
-
-        """
-
-        # Predict properties
-        return self.model_calculator(
-            batch['atoms_number'],
-            batch['atomic_numbers'],
-            batch['positions'],
-            batch['idx_i'],
-            batch['idx_j'],
-            batch['charge'],
-            batch['atoms_seg'],
-            batch['pbc_offset'])
 
     def check_properties(
         self,
@@ -1286,7 +1270,7 @@ class Trainer:
         metrics = {}
 
         # Add batch size
-        metrics['Ndata'] = reference['atoms_number'].size()[0]
+        metrics['Ndata'] = prediction['atoms_number'].size()[0]
 
         # Iterate over training properties
         for ip, prop in enumerate(self.trainer_properties):

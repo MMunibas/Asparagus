@@ -23,3 +23,7 @@ from .model_ase import(
 from .model_pycharmm import (
     PyCharmm_Calculator
 )
+
+from .model_openmm import (
+    OpenMM_Calculator, AsparagusPotentialImplFactory
+)

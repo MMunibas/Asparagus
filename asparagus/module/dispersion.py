@@ -16,7 +16,6 @@ __all__ = ["D3_dispersion"]
 #======================================
 
 
-
 class D3_dispersion(torch.nn.Module):
     """
     Torch implementation of Grimme's D3 method (only Becke-Johnson damping is
@@ -95,6 +94,10 @@ class D3_dispersion(torch.nn.Module):
         self.dtype = dtype
         self.device = device
 
+        # Assign cutoff radii
+        self.cutoff = cutoff
+        self.cuton = cuton
+
         # Load tables with reference values
         self.d3_rcov = torch.from_numpy(
             np.load(os.path.join(package_directory, "grimme_d3", "rcov.npy"))
@@ -113,11 +116,11 @@ class D3_dispersion(torch.nn.Module):
 
         # Assign truncation method
         if truncation is None or truncation.lower() == 'none':
-            self.potential_fn = self.dispersion_fn
+            self.potential_fn = D3_dispersion_NoShifted(self.cutoff)
         elif truncation.lower() == 'potential':
-            self.potential_fn = self.dispersion_sp_fn
+            self.potential_fn = D3_dispersion_ShiftedPotential(self.cutoff)
         elif truncation.lower() in ['force', 'forces']:
-            self.potential_fn = self.dispersion_sf_fn
+            self.potential_fn = D3_dispersion_ShiftedForce(self.cutoff)
         else:
             raise SyntaxError(
                 "Truncation method of the Dispersion potential "
@@ -156,10 +159,6 @@ class D3_dispersion(torch.nn.Module):
         self.d3_k1 = torch.tensor([16.000], device=device, dtype=dtype)
         self.d3_k2 = torch.tensor([4./3.], device=device, dtype=dtype)
         self.d3_k3 = torch.tensor([-4.000], device=device, dtype=dtype)
-
-        # Assign cutoff radii
-        self.cutoff = cutoff
-        self.cuton = cuton
 
         # Unit conversion factors
         self.set_unit_properties(unit_properties)
@@ -294,8 +293,8 @@ class D3_dispersion(torch.nn.Module):
         atomic_numbers_j: torch.Tensor,
         distances: torch.Tensor,
         switch_off: torch.Tensor,
-        idx_i: torch.Tensor,
-        idx_j: torch.Tensor
+        idx_u: torch.Tensor,
+        idx_v: torch.Tensor
     ) -> torch.Tensor:
         """
         Compute coordination numbers by adding an inverse damping function.
@@ -303,17 +302,17 @@ class D3_dispersion(torch.nn.Module):
         """
 
         # Compute atom pairs covalent radii
-        rcov_ij = (
+        rcov_uv = (
             torch.gather(self.d3_rcov, 0, atomic_numbers_i)
             + torch.gather(self.d3_rcov, 0, atomic_numbers_j))
 
-        cn_ij = (
-            1.0/(1.0 + torch.exp(-self.d3_k1 * (rcov_ij/distances - 1.0))))
+        cn_uv = (
+            1.0/(1.0 + torch.exp(-self.d3_k1 * (rcov_uv/distances - 1.0))))
         if self.use_switch:
-            cn_ij = cn_ij*switch_off
+            cn_uv = cn_uv*switch_off
 
         return utils.scatter_sum(
-            cn_ij, idx_i, dim=0, shape=atomic_numbers.shape)
+            cn_uv, idx_u, dim=0)
 
     def get_weights(
         self,
@@ -374,8 +373,8 @@ class D3_dispersion(torch.nn.Module):
         atomic_numbers_i: torch.Tensor,
         atomic_numbers_j: torch.Tensor,
         weigths: torch.Tensor,
-        idx_i: torch.Tensor,
-        idx_j: torch.Tensor,
+        idx_u: torch.Tensor,
+        idx_v: torch.Tensor,
     ) -> torch.Tensor:
         """
         Compute atomic c6 dispersion coefficients
@@ -386,142 +385,44 @@ class D3_dispersion(torch.nn.Module):
         rc6 = self.d3_rc6[atomic_numbers_i, atomic_numbers_j]
 
         # Collect atomic weights of atom pairs ij
-        weights_i = weigths[idx_i]
-        weights_j = weigths[idx_j]
-        weights_ij = weights_i.unsqueeze(-1)*weights_j.unsqueeze(-2)
+        weights_i = weigths[idx_u]
+        weights_j = weigths[idx_v]
+        weights_uv = weights_i.unsqueeze(-1)*weights_j.unsqueeze(-2)
 
         # Compute atomic c6 dispersion coefficients
-        c6 = torch.sum(torch.sum(torch.mul(weights_ij, rc6), dim=-1), dim=-1)
+        c6 = torch.sum(torch.sum(torch.mul(weights_uv, rc6), dim=-1), dim=-1)
 
         return c6
 
-    def dispersion_fn(
-        self,
-        distances: torch.Tensor,
-        distances6: torch.Tensor,
-        distances8: torch.Tensor,
-        switch_off: torch.Tensor,
-        c6: torch.Tensor,
-        c8: torch.Tensor,
-        fct6: torch.Tensor,
-        fct8: torch.Tensor,
-        damp_c6: torch.Tensor,
-        damp_c8: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute atomic D3 dispersion energy
-
-        """
-
-        # Compute atomic dispersion energy contributions
-        e6 = -0.5*self.d3_s6*c6*damp_c6
-        e8 = -0.5*self.d3_s8*c8*damp_c8
-
-        # Apply switch-off function
-        edisp = switch_off*(e6 + e8)
-
-        return edisp
-
-    def dispersion_sp_fn(
-        self,
-        distances: torch.Tensor,
-        distances6: torch.Tensor,
-        distances8: torch.Tensor,
-        switch_off: torch.Tensor,
-        c6: torch.Tensor,
-        c8: torch.Tensor,
-        fct6: torch.Tensor,
-        fct8: torch.Tensor,
-        damp_c6: torch.Tensor,
-        damp_c8: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute shifted potential atomic D3 dispersion energy
-
-        """
-
-        # Compute all required powers of the cutoff distance
-        cutoff2 = self.cutoff**2
-        cutoff6 = cutoff2**3
-        cutoff8 = cutoff6*cutoff2
-        denominator6 = cutoff6 + fct6
-        denominator8 = cutoff8 + fct8
-
-        # Compute force shifted atomic dispersion energy contributions
-        e6 = -0.5*self.d3_s6*c6*(damp_c6 - 1.0/denominator6)
-        e8 = -0.5*self.d3_s8*c8*(damp_c8 - 1.0/denominator8)
-
-        # Apply switch-off function
-        edisp = switch_off*(e6 + e8)
-
-        return edisp
-
-    def dispersion_sf_fn(
-        self,
-        distances: torch.Tensor,
-        distances6: torch.Tensor,
-        distances8: torch.Tensor,
-        switch_off: torch.Tensor,
-        c6: torch.Tensor,
-        c8: torch.Tensor,
-        fct6: torch.Tensor,
-        fct8: torch.Tensor,
-        damp_c6: torch.Tensor,
-        damp_c8: torch.Tensor,
-    ) -> torch.Tensor:
-        """
-        Compute shifted force  atomic D3 dispersion energy
-
-        """
-
-        # Compute all required powers of the cutoff distance
-        cutoff2 = self.cutoff**2
-        cutoff6 = cutoff2**3
-        cutoff8 = cutoff6*cutoff2
-        denominator6 = cutoff6 + fct6
-        denominator8 = cutoff8 + fct8
-
-        # Compute force shifted atomic dispersion energy contributions
-        e6 = -0.5*self.d3_s6*c6*(
-            damp_c6 - 1.0/denominator6
-            + 6.0*cutoff6/denominator6**2*(distances/self.cutoff - 1.0))
-        e8 = -0.5*self.d3_s8*c8*(
-            damp_c8 - 1.0/denominator8
-            + 8.0*cutoff8/denominator8**2*(distances/self.cutoff - 1.0))
-
-        # Apply switch-off function
-        edisp = switch_off*(e6 + e8)
-
-        return edisp
-
     def forward(
         self,
-        atomic_numbers: torch.Tensor,
-        distances: torch.Tensor,
-        idx_i: torch.Tensor,
-        idx_j: torch.Tensor,
-    ) -> torch.Tensor:
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
         """
         Compute Grimme's D3 dispersion energy in Hartree with atom pair
         distances in Bohr.
 
         Parameters
         ----------
-        atomic_numbers : torch.Tensor
-            Atomic numbers of all atoms in the batch.
-        distances : torch.Tensor
-            Distances between all atom pairs in the batch.
-        idx_i : torch.Tensor
-            Indices of the first atom of each pair.
-        idx_j : torch.Tensor
-            Indices of the second atom of each pair.
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
 
         Returns
         -------
-        torch.Tensor
-            Dispersion atom energy contribution
+        dict(str, torch.Tensor)
+            Dictionary added by module results
 
         """
+
+        # Assign input data
+        atomic_numbers = batch['atomic_numbers']
+        distances = batch['distances_uv']
+        idx_u = batch['idx_u']
+        idx_v = batch['idx_v']
 
         # Convert distances from model unit to Bohr
         distances_d3 = distances*self.distances_model2Bohr
@@ -537,8 +438,8 @@ class D3_dispersion(torch.nn.Module):
             )
 
         # Gather atomic numbers of atom pairs ij
-        atomic_numbers_i = torch.gather(atomic_numbers, 0, idx_i)
-        atomic_numbers_j = torch.gather(atomic_numbers, 0, idx_j)
+        atomic_numbers_i = torch.gather(atomic_numbers, 0, idx_u)
+        atomic_numbers_j = torch.gather(atomic_numbers, 0, idx_v)
 
         # Compute coordination numbers and of atom pairs ij
         cn = self.get_cn(
@@ -547,8 +448,8 @@ class D3_dispersion(torch.nn.Module):
             atomic_numbers_j,
             distances_d3,
             switch_off,
-            idx_i,
-            idx_j)
+            idx_u,
+            idx_v)
 
         # Compute atomic weights
         weights = self.get_weights(
@@ -560,8 +461,8 @@ class D3_dispersion(torch.nn.Module):
             atomic_numbers_i,
             atomic_numbers_j,
             weights,
-            idx_i,
-            idx_j)
+            idx_u,
+            idx_v)
         qq = (
             3.0
             * torch.gather(self.d3_r2r4, 0, atomic_numbers_i)
@@ -582,11 +483,11 @@ class D3_dispersion(torch.nn.Module):
         damp_c8 = 1.0/(distances8 + fct8)
 
         # Compute atomic dispersion energy contributions
-        Edisp = self.potential_fn(
+        Edisp_pair = self.potential_fn(
             distances_d3,
-            distances6,
-            distances8,
             switch_off,
+            self.d3_s6,
+            self.d3_s8,
             c6,
             c8,
             fct6,
@@ -594,6 +495,203 @@ class D3_dispersion(torch.nn.Module):
             damp_c6,
             damp_c8)
 
-        # Return system dispersion energies and convert to model energy unit
-        return self.energies_Hatree2model*utils.scatter_sum(
-            Edisp, idx_i, dim=0, shape=atomic_numbers.shape)
+        # Sum up dispersion atom pair contributions of each atom
+        Edisp_atom = torch.zeros_like(batch['atomic_energies']).scatter_add_(
+            0,
+            idx_u,
+            Edisp_pair)
+
+        # Convert to model energy unit
+        Edisp_atom = Edisp_atom*self.energies_Hatree2model
+
+        # Add repulsion atomic energy contributions
+        batch['atomic_energies'] = batch['atomic_energies'] + Edisp_atom
+
+        # If verbose, store a copy of the repulsion atomic energy contributions
+        if verbose:
+            batch['dispersion_atomic_energies'] = Edisp_atom.detach()
+
+        return batch
+
+
+class D3_dispersion_NoShifted(torch.nn.Module):
+    """
+    Torch implementation of Grimme's D3 method (only Becke-Johnson damping is
+    implemented) without applying any cutoff method
+
+    Parameters
+    ----------
+    cutoff: float
+        Dispersion interaction cutoff distance
+    **kwargs
+        Additional keyword arguments
+
+    """
+
+    def __init__(
+        self,
+        cutoff: torch.Tensor,
+        **kwargs
+    ):
+
+        super(D3_dispersion_ShiftedForce, self).__init__()
+
+        # Assign parameters
+        self.cutoff = cutoff
+
+        return
+
+    def forward(
+        self,
+        distances: torch.Tensor,
+        switch_off: torch.Tensor,
+        d3_s6: torch.Tensor,
+        d3_s8: torch.Tensor,
+        c6: torch.Tensor,
+        c8: torch.Tensor,
+        fct6: torch.Tensor,
+        fct8: torch.Tensor,
+        damp_c6: torch.Tensor,
+        damp_c8: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute shifted force atom pair D3 dispersion energies
+
+        """
+
+        # Compute atomic dispersion energy contributions
+        e6 = -0.5*self.d3_s6*c6*damp_c6
+        e8 = -0.5*self.d3_s8*c8*damp_c8
+
+        # Apply switch-off function
+        Edisp_pair = switch_off*(e6 + e8)
+
+        return Edisp_pair
+
+
+class D3_dispersion_ShiftedPotential(torch.nn.Module):
+    """
+    Torch implementation of Grimme's D3 method (only Becke-Johnson damping is
+    implemented) applying the shifted potential cutoff method
+
+    Parameters
+    ----------
+    cutoff: float
+        Dispersion interaction cutoff distance
+    **kwargs
+        Additional keyword arguments
+
+    """
+
+    def __init__(
+        self,
+        cutoff: torch.Tensor,
+        **kwargs
+    ):
+
+        super(D3_dispersion_ShiftedForce, self).__init__()
+
+        # Assign parameters
+        self.cutoff = cutoff
+
+        return
+
+    def forward(
+        self,
+        distances: torch.Tensor,
+        switch_off: torch.Tensor,
+        d3_s6: torch.Tensor,
+        d3_s8: torch.Tensor,
+        c6: torch.Tensor,
+        c8: torch.Tensor,
+        fct6: torch.Tensor,
+        fct8: torch.Tensor,
+        damp_c6: torch.Tensor,
+        damp_c8: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute shifted force atom pair D3 dispersion energies
+
+        """
+
+        # Compute all required powers of the cutoff distance
+        cutoff2 = self.cutoff**2
+        cutoff6 = cutoff2**3
+        cutoff8 = cutoff6*cutoff2
+        denominator6 = cutoff6 + fct6
+        denominator8 = cutoff8 + fct8
+
+        # Compute force shifted atomic dispersion energy contributions
+        e6 = -0.5*d3_s6*c6*(damp_c6 - 1.0/denominator6)
+        e8 = -0.5*d3_s8*c8*(damp_c8 - 1.0/denominator8)
+
+        # Apply switch-off function
+        Edisp_pair = switch_off*(e6 + e8)
+
+        return Edisp_pair
+
+
+class D3_dispersion_ShiftedForce(torch.nn.Module):
+    """
+    Torch implementation of Grimme's D3 method (only Becke-Johnson damping is
+    implemented) applying the shifted force cutoff method
+
+    Parameters
+    ----------
+    cutoff: float
+        Dispersion interaction cutoff distance
+    **kwargs
+        Additional keyword arguments
+
+    """
+
+    def __init__(
+        self,
+        cutoff: torch.Tensor,
+        **kwargs
+    ):
+
+        super(D3_dispersion_ShiftedForce, self).__init__()
+
+        # Assign parameters
+        self.cutoff = cutoff
+
+        return
+
+    def forward(
+        self,
+        distances: torch.Tensor,
+        switch_off: torch.Tensor,
+        d3_s6: torch.Tensor,
+        d3_s8: torch.Tensor,
+        c6: torch.Tensor,
+        c8: torch.Tensor,
+        fct6: torch.Tensor,
+        fct8: torch.Tensor,
+        damp_c6: torch.Tensor,
+        damp_c8: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute shifted force atom pair D3 dispersion energies
+
+        """
+
+        # Compute all required powers of the cutoff distance
+        cutoff2 = self.cutoff**2
+        cutoff6 = cutoff2**3
+        cutoff8 = cutoff6*cutoff2
+        denominator6 = cutoff6 + fct6
+        denominator8 = cutoff8 + fct8
+
+        # Compute force shifted atomic dispersion energy contributions
+        e6 = -0.5*d3_s6*c6*(
+            damp_c6 - 1.0/denominator6
+            + 6.0*cutoff6/denominator6**2*(distances/self.cutoff - 1.0))
+        e8 = -0.5*d3_s8*c8*(
+            damp_c8 - 1.0/denominator8
+            + 8.0*cutoff8/denominator8**2*(distances/self.cutoff - 1.0))
+
+        # Apply switch-off function
+        Edisp_pair = switch_off*(e6 + e8)
+
+        return Edisp_pair

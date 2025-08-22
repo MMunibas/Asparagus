@@ -11,7 +11,7 @@ from asparagus import layer
 from asparagus import settings
 from asparagus import utils
 
-from asparagus.layer import layers_painn
+from asparagus.layer import layer_painn
 
 __all__ = ['Input_PaiNN', 'Graph_PaiNN', 'Output_PaiNN']
 
@@ -59,7 +59,7 @@ class Input_PaiNN(torch.nn.Module):
         'input_radial_fn':              'GaussianRBF',
         'input_n_radialbasis':          64,
         'input_cutoff_fn':              'Poly6',
-        'input_radial_cutoff':          8.0,
+        'input_radial_cutoff':          5.0,
         'input_rbf_center_start':       1.0,
         'input_rbf_center_end':         None,
         'input_rbf_trainable':          True,
@@ -156,7 +156,7 @@ class Input_PaiNN(torch.nn.Module):
             self.input_n_maxatom + 1,
             self.input_n_atombasis,
             padding_idx=0,
-            max_norm=self.input_n_atombasis,
+            max_norm=float(self.input_n_atombasis),
             device=self.device, 
             dtype=self.dtype)
 
@@ -202,88 +202,127 @@ class Input_PaiNN(torch.nn.Module):
 
     def forward(
         self, 
-        atomic_numbers: torch.Tensor,
-        positions: torch.Tensor,
-        idx_i: torch.Tensor,
-        idx_j: torch.Tensor,
-        pbc_offset_ij: Optional[torch.Tensor] = None,
-        idx_u: Optional[torch.Tensor] = None,
-        idx_v: Optional[torch.Tensor] = None,
-        pbc_offset_uv: Optional[torch.Tensor] = None,
-    ) -> List[torch.Tensor]:
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of the input module.
 
         Parameters
         ----------
-        atomic_numbers : torch.Tensor(N_atoms)
-            Atomic numbers of the system
-        positions : torch.Tensor(N_atoms, 3)
-            Atomic positions of the system
-        idx_i : torch.Tensor(N_pairs)
-            Atom i pair index
-        idx_j : torch.Tensor(N_pairs)
-            Atom j pair index
-        pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
-            Position offset from periodic boundary condition
-        idx_u : torch.Tensor(N_pairs), optional, default None
-            Long-range atom u pair index
-        idx_v : torch.Tensor(N_pairs), optional, default None
-            Long-range atom v pair index
-        pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
-            Long-range position offset from periodic boundary condition
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            atomic_numbers : torch.Tensor(N_atoms)
+                Atomic numbers of the system
+            positions : torch.Tensor(N_atoms, 3)
+                Atomic positions of the system
+            idx_i : torch.Tensor(N_pairs)
+                Atom i pair index
+            idx_j : torch.Tensor(N_pairs)
+                Atom j pair index
+            pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
+                Position offset from periodic boundary condition
+            idx_u : torch.Tensor(N_pairs), optional, default None
+                Long-range atom u pair index
+            idx_v : torch.Tensor(N_pairs), optional, default None
+                Long-range atom v pair index
+            pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
+                Long-range position offset from periodic boundary condition
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
 
         Returns
         -------
-        features: torch.tensor(N_atoms, n_atombasis)
-            Atomic feature vectors
-        distances: torch.tensor(N_pairs)
-            Atom pair distances
-        vectors: torch.tensor(N_pairs, 3)
-            Atom pair vectors
-        cutoffs: torch.tensor(N_pairs)
-            Atom pair distance cutoffs
-        rbfs: torch.tensor(N_pairs, n_radialbasis)
-            Atom pair radial basis functions
-        distances_uv: torch.tensor(N_pairs_uv)
-            Long-range atom pair distances
-        vectors_uv: torch.tensor(N_pairs_uv, 3)
-            Long-range atom pair vectors
+        dict(str, torch.Tensor)
+            Dictionary added by module results:
+            features: torch.tensor(N_atoms, n_atombasis)
+                Atomic feature vectors
+            distances: torch.tensor(N_pairs)
+                Atom pair distances
+            vectors: torch.tensor(N_pairs, 3)
+                Atom pair vectors
+            cutoffs: torch.tensor(N_pairs)
+                Atom pair distance cutoffs
+            rbfs: torch.tensor(N_pairs, n_radialbasis)
+                Atom pair radial basis functions
+            distances_uv: torch.tensor(N_pairs_uv)
+                Long-range atom pair distances
+            vectors_uv: torch.tensor(N_pairs_uv, 3)
+                Long-range atom pair vectors
 
         """
-        
+
+        # Assign input data
+        positions = batch['positions']
+        idx_i = batch['idx_i']
+        idx_j = batch['idx_j']
+
         # Collect atom feature vectors
-        features = self.atom_features(atomic_numbers)
+        features = self.atom_features(batch['atomic_numbers'])
 
         # Compute pair connection vector
-        if pbc_offset_ij is None:
-            vectors = positions[idx_j] - positions[idx_i]
+        if 'pbc_offset_ij' in batch:
+            vectors = (
+                positions[idx_j] - positions[idx_i] + batch['pbc_offset_ij'])
         else:
-            vectors = positions[idx_j] - positions[idx_i] + pbc_offset_ij
+            vectors = positions[idx_j] - positions[idx_i]
 
         # Compute pair distances
         distances = torch.norm(vectors, dim=-1)
 
-        # Compute long-range cutoffs
-        if pbc_offset_uv is None and idx_u is not None:
-            vectors_uv = positions[idx_v] - positions[idx_u]
+        # PBC: Supercluster approach - Point from eventual image atoms to 
+        # respective primary atoms but keep distances
+        if 'pbc_idx_pointer' in batch:
+            batch['idx_i'] = batch['pbc_idx_pointer'][batch['idx_i']]
+            batch['idx_j'] = batch['pbc_idx_pointer'][batch['pbc_idx_j']]
+
+        # Compute distances and vectors for long-range atom pairs
+        if 'idx_u' in batch:
+
+            # Assign input data
+            idx_u = batch['idx_u']
+            idx_v = batch['idx_v']
+
+            # Compute long-range pair connection vectors
+            if 'pbc_offset_uv' in batch:
+                vectors_uv = (
+                    positions[idx_v] - positions[idx_u]
+                    + batch['pbc_offset_uv'])
+            else:
+                vectors_uv = positions[idx_v] - positions[idx_u]
             distances_uv = torch.norm(vectors_uv, dim=-1)
-        elif idx_u is not None:
-            vectors_uv = positions[idx_v] - positions[idx_u] + pbc_offset_uv
-            distances_uv = torch.norm(vectors_uv, dim=-1)
+            
+            # PBC: Supercluster approach - Point from eventual image atoms to 
+            # respective primary atoms but keep primary-image atoms distances
+            if 'pbc_idx_pointer' in batch:
+                batch['idx_u'] = batch['pbc_idx_pointer'][batch['idx_u']]
+                batch['idx_v'] = batch['pbc_idx_pointer'][batch['pbc_v']]
+
         else:
+            
+            # Assign atom pair results as long-range pair results
+            batch['idx_u'] = batch['idx_i']
+            batch['idx_v'] = batch['idx_j']
             vectors_uv = vectors
             distances_uv = distances
 
         # Compute distance cutoff values
         cutoffs = self.cutoff(distances)
-
+        
         # Compute radial basis functions
         rbfs = self.radial_fn(distances)
 
-        return (
-            features, distances, vectors, cutoffs, rbfs,
-            distances_uv, vectors_uv)
+        # Assign result data
+        batch['features'] = features
+        batch['distances'] = distances
+        batch['vectors'] = vectors
+        batch['cutoffs'] = cutoffs
+        batch['rbfs'] = rbfs
+        batch['distances_uv'] = distances_uv
+        batch['vectors_uv'] = vectors_uv
+        
+        return batch
 
 
 #======================================
@@ -395,7 +434,7 @@ class Graph_PaiNN(torch.nn.Module):
         
         # Initialize message passing blocks
         self.interaction_block = torch.nn.ModuleList([
-            layers_painn.PaiNNInteraction(
+            layer_painn.PaiNNInteraction(
                 self.n_atombasis, 
                 self.activation_fn,
                 self.device,
@@ -403,7 +442,7 @@ class Graph_PaiNN(torch.nn.Module):
             for _ in range(self.graph_n_blocks)
             ])
         self.mixing_block = torch.nn.ModuleList([
-            layers_painn.PaiNNMixing(
+            layer_painn.PaiNNMixing(
                 self.n_atombasis, 
                 self.activation_fn,
                 self.device,
@@ -430,58 +469,71 @@ class Graph_PaiNN(torch.nn.Module):
             }
 
     def forward(
-        self, 
-        features: torch.Tensor,
-        distances: torch.Tensor,
-        vectors: torch.Tensor,
-        cutoffs: torch.Tensor,
-        rbfs: torch.Tensor,
-        idx_i: torch.Tensor, 
-        idx_j: torch.Tensor,
-    ) -> List[torch.Tensor]:
+        self,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
 
         """
         Forward pass of the graph model.
         
         Parameter
         ---------
-        features: torch.tensor(N_atoms, n_atombasis)
-            Atomic feature vectors
-        distances: torch.tensor(N_pairs)
-            Atom pair distances
-        vectors : torch.Tensor
-            Atom pair connection vectors
-        cutoffs: torch.tensor(N_pairs)
-            Atom pair distance cutoffs
-        rbfs: torch.tensor(N_pairs, n_radialbasis)
-            Atom pair radial basis functions
-        idx_i : torch.Tensor(N_pairs)
-            Atom i pair index
-        idx_j : torch.Tensor(N_pairs)
-            Atom j pair index
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            features: torch.tensor(N_atoms, n_atombasis)
+                Atomic feature vectors
+            distances: torch.tensor(N_pairs)
+                Atom pair distances
+            vectors : torch.Tensor
+                Atom pair connection vectors
+            cutoffs: torch.tensor(N_pairs)
+                Atom pair distance cutoffs
+            rbfs: torch.tensor(N_pairs, n_radialbasis)
+                Atom pair radial basis functions
+            idx_i : torch.Tensor(N_pairs)
+                Atom i pair index
+            idx_j : torch.Tensor(N_pairs)
+                Atom j pair index
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
 
         Returns
         -------
-        sfeatures: torch.tensor(N_atoms, n_atombasis)
-            Modified scalar atomic feature vectors
-        vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
-            Modified vector atomic feature vectors
+        dict(str, torch.Tensor)
+            Dictionary added by module results:
+            sfeatures: torch.tensor(N_atoms, n_atombasis)
+                Modified scalar atomic feature vectors
+            vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
+                Modified vector atomic feature vectors
 
         """
-        
+
+        # Assign input data
+        features = batch['features']
+        distances = batch['distances']
+        vectors = batch['vectors']
+        cutoffs = batch['cutoffs']
+        rbfs = batch['rbfs']
+        idx_i = batch['idx_i']
+        idx_j = batch['idx_j']
+
         # Apply feature-wise, continuous-filter convolution
         descriptors = (
-            self.descriptors_filter(rbfs[:, None, :])*cutoffs[:, None, None])
+            self.descriptors_filter(rbfs.unsqueeze(1))
+            * cutoffs.unsqueeze(-1).unsqueeze(-1)
+            )
         descriptors_list = torch.split(
             descriptors, 3*self.n_atombasis, dim=-1)
         
         # Normalize atom pair vectors
-        vectors_normalized = vectors/distances[:, None]
+        vectors_normalized = vectors/distances.unsqueeze(-1)
 
         # Assign isolated atomic feature vectors as scalar feature 
         # vectors
         fsize = features.shape # (len(atomic_numbers), n_atombasis)
-        sfeatures = features[:, None, :]
+        sfeatures = features.unsqueeze(1)
 
         # Initialize vector feature vectors
         vfeatures = torch.zeros((fsize[0], 3, fsize[1]), device=self.device)
@@ -492,6 +544,7 @@ class Graph_PaiNN(torch.nn.Module):
         for ii, (interaction, mixing) in enumerate(
             zip(self.interaction_block, self.mixing_block)
         ):
+
             sfeatures, vfeatures = interaction(
                 sfeatures, 
                 vfeatures, 
@@ -501,6 +554,7 @@ class Graph_PaiNN(torch.nn.Module):
                 idx_j,
                 fsize[0], 
                 fsize[1])
+
             sfeatures, vfeatures = mixing(
                 sfeatures, 
                 vfeatures, 
@@ -508,8 +562,12 @@ class Graph_PaiNN(torch.nn.Module):
 
         # Flatten scalar atomic feature vector
         sfeatures = sfeatures.squeeze(1)
-        
-        return sfeatures, vfeatures
+
+        # Assign result data
+        batch['sfeatures'] = sfeatures
+        batch['vfeatures'] = vfeatures
+
+        return batch
 
 
 #======================================
@@ -544,31 +602,26 @@ class Output_PaiNN(torch.nn.Module):
                 'activation_fn':        'silu',
                 'bias_layer':           True,
                 'bias_last':            True,
-                'weight_init_layer':    torch.nn.init.xavier_uniform_,
-                'weight_init_last':     torch.nn.init.xavier_uniform_,
-                'bias_init_layer':      torch.nn.init.zeros_,
-                'bias_init_last':       torch.nn.init.zeros_,
+                'weight_init_layer':    'xavier_uniform_',
+                'weight_init_last':     'xavier_uniform_',
+                'bias_init_layer':      'zeros_',
+                'bias_init_last':       'zeros_',
                 }
-            'atomic_charges': { # Scalar output of a tensor type output block
-                'output_type':          'tensor',
-                # 'properties': [scalar output property, tensor ouutput prop.]
-                'properties':           ['atomic_charges', 'atomic_dipoles'],
-                },
             'atomic_dipoles': { # Tensor output of tensor type output block
-                'output_type':          'tensor',
+                'output_type':              'tensor',
                 # The options of the tensor property dict have priority
-                'properties':           ['atomic_charges', 'atomic_dipoles'],
-                'n_property':           1,
-                'n_layer':              2,
-                'n_neurons':            None,
-                'scalar_activation_fn': 'silu',
-                'hidden_activation_fn': 'silu',
-                'bias_layer':           True,
-                'bias_last':            True,
-                'weight_init_layer':    torch.nn.init.zeros_,
-                'weight_init_last':     torch.nn.init.zeros_,
-                'bias_init_layer':      torch.nn.init.zeros_,
-                'bias_init_last':       torch.nn.init.zeros_,
+                'scalar_property':          'atomic_charges',
+                'n_property':               1,
+                'n_layer':                  2,
+                'n_neurons':                None,
+                'scalar_activation_fn':     'silu',
+                'hidden_activation_fn':     'silu',
+                'bias_layer':               True,
+                'bias_last':                True,
+                'weight_init_layer':        'xavier_uniform_',
+                'weight_init_last':         'xavier_uniform_',
+                'kwargs_weight_init_layer': {'gain': 1.E-3},
+                'kwargs_weight_init_last':  {'gain': 1.E-3},
                 },
             }
     output_n_residual: int, optional, default 1
@@ -606,16 +659,17 @@ class Output_PaiNN(torch.nn.Module):
     # e.g., 'atomic_energies'.
     _default_output_scalar = {
         'output_type':              'scalar',
+        'atomic_scaling':           True,
         'n_property':               1,
         'n_layer':                  2,
         'n_neurons':                None,
         'activation_fn':            'silu',
         'bias_layer':               True,
         'bias_last':                True,
-        'weight_init_layer':        torch.nn.init.xavier_uniform_,
-        'weight_init_last':         torch.nn.init.xavier_uniform_,
-        'bias_init_layer':          torch.nn.init.zeros_,
-        'bias_init_last':           torch.nn.init.zeros_,
+        'weight_init_layer':        'xavier_uniform_',
+        'weight_init_last':         'xavier_uniform_',
+        'bias_init_layer':          'zeros_',
+        'bias_init_last':           'zeros_',
         'kwargs_weight_init_layer': {},
         'kwargs_weight_init_last':  {},
         'kwargs_bias_init_layer':   {},
@@ -626,7 +680,7 @@ class Output_PaiNN(torch.nn.Module):
     # e.g., 'atomic_dipole'.
     _default_output_tensor = {
         'output_type':              'tensor',
-        'scalar_property':          'atomic_charges',
+        'atomic_scaling':           True,
         'n_property':               1,
         'n_layer':                  2,
         'n_neurons':                None,
@@ -634,10 +688,10 @@ class Output_PaiNN(torch.nn.Module):
         'hidden_activation_fn':     'silu',
         'bias_layer':               True,
         'bias_last':                True,
-        'weight_init_layer':        torch.nn.init.xavier_uniform_,
-        'weight_init_last':         torch.nn.init.xavier_uniform_,
-        'bias_init_layer':          torch.nn.init.zeros_,
-        'bias_init_last':           torch.nn.init.zeros_,
+        'weight_init_layer':        'xavier_uniform_',
+        'weight_init_last':         'xavier_uniform_',
+        'bias_init_layer':          'zeros_',
+        'bias_init_last':           'zeros_',
         'kwargs_weight_init_layer': {},
         'kwargs_weight_init_last':  {},
         'kwargs_bias_init_layer':   {},
@@ -646,19 +700,23 @@ class Output_PaiNN(torch.nn.Module):
     
     # Property dependent output block options
     _property_output_options = {
+        'atomic_energies': {
+            **_default_output_scalar,
+             },
         'atomic_charges': {
             **_default_output_scalar,
-            'weight_init_layer':        torch.nn.init.xavier_uniform_,
-            'weight_init_last':         torch.nn.init.xavier_uniform_,
-            'kwargs_weight_init_layer': {'gain': 1.E-3},
-            'kwargs_weight_init_last':  {'gain': 1.E-3},
+            'weight_init_layer':        'xavier_uniform_',
+            'weight_init_last':         'xavier_uniform_',
+            'kwargs_weight_init_layer': {'gain': 5.E-1},
+            'kwargs_weight_init_last':  {'gain': 5.E-1},
             },
         'atomic_dipoles': {
             **_default_output_tensor,
-            'weight_init_layer':        torch.nn.init.xavier_uniform_,
-            'weight_init_last':         torch.nn.init.xavier_uniform_,
-            'kwargs_weight_init_layer': {'gain': 1.E-3},
-            'kwargs_weight_init_last':  {'gain': 1.E-3},
+            'scalar_property':          'atomic_charges',
+            'weight_init_layer':        'xavier_uniform_',
+            'weight_init_last':         'xavier_uniform_',
+            'kwargs_weight_init_layer': {'gain': 5.E-1},
+            'kwargs_weight_init_last':  {'gain': 5.E-1},
             },
         }
     
@@ -695,7 +753,7 @@ class Output_PaiNN(torch.nn.Module):
             ['atomic_energies']
             ],
         'atomic_energies': [
-            _default_output_scalar
+            _property_output_options['atomic_energies']
             ],
         'forces': [
             None,
@@ -719,18 +777,6 @@ class Output_PaiNN(torch.nn.Module):
             1
             ],
         }
-    
-    # _default_property_assignment = {
-    #     'energy': [None, ['atomic_energies']],
-    #     'atomic_energies': [_default_output_scalar],
-    #     'forces': [None, ['energy']],
-    #     'dipole': [None, ['atomic_charges', 'atomic_dipoles']],
-    #     'atomic_charges': {
-    #         'default': [_default_output_scalar],
-    #         'atomic_dipoles': [_default_output_tensor, 0],
-    #         },
-    #     'atomic_dipoles': [_default_output_tensor, 1],
-    #     }
     
     def __init__(
         self,
@@ -779,10 +825,9 @@ class Output_PaiNN(torch.nn.Module):
         self.device = utils.check_device_option(device, config)
         self.dtype = utils.check_dtype_option(dtype, config)
 
-        # Get input and graph to output module interface parameters 
+        # Get input to output module interface parameters 
         self.n_maxatom = config.get('input_n_maxatom')
         self.n_atombasis = config.get('input_n_atombasis')
-        self.n_blocks = config.get('graph_n_blocks')
 
         ##########################################
         # # # Check Output Module Properties # # #
@@ -928,19 +973,33 @@ class Output_PaiNN(torch.nn.Module):
         self.output_property_scalar_block = torch.nn.ModuleDict({})
         self.output_property_tensor_block = torch.nn.ModuleDict({})
         
-        # Initialize number of property per output block dictionary and
-        # scalar property of the tensor output block
-        self.output_n_property = {}
+        # Initialize list of scalar property of each the tensor output block
         self.output_tensor_scalar = {}
+        self.output_scalar_tensor = {}
 
         # Add output blocks for scalar and tensor properties
         for prop, options in self.output_properties_options.items():
-            
-            # Check optional number of property output parameter
-            if options.get('n_property') is None:
-                self.output_n_property[prop] = 1
+
+            # Check optional parameter of atomic scaling and 
+            # number of property output
+            if options.get('atomic_scaling') is None:
+                atomic_scaling = True
             else:
-                self.output_n_property[prop] = options.get('n_property')
+                atomic_scaling = options.get('atomic_scaling')
+            if options.get('n_property') is None:
+                n_property = 1
+            else:
+                n_property = options.get('n_property')
+
+            # Check model parameter initialization functions
+            weight_init_layer = self.get_init_function(
+                options.get('weight_init_layer'))
+            weight_init_last = self.get_init_function(
+                options.get('weight_init_last'))
+            bias_init_layer = self.get_init_function(
+                options.get('bias_init_layer'))
+            bias_init_last = self.get_init_function(
+                options.get('bias_init_last'))
 
             # Initialize scalar and tensor output blocks
             if options.get('output_type').lower() == 'scalar':
@@ -951,9 +1010,11 @@ class Output_PaiNN(torch.nn.Module):
 
                 # Initialize scalar output block
                 self.output_property_scalar_block[prop] = (
-                    layers_painn.PaiNNOutput_scalar(
+                    layer_painn.PaiNNOutput_scalar(
                         self.n_atombasis,
-                        self.output_n_property[prop],
+                        self.n_maxatom,
+                        n_property,
+                        atomic_scaling,
                         self.device,
                         self.dtype,
                         n_layer=options.get('n_layer'),
@@ -961,10 +1022,10 @@ class Output_PaiNN(torch.nn.Module):
                         activation_fn=activation_fn,
                         bias_layer=options.get('bias_last'),
                         bias_last=options.get('bias_last'),
-                        weight_init_layer=options.get('weight_init_layer'),
-                        weight_init_last=options.get('weight_init_last'),
-                        bias_init_layer=options.get('bias_init_layer'),
-                        bias_init_last=options.get('bias_init_last'),
+                        weight_init_layer=weight_init_layer,
+                        weight_init_last=weight_init_last,
+                        bias_init_layer=bias_init_layer,
+                        bias_init_last=bias_init_last,
                         kwargs_weight_init_layer=options.get(
                             'kwargs_weight_init_layer'),
                         kwargs_weight_init_last=options.get(
@@ -983,6 +1044,7 @@ class Output_PaiNN(torch.nn.Module):
 
                 # Assing scalar property to and tensor property tag
                 self.output_tensor_scalar[prop] = options['scalar_property']
+                self.output_scalar_tensor[options['scalar_property']] = prop 
 
                 # Get scalar and hidden activation function
                 scalar_activation_fn = layer.get_activation_fn(
@@ -992,9 +1054,11 @@ class Output_PaiNN(torch.nn.Module):
 
                 # Initialize tensor output block
                 self.output_property_tensor_block[prop] = (
-                    layers_painn.PaiNNOutput_tensor(
+                    layer_painn.PaiNNOutput_tensor(
                         self.n_atombasis,
-                        self.output_n_property[prop],
+                        self.n_maxatom,
+                        n_property,
+                        atomic_scaling,
                         self.device,
                         self.dtype,
                         n_layer=options.get('n_layer'),
@@ -1003,10 +1067,10 @@ class Output_PaiNN(torch.nn.Module):
                         hidden_activation_fn=hidden_activation_fn,
                         bias_layer=options.get('bias_last'),
                         bias_last=options.get('bias_last'),
-                        weight_init_layer=options.get('weight_init_layer'),
-                        weight_init_last=options.get('weight_init_last'),
-                        bias_init_layer=options.get('bias_init_layer'),
-                        bias_init_last=options.get('bias_init_last'),
+                        weight_init_layer=weight_init_layer,
+                        weight_init_last=weight_init_last,
+                        bias_init_layer=bias_init_layer,
+                        bias_init_last=bias_init_last,
                         kwargs_weight_init_layer=options.get(
                             'kwargs_weight_init_layer'),
                         kwargs_weight_init_last=options.get(
@@ -1018,21 +1082,15 @@ class Output_PaiNN(torch.nn.Module):
                         )
                     )
 
-        # Initialize property and atomic properties scaling dictionary
-        self.output_scaling = torch.nn.ParameterDict()
-
         # Assign property and atomic properties scaling parameters
-        self.set_property_scaling(self.output_property_scaling)
+        if self.output_property_scaling is not None:
+            self.set_property_scaling(self.output_property_scaling)
 
-        # Add class variables
-        for prop, n_property in self.output_n_property.items():
-            self.register_buffer(
-                f"output_n_property:{prop:s}",
-                torch.tensor(
-                    n_property,
-                    device=self.device,
-                    dtype=torch.int64)
-                    )
+        # Set atomic charge flag for eventual molecualr charge conservation
+        if 'atomic_charges' in self.output_properties:
+            self.output_atomic_charges = True
+        else:
+            self.output_atomic_charges = False
 
         return
 
@@ -1053,7 +1111,6 @@ class Output_PaiNN(torch.nn.Module):
     def set_property_scaling(
         self,
         scaling_parameters: Dict[str, List[float]],
-        trainable: Optional[bool] = True,
         set_shift_term: Optional[bool] = True,
         set_scaling_factor: Optional[bool] = True,
     ):
@@ -1067,8 +1124,6 @@ class Output_PaiNN(torch.nn.Module):
             ({'property': [shift, scaling]}) or shift term and scaling factor
             of a model property for each atom type
             ({'atomic property': {'atomic number': [shift, scaling]}}).
-        trainable: bool, optional, default True
-            If True the scaling factor and shift term parameters are trainable.
         set_shift_term: bool, optional, default True
             If True, set or update the shift term. Else, keep previous
             value.
@@ -1078,71 +1133,47 @@ class Output_PaiNN(torch.nn.Module):
 
         """
 
-        # Set scaling factor and shifts for output properties
-        for prop in self.output_properties:
-
-            # Initialize or get output property scaling parameter list
-            if self.output_scaling.get(prop) is None:
-                if 'atomic' in prop:
-                    prop_scaling = np.array(
-                        [[0.0, 1.0] for _ in range(self.n_maxatom + 1)],
-                        dtype=float)
-                else:
-                    prop_scaling = np.array([0.0, 1.0], dtype=float)
+        for prop in scaling_parameters:
+            
+            # Get current scaling parameter from output block
+            if prop in self.output_property_scalar_block:
+                block = self.output_property_scalar_block[prop]
+                scaling = block.scaling.detach().cpu().numpy()
+                atomic_scaling = block.atomic_scaling
+            elif prop in self.output_property_tensor_block:
+                block = self.output_property_tensor_block[prop]
+                scaling = block.vscaling.detach().cpu().numpy()
+                atomic_scaling = block.atomic_scaling
+            elif prop in self.output_scalar_tensor:
+                vprop = self.output_scalar_tensor[prop]
+                block = self.output_property_tensor_block[vprop]
+                scaling = block.sscaling.detach().cpu().numpy()
+                atomic_scaling = block.atomic_scaling
             else:
-                prop_scaling = (
-                    self.output_scaling[prop].detach().cpu().numpy())
+                raise SyntaxError(
+                    f"No output block avaiable for property {prop:s}!")
 
-            # Assign scaling factor and shift
-            if (
-                scaling_parameters is not None
-                and scaling_parameters.get(prop) is not None
-            ):
+            # Assign new scaling parameter
+            if atomic_scaling:
+                
+                for ai, pars in scaling_parameters.get(prop).items():
 
-                if utils.is_dictionary(scaling_parameters.get(prop)):
-
-                    # Re-initialize output property scaling at atom resolved
-                    # list
-                    prop_scaling = np.array(
-                        [[0.0, 1.0] for _ in range(self.n_maxatom + 1)],
-                        dtype=float)
-
-                    # Iterate over atom type specific scaling factor and shifts
-                    for ai, pars in scaling_parameters.get(prop).items():
-
-                        if set_shift_term:
-                            prop_scaling[ai, 0] = pars[0]
-                        if set_scaling_factor:
-                            prop_scaling[ai, 1] = pars[1]
-
-                else:
-
-                    pars = scaling_parameters.get(prop)
                     if set_shift_term:
-                        prop_scaling[0] = pars[0]
+                        scaling[ai, 0] = pars[0]
                     if set_scaling_factor:
-                        prop_scaling[1] = pars[1]
+                        scaling[ai, 1] = pars[1]
 
-            # Add list to property scaling dictionary
-            if trainable:
-                self.output_scaling[prop] = (
-                    torch.nn.Parameter(
-                        torch.tensor(
-                            prop_scaling,
-                            device=self.device,
-                            dtype=self.dtype)
-                        )
-                    )
             else:
-                self.output_scaling[prop] = (
-                    self.register_buffer(
-                        f"output_scaling:{prop:s}",
-                        torch.tensor(
-                            prop_scaling,
-                            device=self.device,
-                            dtype=self.dtype)
-                        )
-                    )
+                
+                pars = scaling_parameters.get(prop)
+                if set_shift_term:
+                    scaling[0] = pars[0]
+                if set_scaling_factor:
+                    scaling[1] = pars[1]
+
+            # Set new scaling parameter to output block
+            block.set_scaling(
+                torch.tensor(scaling, device=self.device, dtype=self.dtype))
 
         return
 
@@ -1164,118 +1195,180 @@ class Output_PaiNN(torch.nn.Module):
 
         # Get scaling factor and shifts for output properties
         scaling_parameters = {}
-        for prop in self.output_properties:
-
-            # Get output property scaling
-            prop_scaling = (
-                self.output_scaling[prop].detach().cpu().numpy())
-
-            # Check for atom or system resolved scaling
-            if prop_scaling.ndim == 1:
-                scaling_parameters[prop] = prop_scaling
-            else:
+        
+        # Get current scaling parameter from scalar output block
+        for prop in self.output_property_scalar_block:
+            block = self.output_property_scalar_block[prop]
+            scaling = block.scaling.detach().cpu().numpy()
+            if block.atomic_scaling:
                 scaling_parameters[prop] = {}
-                for ai, pars in enumerate(prop_scaling):
+                for ai, pars in enumerate(scaling):
                     scaling_parameters[prop][ai] = pars
+            else:
+                scaling_parameters[prop] = scaling
+
+        # Get current scaling parameters from tensor output block for tensor
+        # and scalar property
+        for prop in self.output_property_tensor_block:
+            block = self.output_property_tensor_block[prop]
+            scaling = block.vscaling.detach().cpu().numpy()
+            if block.atomic_scaling:
+                scaling_parameters[prop] = {}
+                for ai, pars in enumerate(scaling):
+                    scaling_parameters[prop][ai] = pars
+            else:
+                scaling_parameters[prop] = scaling
+
+            sprop = self.output_tensor_scalar[prop]
+            scaling = block.sscaling.detach().cpu().numpy()
+            if block.atomic_scaling:
+                scaling_parameters[sprop] = {}
+                for ai, pars in enumerate(scaling):
+                    scaling_parameters[sprop][ai] = pars
+            else:
+                scaling_parameters[sprop] = scaling
 
         return scaling_parameters
 
+    def get_init_function(
+        self,
+        function_name: str,
+    ) -> Callable:
+        """
+        Get parameter initialization function of the given name string from the
+        'toch.nn.init' module.
+        
+        Parameters
+        ----------
+        function_name: str
+            Function name in the 'toch.nn.init' module
+
+        Returns
+        -------
+        Callable
+            Parameter initialization function
+
+        """
+
+        if utils.is_string(function_name):
+            try:
+                return getattr(torch.nn.init, function_name)
+            except AttributeError:
+                raise AttributeError(
+                    "The parameter initialization function "
+                    + f"'{function_name:s}' is not a function of "
+                    + "the 'torch.nn.init' module!")
+        
+        return function_name
+
+    def conserve_charge(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Atomic charge manipulation to conserve molecular charge
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            atoms_numbers: torch.Tensor(N_atoms)
+                List of atom numbers per system
+            atomic_charges: torch.Tensor(N_atoms)
+                List of atomic charges
+            charge: torch.Tesnsor(N_system)
+                Total charge of molecules in batch
+            sys_i: torch.Tensor(N_atoms)
+                System indices of atoms in batch
+
+        Returns
+        -------
+        batch: dict(str, torch.Tensor)
+            Dictionary added by module results
+
+        """
+
+        # Apply charge manipulation
+        charge_deviation = batch['charge'].clone()
+        charge_deviation = charge_deviation.scatter_add_(
+            0, batch['sys_i'], -batch['atomic_charges'])/batch['atoms_number']
+        batch['atomic_charges'] = (
+            batch['atomic_charges'] + charge_deviation[batch['sys_i']])
+
+        return batch
+
     def forward(
         self,
-        sfeatures: torch.Tensor,
-        vfeatures: torch.Tensor,
-        atomic_numbers: Optional[torch.Tensor] = None,
-        properties: Optional[List[str]] = None,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
     ) -> Dict[str, torch.Tensor]:
-
         """
         Forward pass of output module
 
         Parameters
         ----------
-        sfeatures: torch.tensor(N_atoms, n_atombasis)
-            Scalar atomic feature vectors
-        vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
-            Vector atomic feature vectors
-        atomic_numbers: torch.Tensor(N_atoms), optional, default None
-            List of atomic numbers
-        properties: list(str), optional, default None
-            List of properties to compute by the model. If None, all properties
-            are predicted.
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors. Required and optional keys are:
+            atomic_numbers: torch.Tensor(N_atoms)
+                List of atomic numbers
+            sfeatures: torch.tensor(N_atoms, n_atombasis)
+                Scalar atomic feature vectors
+            vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
+                Vector atomic feature vectors
+            atoms_number: torch.Tesnsor(N_system)
+                Number of atoms per molecule in batch
+            charge: torch.Tesnsor(N_system)
+                Total charge of molecules in batch
+            sys_i: torch.Tensor(N_atoms)
+                System indices of atoms in batch
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
 
         Returns
         -------
         dict(str, torch.Tensor)
-            Dictionary of predicted properties
+            Dictionary added by module results
 
         """
-        
-        # Initialize predicted properties dictionary
-        output_prediction = {}
-        
-        # Check requested properties
-        if properties is None:
-            predict_all = True
-        else:
-            predict_all = False
+
+        # Assign input data
+        atomic_numbers = batch['atomic_numbers']
+        sfeatures = batch['sfeatures']
+        vfeatures = batch['vfeatures']
+        sys_i = batch['sys_i']
 
         # Iterate over scalar output blocks
         for prop, output_block in self.output_property_scalar_block.items():
             
-            # Skip if property not requested
-            if not predict_all and prop not in properties:
-                continue
-            
             # Compute prediction
-            output_prediction[prop] = output_block(sfeatures)
-
-            # Flatten prediction for scalar properties
-            if self.output_n_property[prop] == 1:
-                output_prediction[prop] = torch.flatten(
-                    output_prediction[prop], start_dim=0)
+            batch[prop] = output_block(sfeatures, atomic_numbers)
 
         # Iterate over tensor output blocks
-        for prop, output_block in self.output_property_tensor_block.items():
+        for vprop, output_block in self.output_property_tensor_block.items():
             
-            # Get scalar and tensor property tags
-            sprop = self.output_tensor_scalar[prop]
-            vprop = prop
-            
-            
-            # Skip if property not requested
-            if (
-                not predict_all 
-                and not any([propi in properties for prop_i in (sprop, vprop)])
-            ):
-                continue
-            
+            # Get scalar tensor property tag
+            sprop = self.output_tensor_scalar[vprop]
+
             # Compute prediction
-            output_prediction[sprop], output_prediction[vprop] = (
-                output_block(sfeatures, vfeatures))
+            batch[sprop], batch[vprop] = (
+                output_block(sfeatures, vfeatures, atomic_numbers))
+               
+        # Scale atomic charges to conserve correct molecular charge
+        if self.output_atomic_charges:
+            batch = self.conserve_charge(batch)
 
-            # Flatten prediction for scalar properties
-            if self.output_n_property[sprop] == 1:
-                output_prediction[sprop] = torch.flatten(
-                    output_prediction[sprop], start_dim=0)
-                
-            # Flatten prediction for single vector properties
-            if self.output_n_property[vprop] == 1:
-                output_prediction[vprop] = (
-                    output_prediction[vprop].reshape(-1, 3))
+        # If verbose, store a copy of the output block prediction
+        if verbose:
+            for prop in self.output_property_scalar_block:
+                verbose_prop = 'output_{:s}'.format(prop)
+                batch[verbose_prop] = batch[prop].detach()
+            for vprop in self.output_property_tensor_block:
+                sprop = self.output_tensor_scalar[vprop]
+                verbose_sprop = 'output_{:s}'.format(sprop)
+                verbose_vprop = 'output_{:s}'.format(vprop)
+                batch[verbose_sprop] = batch[sprop].detach()
+                batch[verbose_vprop] = batch[vprop].detach()
 
-        # Apply property and atomic properties scaling
-        for prop, scaling in self.output_scaling.items():
-            if scaling.dim() == 1:
-                (shift, scale) = scaling
-            else:
-                (shift, scale) = scaling[atomic_numbers].T
-                if output_prediction[prop].dim() > 1:
-                    compatible_shape = (
-                        [atomic_numbers.shape[0]]
-                        + (output_prediction[prop].dim() - 1)*[1])
-                    shift = shift.reshape(compatible_shape)
-                    scale = scale.reshape(compatible_shape)
-            output_prediction[prop] = (
-                output_prediction[prop]*scale + shift)
+        return batch
 
-        return output_prediction

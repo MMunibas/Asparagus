@@ -1019,6 +1019,7 @@ class DataContainer():
         train_batch_size: int,
         valid_batch_size: int,
         test_batch_size: int,
+        reference_properties: Optional[List[str]] = None,
         num_workers: Optional[int] = 1,
         apply_atomic_energies_shift: Optional[bool] = True,
         atomic_energies_shift_list: Optional[List[float]] = None,
@@ -1036,6 +1037,9 @@ class DataContainer():
             Validation dataloader batch size
         test_batch_size: int
             Test dataloader batch size
+        reference_properties: list, optional, default None
+            Reference properties to add to the data batch. If None, the
+            data property list is used.
         num_workers: int, optional, default 1
             Number of data loader workers
         apply_atomic_energies_shift: bool, optional, default True
@@ -1049,6 +1053,10 @@ class DataContainer():
             Model variables data type
 
         """
+
+        # Check reference property list
+        if reference_properties is None:
+            reference_properties = self.data_properties
 
         # Check atomic energies shift list
         metadata = self.get_metadata()
@@ -1067,6 +1075,7 @@ class DataContainer():
         self.train_dataloader = data.DataLoader(
             self.train_dataset,
             train_batch_size,
+            reference_properties,
             True,
             num_workers,
             device,
@@ -1075,6 +1084,7 @@ class DataContainer():
         self.valid_dataloader = data.DataLoader(
             self.valid_dataset,
             valid_batch_size,
+            reference_properties,
             False,
             num_workers,
             device,
@@ -1083,6 +1093,7 @@ class DataContainer():
         self.test_dataloader = data.DataLoader(
             self.test_dataset,
             test_batch_size,
+            reference_properties,
             False,
             num_workers,
             device,

@@ -1,4 +1,4 @@
-from typing import Optional, Callable
+from typing import Optional, Tuple, Callable
 
 import torch
 
@@ -259,7 +259,8 @@ class InteractionLayer(torch.nn.Module):
 
         # Combine descriptor weighted neighbor atoms feature vector for each
         # central atom i
-        xj = utils.scatter_sum(gxj, idx_i, dim=0, shape=xi.shape)
+        xj = torch.zeros_like(xi).scatter_add_(
+            0, idx_i.unsqueeze(-1).repeat(1, xi.shape[1]), gxj)
 
         # Combine features to message vector
         message = xi + xj
@@ -273,9 +274,6 @@ class InteractionLayer(torch.nn.Module):
         # Mix initial atomic feature vector with message vector
         x = self.scaling*x + self.dense_out(message)
 
-        # Normalize feature vectors
-        #x = torch.nn.functional.normalize(x)
-        
         return x
 
 
@@ -285,15 +283,27 @@ class OutputBlock(torch.nn.Module):
 
     Parameters
     ----------
+    n_blocks: int
+        Number of information processing cycles and sets of feature vectors
     n_atombasis: int
         Number of atomic features (length of the atomic feature vector)
-    n_results: int
+    n_maxatom: int
+        Maximum Number of atomic elements for atomic property scaling
+    n_property: int
         Number of output vector features.
     n_residual: int
         Number of residual layers for transformation from atomic feature vector
         to output results.
     activation_fn: callable
         Residual layer activation function.
+    atomic_scaling: bool
+        Prediction shift term and scaling factor per atom type (True) or
+        universal (False)
+    trainable_scaling: bool
+        If True, the scaling factor and shift term parameters are trainable.
+    split_scaling: bool
+        If True, each property are scaled by an individual set of scaling
+        factors and shift terms. This option has no effect for n_property=1.
     device: str
         Device type for model variable allocation
     dtype: dtype object
@@ -303,10 +313,15 @@ class OutputBlock(torch.nn.Module):
 
     def __init__(
         self,
+        n_blocks: int,
         n_atombasis: int,
-        n_results: int,
+        n_maxatom: int,
+        n_property: int,
         n_residual: int,
         activation_fn: Callable,
+        atomic_scaling: bool,
+        trainable_scaling: bool,
+        split_scaling: bool,
         device: str,
         dtype: 'dtype',
     ):
@@ -318,57 +333,174 @@ class OutputBlock(torch.nn.Module):
             self.activation_fn = torch.nn.Identity()
         else:
             self.activation_fn = activation_fn
+        
+        # Assign module variable parameters from configuration
+        self.device = device
+        self.dtype = dtype
 
         # Residual layer for atomic feature modification
         self.residuals = torch.nn.ModuleList([
-            ResidualLayer(
-                n_atombasis,
-                activation_fn,
-                True,
-                device,
-                dtype)
-            for _ in range(n_residual)])
+                torch.nn.Sequential(
+                    *[
+                        ResidualLayer(
+                            n_atombasis,
+                            self.activation_fn,
+                            True,
+                            self.device,
+                            self.dtype)
+                        for _ in range(n_residual)
+                    ])
+                for _ in range(n_blocks)])
 
         # Dense layer for transforming atomic feature vector to result vector
-        self.output = DenseLayer(
-            n_atombasis,
-            n_results,
-            activation_fn,
-            False,
-            device,
-            dtype,
-            weight_init=torch.nn.init.xavier_normal_)
+        self.output = torch.nn.ModuleList(
+            [
+                DenseLayer(
+                    n_atombasis,
+                    n_property,
+                    self.activation_fn,
+                    False,
+                    self.device,
+                    self.dtype,
+                    weight_init=torch.nn.init.xavier_normal_,
+                    kwargs_weight_init={'gain': 1.E-1}
+                    )
+                for _ in range(n_blocks)
+            ])
+
+        # Assign property dimension to register
+        self.register_buffer(
+            "n_property",
+            torch.tensor(n_property, device=self.device, dtype=torch.int64))
+
+        # Assign output scaling parameter
+        self.atomic_scaling = atomic_scaling
+        self.trainable_scaling = trainable_scaling
+        self.split_scaling = split_scaling
+        if self.atomic_scaling:
+            if self.split_scaling and self.n_property > 1:
+                scaling = torch.tensor(
+                    [
+                        [[0.0, 1.0]]*n_property
+                        for _ in torch.arange(0, n_maxatom + 1)
+                    ],
+                    device=self.device, dtype=self.dtype)
+            else:
+                scaling = torch.tensor(
+                    [[0.0, 1.0] for _ in torch.arange(0, n_maxatom + 1)],
+                    device=self.device, dtype=self.dtype)
+        else:
+            if self.split_scaling and self.n_property > 1:
+                scaling = torch.tensor(
+                    [[0.0, 1.0]]*n_property,
+                    device=self.device, dtype=self.dtype)
+            else:
+                scaling = torch.tensor(
+                    [0.0, 1.0],
+                    device=self.device, dtype=self.dtype)
+        self.set_scaling(scaling)
+
+        return
+
+    def set_scaling(
+        self,
+        scaling: torch.Tensor,
+    ):
+        """
+        Set scaling parameter
+
+        Parameters
+        ----------
+        scaling: torch.tensor
+            Scaling parameter
+
+        """
+        if self.trainable_scaling:
+            self.scaling = torch.nn.Parameter(scaling)
+        else:
+            self.scaling = self.register_buffer("scaling", scaling)
 
         return
 
     def forward(
         self,
-        features: torch.Tensor
-    ) -> torch.Tensor:
+        features_list: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Apply output block.
         
         Parameters
         ----------
-        features: torch.Tensor(N_atoms, n_atombasis)
-            Atomic feature vectors
+        features_list: torch.Tensor(N_blocks, N_atoms, n_atombasis)
+            List of atomic feature vectors per message passing cycle
+        atomic_numbers: torch.Tensor(N_atoms)
+            List of atomic numbers
         
         Returns
         -------
         torch.Tensor(N_atoms, n_results)
             Transformed atomic feature vector to result vector
+        torch.Tensor()
+            Loss value to benfit decreasing result amplitudes with each cycle
         
         """
 
-        # Apply residual layers on atomic features
-        for ir, residual in enumerate(self.residuals):
-            features = residual(features)
+        # Initialize results variable
+        results = torch.zeros(
+            self.n_property, device=self.device, dtype=self.dtype)
+
+        # Initialize training variables
+        nhloss = torch.tensor(0.0, device=self.device, dtype=self.dtype)
+        last_results2 = torch.tensor(0.0, device=self.device, dtype=self.dtype)
+
+        # Iterate over feature vector cylces
+        for icycle, (residual_i, output_i) in enumerate(
+            zip(self.residuals, self.output)
+        ):
+            
+            # Grep feature list
+            features_i = features_list[icycle]
+            
+            # Apply residual layers on atomic features
+            features_i = residual_i(features_i)
         
-        # Apply last activation function
-        features = self.activation_fn(features)
-        #features = torch.nn.functional.normalize(features)
+            # Apply last activation function
+            features_i = self.activation_fn(features_i)
 
-        # Transform to result vector
-        result = self.output(features)
+            # Transform to result vector
+            results_i = output_i(features_i)
 
-        return result
+            # Flatten result
+            if self.n_property == 1:
+                results_i = torch.flatten(results_i, start_dim=0)
+            
+            # Add result
+            results = results + results_i
+
+            # If training mode is active, compute nhloss contribution
+            if self.training:
+                results2 = results_i**2
+                if icycle:
+                    nhloss = nhloss + torch.mean(
+                        results2/(results2 + last_results2 + 1.0e-7))
+                last_results2 = results2
+
+        # Apply scaling
+        if self.atomic_scaling:
+            if self.split_scaling and self.n_property > 1:
+                shifts = self.scaling[atomic_numbers][:, :, 0]
+                scales = self.scaling[atomic_numbers][:, :, 1]
+            else:
+                shifts = self.scaling[atomic_numbers][:, 0]
+                scales = self.scaling[atomic_numbers][:, 1]
+        else:
+            if self.split_scaling and self.n_property > 1:
+                shifts = self.scaling[:, 0].unsqueeze(0)
+                scales = self.scaling[:, 1].unsqueeze(0)
+            else:
+                shifts = self.scaling[0]
+                scales = self.scaling[1]
+        results = results*scales + shifts
+
+        return results, nhloss

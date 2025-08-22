@@ -37,11 +37,13 @@ def swish(
 
     return x * torch.nn.functional.sigmoid(x)
 
+
 @torch.jit.script
 def _softplus(
     x: torch.Tensor
 ) -> torch.Tensor:
     return torch.log1p(torch.exp(x))
+
 
 @torch.jit.script
 def softplus(
@@ -97,7 +99,6 @@ def shifted_softplus(
     return torch.nn.functional.softplus(x) - torch.log(torch.tensor(2.0))
 
 
-
 @torch.jit.script
 def scaled_shifted_softplus(
     x: torch.Tensor
@@ -117,6 +118,7 @@ def scaled_shifted_softplus(
 
     """
     return 2.0 * shifted_softplus(x)
+
 
 @torch.jit.script
 def self_normalizing_shifted_softplus(

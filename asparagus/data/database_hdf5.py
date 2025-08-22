@@ -15,7 +15,7 @@ from asparagus import utils
 __all__ = ['DataBase_hdf5']
 
 # Current npz database version
-VERSION = 1
+VERSION = 2
 
 # Structural property labels and dtypes
 structure_properties_dtype = {
@@ -25,6 +25,9 @@ structure_properties_dtype = {
     'charge':           np.float32,
     'cell':             np.float32,
     'pbc':              np.bool_,
+    'mm_atom_types':    'U4',
+    'mm_charges':       np.float32,
+    'mm_positions':     np.float32,
 }
 
 # Structural property labels and array shape
@@ -35,11 +38,15 @@ structure_properties_shape = {
     'charge':           (-1,),
     'cell':             (-1),
     'pbc':              (1, 3,),
+    'mm_atom_types':    (-1,),
+    'mm_charges':       (-1,),
+    'mm_positions':     (-1, 3,),
 }
 reference_properties_shape = {
     # 'energy':           (-1,),
     # 'atomic_energies':  (-1,),
     'forces':           (-1, 3,),
+    'mm_forces':        (-1, 3,),
     # 'hessian':          (-1,),
     # 'atomic_charges':   (-1,),
     # 'dipole':           (3),

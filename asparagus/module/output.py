@@ -6,11 +6,11 @@ import torch
 #======================================
 
 def get_Output_PhysNet():
-    from .physnet_modules import Output_PhysNet
+    from .module_physnet import Output_PhysNet
     return Output_PhysNet
 
 def get_Output_PaiNN():
-    from .painn_modules import Output_PaiNN
+    from .module_painn import Output_PaiNN
     return Output_PaiNN
 
 

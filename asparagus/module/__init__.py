@@ -21,7 +21,7 @@ from .repulsion import (
 
 from .electrostatics import (
     PC_shielded_electrostatics, PC_damped_electrostatics, 
-    PC_Dipole_damped_electrostatics
+    Damped_electrostatics
 )
 
 from .dispersion import (
@@ -29,5 +29,5 @@ from .dispersion import (
 )
 
 from .neighborlist import(
-    TorchNeighborListRangeSeparated
+    TorchNeighborListRangeSeparated, TorchNeighborListRangeSeparatedMLMM
 )

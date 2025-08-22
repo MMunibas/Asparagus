@@ -232,12 +232,19 @@ class Model_PhysNet(model.BaseModel):
         #################################
 
         # Assign model calculator base modules
-        self.input_module, self.graph_module, self.output_module = (
+        input_module, graph_module, output_module = (
             self.base_modules_setup(
                 config,
                 verbose=verbose,
                 **kwargs)
             )
+
+        # Initialize module dictionary with base modules
+        self.module_dict = torch.nn.ModuleDict({
+            'input': input_module,
+            'graph': graph_module,
+            'output': output_module,
+            })
 
         # If electrostatic energy contribution is undefined, activate 
         # contribution if atomic charges are predicted.
@@ -276,6 +283,7 @@ class Model_PhysNet(model.BaseModel):
 
         # Assign atom repulsion module
         if self.model_repulsion:
+
             # Check nuclear repulsion cutoff
             input_radial_cutoff = config.get('input_radial_cutoff')
             if (
@@ -285,8 +293,9 @@ class Model_PhysNet(model.BaseModel):
                 raise SyntaxError(
                     "Nuclear repulsion cutoff radii is larger than the "
                     + "input module radial cutoff!")
+
             # Get Ziegler-Biersack-Littmark style nuclear repulsion potential
-            self.repulsion_module = module.ZBL_repulsion(
+            repulsion_module = module.ZBL_repulsion(
                 self.model_repulsion_cutoff,
                 self.model_repulsion_cuton,
                 self.model_repulsion_trainable,
@@ -294,18 +303,22 @@ class Model_PhysNet(model.BaseModel):
                 self.dtype,
                 unit_properties=self.model_unit_properties,
                 **kwargs)
+            self.module_dict['repulsion'] = repulsion_module
 
         # Assign electrostatic interaction module
         if self.model_electrostatic:
+
             # Get electrostatic point charge model calculator
-            self.electrostatic_module = module.PC_damped_electrostatics(
+            electrostatic_module = module.Damped_electrostatics(
                 self.model_cutoff,
                 config.get('input_radial_cutoff'),
                 self.device,
                 self.dtype,
                 unit_properties=self.model_unit_properties,
                 truncation='force',
+                atomic_dipoles=False,
                 **kwargs)
+            self.module_dict['electrostatic'] = electrostatic_module
 
         # Assign dispersion interaction module
         if self.model_dispersion:
@@ -317,7 +330,7 @@ class Model_PhysNet(model.BaseModel):
             d3_a2 = config.get("model_dispersion_d3_a2")
 
             # Get Grimme's D3 dispersion model calculator
-            self.dispersion_module = module.D3_dispersion(
+            dispersion_module = module.D3_dispersion(
                 self.model_cutoff,
                 self.model_cuton,
                 self.model_dispersion_trainable,
@@ -330,6 +343,7 @@ class Model_PhysNet(model.BaseModel):
                 d3_a1=d3_a1,
                 d3_a2=d3_a2,
             )
+            self.module_dict['dispersion'] = dispersion_module
 
         #######################################
         # # # PhysNet Miscellaneous Setup # # #
@@ -337,6 +351,7 @@ class Model_PhysNet(model.BaseModel):
         
         # Assign atomic masses list for center of mass calculation
         if self.model_dipole:
+
             # Convert atomic masses list to requested data type
             self.atomic_masses = torch.tensor(
                 utils.atomic_masses,
@@ -357,27 +372,27 @@ class Model_PhysNet(model.BaseModel):
         info = {}
 
         # Collect module info
-        if hasattr(self.input_module, "get_info"):
-            info = {**info, **self.input_module.get_info()}
-        if hasattr(self.graph_module, "get_info"):
-            info = {**info, **self.graph_module.get_info()}
-        if hasattr(self.output_module, "get_info"):
-            info = {**info, **self.output_module.get_info()}
+        if hasattr(self.module_dict['input'], "get_info"):
+            info = {**info, **self.module_dict['input'].get_info()}
+        if hasattr(self.module_dict['graph'], "get_info"):
+            info = {**info, **self.module_dict['graph'].get_info()}
+        if hasattr(self.module_dict['output'], "get_info"):
+            info = {**info, **self.module_dict['output'].get_info()}
         if (
             self.model_repulsion
-            and hasattr(self.repulsion_module, "get_info")
+            and hasattr(self.module_dict['repulsion'], "get_info")
         ):
-            info = {**info, **self.repulsion_module.get_info()}
+            info = {**info, **self.module_dict['repulsion'].get_info()}
         if (
             self.model_electrostatic
-            and hasattr(self.electrostatic_module, "get_info")
+            and hasattr(self.module_dict['electrostatic'], "get_info")
         ):
-            info = {**info, **self.electrostatic_module.get_info()}
+            info = {**info, **self.module_dict['electrostatic'].get_info()}
         if (
             self.model_dispersion
-            and hasattr(self.dispersion_module, "get_info")
+            and hasattr(self.module_dict['dispersion'], "get_info")
         ):
-            info = {**info, **self.dispersion_module.get_info()}
+            info = {**info, **self.module_dict['dispersion'].get_info()}
 
         return {
             **info,
@@ -506,13 +521,12 @@ class Model_PhysNet(model.BaseModel):
 
         return trainable_parameters
 
-    # @torch.compile # Not supporting backwards propagation with torch.float64
-    # @torch.jit.export  # No effect, as 'forward' already is
     def forward(
         self,
         batch: Dict[str, torch.Tensor],
-        no_derivation: Optional[bool] = False,
-        verbose_results: Optional[bool] = False,
+        no_derivation: bool = False,
+        create_graph: bool = False,
+        verbose_results: bool = False,
     ) -> Dict[str, torch.Tensor]:
 
         """
@@ -552,6 +566,10 @@ class Model_PhysNet(model.BaseModel):
             If True, only predict non-derived properties.
             Else, predict all properties even if backwards derivation is
             required (e.g. forces).
+        create_graph: bool, optional, default False
+            Parameter for 'torch.autograd.grad' to force keeping derivative
+            graph if set to true. Necessary when further derivatives needs to
+            be computed from the results.
         verbose_results: bool, optional, default False
             If True, store extended model property contributions in the result
             dictionary.
@@ -563,180 +581,26 @@ class Model_PhysNet(model.BaseModel):
 
         """
 
-        # Assign input
-        atoms_number = batch['atoms_number']
-        atomic_numbers = batch['atomic_numbers']
-        positions = batch['positions']
-        charge = batch['charge']
-        idx_i = batch['idx_i']
-        idx_j = batch['idx_j']
-        idx_u = batch.get('idx_u')
-        idx_v = batch.get('idx_v')
-        sys_i = batch['sys_i']
+        # Activate back propagation if derivatives with regard to
+        # atom positions is requested.
+        if self.model_forces and not no_derivation:
+            batch['positions'].requires_grad_(True)
 
-        # PBC: Cartesian offset method
-        pbc_offset_ij = batch.get('pbc_offset_ij')
-        pbc_offset_uv = batch.get('pbc_offset_uv')
-
-        # PBC: Supercluster method
-        pbc_atoms = batch.get('pbc_atoms')
-        pbc_idx_pointer = batch.get('pbc_idx')
-        pbc_idx_j = batch.get('pbc_idx_j')
-
-        # Activate back propagation if derivatives with regard to atom positions
-        # is requested.
-        if self.model_forces:
-            positions.requires_grad_(True)
-
-        # Run input model
-        features, distances, cutoffs, rbfs, distances_uv = self.input_module(
-            atomic_numbers, positions,
-            idx_i, idx_j, pbc_offset_ij=pbc_offset_ij,
-            idx_u=idx_u, idx_v=idx_v, pbc_offset_uv=pbc_offset_uv)
-
-        # PBC: Supercluster approach - Point from image atoms to primary atoms
-        if pbc_idx_pointer is not None:
-            idx_i = pbc_idx_pointer[idx_i]
-            idx_j = pbc_idx_pointer[pbc_idx_j]
-
-        # Check long-range atom pair indices
-        if idx_u is None:
-            # Assign atom pair indices
-            idx_u = idx_i
-            idx_v = idx_j
-        elif pbc_idx_pointer is not None:
-            idx_u = pbc_idx_pointer[idx_u]
-            idx_v = pbc_idx_pointer[idx_v]
-
-        # Run graph model
-        features_list = self.graph_module(
-            features, distances, cutoffs, rbfs, idx_i, idx_j)
-
-        # Run output model
-        results = self.output_module(
-            features_list,
-            atomic_numbers=atomic_numbers)
-        if verbose_results:
-            for prop in self.output_module.output_properties:
-                verbose_prop = f"output_{prop:s}"
-                results[verbose_prop] = results[prop].detach()
-
-        # Add repulsion model contribution
-        if self.model_repulsion:
-            repulsion_atomic_energies = self.repulsion_module(
-                atomic_numbers, distances, idx_i, idx_j)
-            results['atomic_energies'] = (
-                results['atomic_energies'] + repulsion_atomic_energies)
-            if verbose_results:
-                results['repulsion_atomic_energies'] = (
-                    repulsion_atomic_energies.detach())
-
-        # Add dispersion model contributions
-        if self.model_dispersion:
-            dispersion_atomic_energies = self.dispersion_module(
-                atomic_numbers, distances_uv, idx_u, idx_v)
-            results['atomic_energies'] = (
-                results['atomic_energies'] + dispersion_atomic_energies)
-            if verbose_results:
-                results['dispersion_atomic_energies'] = (
-                    dispersion_atomic_energies.detach())
-
-        # Scale atomic charges to ensure correct total charge
-        if self.model_atomic_charges:
-            charge_deviation = (
-                charge - utils.scatter_sum(
-                    results['atomic_charges'], sys_i, dim=0,
-                    shape=charge.shape))/atoms_number
-            results['atomic_charges'] = (
-                results['atomic_charges'] + charge_deviation[sys_i])
-
-        # Add electrostatic model contribution
-        if self.model_electrostatic:
-            electrostatic_atomic_energies = self.electrostatic_module(
-                results, distances_uv, idx_u, idx_v)
-            results['atomic_energies'] = (
-                results['atomic_energies'] + electrostatic_atomic_energies)
-            if verbose_results:
-                results['electrostatic_atomic_energies'] = (
-                    electrostatic_atomic_energies.detach())
+        # Run modules
+        for module in self.module_dict.values():
+            batch = module(batch, verbose=verbose_results)
 
         # Compute property - Energy
         if self.model_energy:
-            results['energy'] = torch.squeeze(
-                utils.scatter_sum(
-                    results['atomic_energies'], sys_i, dim=0,
-                    shape=atoms_number.shape)
-            )
-            if verbose_results:
-                atomic_energies_properies = [
-                    prop for prop in results
-                    if 'atomic_energies' in prop[-len('atomic_energies'):]]
-                for prop in atomic_energies_properies:
-                    verbose_prop = (
-                        f"{prop[:-len('atomic_energies')]:s}energy")
-                    results[verbose_prop] = torch.squeeze(
-                        utils.scatter_sum(
-                            results[prop], sys_i, dim=0,
-                            shape=atoms_number.shape)
-                    )
+            batch = self.compute_energy(batch, verbose=verbose_results)
 
         # Compute gradients and Hessian if demanded
         if self.model_forces and not no_derivation:
+            batch = self.compute_forces(batch, create_graph=create_graph)
 
-            gradient = torch.autograd.grad(
-                torch.sum(results['energy']),
-                positions,
-                create_graph=True)[0]
-
-            # Avoid crashing if forces are none
-            if gradient is not None:
-                results['forces'] = -gradient
-            else:
-                self.logger(
-                    "WARNING:\nError in force calculation "
-                    + "(backpropagation)!")
-                results['forces'] = torch.zeros_like(positions)
-
-            if self.model_hessian:
-                hessian = results['energy'].new_zeros(
-                    (3*gradient.size(0), 3*gradient.size(0)))
-                #for ig in range(3*gradient.size(0)):
-                for ig, grad_i in enumerate(gradient.view(-1)):
-                    hessian_ig = torch.autograd.grad(
-                        [grad_i],
-                        positions,
-                        retain_graph=(ig < 3*gradient.size(0)))[0]
-                    if hessian_ig is not None:
-                        hessian[ig] = hessian_ig.view(-1)
-                results['hessian'] = hessian
-
-        # Compute molecular dipole if demanded
+        # Compute molecular dipole
         if self.model_dipole:
+            batch = self.compute_dipole(batch)
 
-            # For supercluster method, just use primary cell atom positions
-            if pbc_atoms is None:
-                positions_dipole = positions
-            else:
-                positions_dipole = positions[pbc_atoms]
+        return batch
 
-            # In case of non-zero system charges, shift origin to center of
-            # mass
-            atomic_masses = self.atomic_masses[atomic_numbers]
-            system_mass = utils.scatter_sum(
-                atomic_masses, sys_i, dim=0,
-                shape=atoms_number.shape)
-            system_com = (
-                utils.scatter_sum(
-                    atomic_masses[..., None]*positions_dipole,
-                    sys_i, dim=0, shape=(*atoms_number.shape, 3)
-                    ).reshape(-1, 3)
-                )/system_mass[..., None]
-            positions_com = positions_dipole - system_com[sys_i]
-
-            # Compute molecular dipole moment from atomic charges
-            results['dipole'] = utils.scatter_sum(
-                results['atomic_charges'][..., None]*positions_com,
-                sys_i, dim=0, shape=(*atoms_number.shape, 3)
-                ).reshape(-1, 3)
-
-        return results

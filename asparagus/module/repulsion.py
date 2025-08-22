@@ -45,13 +45,9 @@ class ZBL_repulsion(torch.nn.Module):
         trainable: bool,
         device: str,
         dtype: 'dtype',
-        unit_properties: Optional[Dict[str, str]] = None,
+        unit_properties: Dict[str, str] = None,
         **kwargs
     ):
-        """
-        Initialize Ziegler-Biersack-Littmark style nuclear repulsion model.
-
-        """
 
         super(ZBL_repulsion, self).__init__()
 
@@ -182,11 +178,21 @@ class ZBL_repulsion(torch.nn.Module):
 
     def switch_fn(
         self,
-        distances: torch.Tensor
+        distances: torch.Tensor,
     ) -> torch.Tensor:
         """
         Computes a smooth switch factors from 1 to 0 in the range from 'cuton'
         to 'cutoff'.
+
+        Parameters
+        ----------
+        distances: torch.Tensor
+            Atom pair distances
+
+        Returns
+        -------
+        torch.Tensor
+            Switch function values per atom pair distance
 
         """
 
@@ -204,32 +210,33 @@ class ZBL_repulsion(torch.nn.Module):
 
     def forward(
         self,
-        atomic_numbers: torch.Tensor,
-        distances: torch.Tensor,
-        idx_i: torch.Tensor,
-        idx_j: torch.Tensor,
-    ) -> torch.Tensor:
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
         """
         Compute Ziegler-Biersack-Littmark style nuclear repulsion potential
         in Hartree with atom pair distances in Angstrom.
 
         Parameters
         ----------
-        atomic_numbers : torch.Tensor
-            Atomic numbers of all atoms in the batch.
-        distances : torch.Tensor
-            Distances between all atom pairs in the batch.
-        idx_i : torch.Tensor
-            Indices of the first atom of each pair.
-        idx_j : torch.Tensor
-            Indices of the second atom of each pair.
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
 
         Returns
         -------
-        torch.Tensor
-            Nuclear repulsion atom energy contribution
+        dict(str, torch.Tensor)
+            Dictionary added by module results
 
         """
+
+        # Assign input data
+        atomic_numbers = batch['atomic_numbers']
+        distances = batch['distances']
+        idx_i = batch['idx_i']
+        idx_j = batch['idx_j']
 
         # Compute switch-off function
         if self.use_switch:
@@ -253,19 +260,28 @@ class ZBL_repulsion(torch.nn.Module):
             torch.abs(self.phi_coefficients), p=1.0, dim=0)
         exponents = torch.abs(self.phi_exponents)
         phi = torch.sum(
-            coefficients[None, ...]*torch.exp(
-                -exponents[None, ...]*arguments[..., None]),
+            coefficients.unsqueeze(0)*torch.exp(
+                -exponents.unsqueeze(0)*arguments.unsqueeze(-1)),
             dim=1)
 
         # Compute nuclear repulsion potential in model energy unit
-        repulsion = (
+        Erep_pair = (
             0.5*self.ke
             * atomic_numbers[idx_i]*atomic_numbers[idx_j]/distances
             * phi
             * switch_off)
 
-        # Summarize and convert repulsion potential
-        Erep = utils.scatter_sum(
-            repulsion, idx_i, dim=0, shape=atomic_numbers.shape)
+        # Sum up repulsion atom pair contributions of each atom
+        Erep_atom = torch.zeros_like(batch['atomic_energies']).scatter_add_(
+            0,
+            idx_i,
+            Erep_pair)
 
-        return Erep
+        # Add repulsion atomic energy contributions
+        batch['atomic_energies'] = batch['atomic_energies'] + Erep_atom
+
+        # If verbose, store a copy of the repulsion atomic energy contributions
+        if verbose:
+            batch['repulsion_atomic_energies'] = Erep_atom.detach()
+
+        return batch

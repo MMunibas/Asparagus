@@ -77,7 +77,9 @@ class DenseLayer(torch.nn.Linear):
     ):
         """
         Initialize dense layer variables.
+
         """
+
         self.weight_init(self.weight, **self.kwargs_weight_init)
         if self.bias is not None:
             self.bias_init(self.bias, **self.kwargs_bias_init)
