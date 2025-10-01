@@ -82,13 +82,10 @@ init_systems_version = {
             charge BLOB,
             cell BLOB,
             pbc BLOB,
+            fragment_numbers BLOB,
             """
         ],
     }
-            # mm_atom_types BLOB,
-            # mm_charges BLOB,
-            # mm_positions BLOB,
-
 
 init_information = [
     """CREATE TABLE information (
@@ -134,9 +131,7 @@ structure_properties_dtype_version = {
             'charge':           np.float32,
             'cell':             np.float32,
             'pbc':              np.bool_,
-            # 'mm_atom_types':    'U4',
-            # 'mm_charges':       np.float32,
-            # 'mm_positions':     np.float32,
+            'fragment_numbers': np.int32,
         },
 }
 
@@ -176,11 +171,9 @@ structure_properties_shape_version = {
             'atomic_numbers':   (-1,),
             'positions':        (-1, 3,),
             'charge':           (-1,),
-            'cell':             (-1, 3,),
+            'cell':             (-1, 9,),
             'pbc':              (-1, 3,),
-            # 'mm_atom_types':    (-1,),
-            # 'mm_charges':       (-1,),
-            # 'mm_positions':     (-1, 3,),
+            'fragment_numbers': (-1,),
     },
 }
 reference_properties_shape = {

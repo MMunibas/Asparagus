@@ -95,7 +95,6 @@ class Input_PaiNN(torch.nn.Module):
         input_rbf_center_end: Optional[float] = None,
         input_rbf_trainable: Optional[bool] = None,
         input_n_maxatom: Optional[int] = None,
-        input_atom_features_range: Optional[float] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
         verbose: Optional[bool] = True,
@@ -174,7 +173,8 @@ class Input_PaiNN(torch.nn.Module):
         radial_fn = layer.get_radial_fn(self.input_radial_fn)
         self.radial_fn = radial_fn(
             self.input_n_radialbasis,
-            self.input_rbf_center_start, self.input_rbf_center_end,
+            self.input_rbf_center_start,
+            self.input_rbf_center_end,
             self.input_rbf_trainable, 
             self.device,
             self.dtype)
@@ -271,11 +271,18 @@ class Input_PaiNN(torch.nn.Module):
         # Compute pair distances
         distances = torch.norm(vectors, dim=-1)
 
-        # PBC: Supercluster approach - Point from eventual image atoms to 
-        # respective primary atoms but keep distances
-        if 'pbc_idx_pointer' in batch:
-            batch['idx_i'] = batch['pbc_idx_pointer'][batch['idx_i']]
-            batch['idx_j'] = batch['pbc_idx_pointer'][batch['pbc_idx_j']]
+        # ML/MM approach - Point ML atom pair indices from full ML/MM system to
+        # the ML system indices (ML/MM index number of, e.g., 41 for the first
+        # ML atom in the ML/MM system becomes index 0 for the ML system).
+        if 'ml_idx_p' in batch:
+            batch['idx_i'] = batch['ml_idx_p'][idx_i]
+            batch['idx_j'] = batch['ml_idx_p'][idx_j]
+
+            # PBC supercluster approach - Point from ML atom pair index j of
+            # atoms in the image cell to the respective primary cell ML
+            # atom index.
+            if 'ml_idx_jp' in batch:
+                batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
 
         # Compute distances and vectors for long-range atom pairs
         if 'idx_u' in batch:
@@ -293,11 +300,17 @@ class Input_PaiNN(torch.nn.Module):
                 vectors_uv = positions[idx_v] - positions[idx_u]
             distances_uv = torch.norm(vectors_uv, dim=-1)
             
-            # PBC: Supercluster approach - Point from eventual image atoms to 
-            # respective primary atoms but keep primary-image atoms distances
-            if 'pbc_idx_pointer' in batch:
-                batch['idx_u'] = batch['pbc_idx_pointer'][batch['idx_u']]
-                batch['idx_v'] = batch['pbc_idx_pointer'][batch['pbc_v']]
+            # ML/MM approach - Point ML atom pair indices from full ML/MM
+            # system to the ML system indices 
+            if 'ml_idx_p' in batch:
+                batch['idx_u'] = batch['ml_idx_p'][idx_u]
+                batch['idx_v'] = batch['ml_idx_p'][idx_v]
+                
+                # PBC supercluster approach - Point from ML atom pair index j
+                # of atoms in the image cell to the respective primary cell
+                # ML atom index.
+                if 'ml_idx_vp' in batch:
+                    batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
 
         else:
             
@@ -342,7 +355,7 @@ class Graph_PaiNN(torch.nn.Module):
         Path to json file (str)
     graph_n_blocks: int, optional, default 5
         Number of information processing cycles
-    graph_activation_fn: (str, object), optional, default 'shifted_softplus'
+    graph_activation_fn: (str, object), optional, default 'silu'
         Activation function
     graph_stability_constant: float, optional, default 1.e-8
         Numerical stability constant added to scalar products of Cartesian 
@@ -354,12 +367,14 @@ class Graph_PaiNN(torch.nn.Module):
     _default_args = {
         'graph_n_blocks':               5,
         'graph_activation_fn':          'silu',
+        'graph_stability_constant':     1.0e-8,
         }
 
     # Expected data types of input variables
     _dtypes_args = {
         'graph_n_blocks':               [utils.is_integer],
         'graph_activation_fn':          [utils.is_string, utils.is_callable],
+        'graph_stability_constant':     [utils.is_numeric],
         }
 
     # Graph type module
@@ -624,9 +639,6 @@ class Output_PaiNN(torch.nn.Module):
                 'kwargs_weight_init_last':  {'gain': 1.E-3},
                 },
             }
-    output_n_residual: int, optional, default 1
-        Number of residual layers for transformation from atomic feature vector
-        to output results.
     output_property_scaling: dictionary, optional, default None
         Property average and standard deviation for the use as scaling factor 
         (standard deviation) and shift term (average) parameter pairs
@@ -640,7 +652,6 @@ class Output_PaiNN(torch.nn.Module):
     _default_args = {
         'output_properties':            None,
         'output_properties_options':    {},
-        'output_n_residual':            1,
         'output_property_scaling':      None,
         }
 
@@ -648,7 +659,6 @@ class Output_PaiNN(torch.nn.Module):
     _dtypes_args = {
         'output_properties':            [utils.is_string_array, utils.is_None],
         'output_properties_options':    [utils.is_dictionary],
-        'output_n_residual':            [utils.is_integer],
         'output_property_scaling':      [utils.is_dictionary, utils.is_None],
         }
 
@@ -1086,7 +1096,7 @@ class Output_PaiNN(torch.nn.Module):
         if self.output_property_scaling is not None:
             self.set_property_scaling(self.output_property_scaling)
 
-        # Set atomic charge flag for eventual molecualr charge conservation
+        # Set atomic charge flag for eventual molecular charge conservation
         if 'atomic_charges' in self.output_properties:
             self.output_atomic_charges = True
         else:
@@ -1290,8 +1300,11 @@ class Output_PaiNN(torch.nn.Module):
 
         # Apply charge manipulation
         charge_deviation = batch['charge'].clone()
-        charge_deviation = charge_deviation.scatter_add_(
-            0, batch['sys_i'], -batch['atomic_charges'])/batch['atoms_number']
+        charge_deviation = (
+            charge_deviation.scatter_add_(
+                0, batch['sys_i'], -1.0*batch['atomic_charges'])
+            / batch['atoms_number']
+            )
         batch['atomic_charges'] = (
             batch['atomic_charges'] + charge_deviation[batch['sys_i']])
 

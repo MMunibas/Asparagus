@@ -13,6 +13,10 @@ def get_Graph_PaiNN():
     from .module_painn import Graph_PaiNN
     return Graph_PaiNN
 
+def get_Graph_AMP():
+    from .module_amp import Graph_AMP
+    return Graph_AMP
+
 
 #======================================
 #  Graph Model Assignment
@@ -21,6 +25,7 @@ def get_Graph_PaiNN():
 graph_module_available = {
     'PhysNet'.lower(): get_Graph_PhysNet,
     'PaiNN'.lower(): get_Graph_PaiNN,
+    'AMP'.lower(): get_Graph_AMP,
     }
 
 def get_graph_module(

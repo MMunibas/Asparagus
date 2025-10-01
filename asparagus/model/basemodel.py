@@ -73,6 +73,11 @@ class BaseModel(torch.nn.Module):
         self.model_atomic_charges = False
         self.model_atomic_dipoles = False
         self.model_dipole = False
+        
+        # Initialize ML/MM embedding flags
+        self.model_mlmm_embedding = False
+        self.model_ml_fragment = 0
+        self.model_mm_fragment = 1
 
         return
 
@@ -367,6 +372,7 @@ class BaseModel(torch.nn.Module):
             List of the long range model and, eventually, short range
             descriptor cutoff (if defined and not short range equal long range
             cutoff).
+
         """
 
         long_range_cutoff = self.model_cutoff
@@ -379,6 +385,39 @@ class BaseModel(torch.nn.Module):
             cutoffs = [long_range_cutoff]
 
         return cutoffs
+
+    def get_mlmm_cutoff_ranges(self) -> List[float]:
+        """
+        Get model ML and MM atom pair cutoff or, eventually, short range 
+        descriptor and long range cutoff list between
+
+        Return
+        ------
+        list(float)
+            List of ML and MM atom pair long range model and, eventually, short
+            range descriptor cutoff (if defined and not short range equal long
+            range cutoff).
+
+        """
+
+        if hasattr(self, 'model_mlmm_cutoff'):
+            long_range_cutoff = self.model_mlmm_cutoff
+        else:
+            long_range_cutoff = self.model_cutoff
+        if hasattr(self.module_dict['input'], 'input_mlmm_radial_cutoff'):
+            short_range_cutoff = (
+                self.module_dict['input'].input_mlmm_radial_cutoff)
+            if short_range_cutoff != long_range_cutoff:
+                mlmm_cutoffs = [short_range_cutoff, long_range_cutoff]
+        elif hasattr(self.module_dict['input'], 'input_radial_cutoff'):
+            short_range_cutoff = (
+                self.module_dict['input'].input_radial_cutoff)
+            if short_range_cutoff != long_range_cutoff:
+                mlmm_cutoffs = [short_range_cutoff, long_range_cutoff]
+        else:
+            mlmm_cutoffs = [long_range_cutoff]
+
+        return mlmm_cutoffs
 
     def base_modules_setup(
         self,
@@ -620,12 +659,12 @@ class BaseModel(torch.nn.Module):
             Extra keys are:
                 'pbc_offset': torch.Tensor(n_pairs)
                     Periodic boundary atom pair vector offset
-                'pbc_atoms': torch.Tensor(n_atoms)
+                'ml_idx': torch.Tensor(n_atoms)
                     Primary atom indices for the supercluster approach
-                'pbc_idx': torch.Tensor(n_pairs)
+                'ml_idx_p': torch.Tensor(n_pairs)
                     Image atom to primary atom index pointer for the atom
                     pair indices in a supercluster
-                'pbc_idx_j': torch.Tensor(n_pairs)
+                'ml_idx_jp': torch.Tensor(n_pairs)
                     Atom j pair index pointer from image atom to respective
                     primary atom index in a supercluster
 
@@ -713,12 +752,6 @@ class BaseModel(torch.nn.Module):
             [len(image) for image in atoms],
             device=self.device, dtype=torch.int64)
 
-        # System segment index of atom i
-        batch['sys_i'] = torch.repeat_interleave(
-            torch.arange(len(atoms), device=self.device, dtype=torch.int64),
-            repeats=batch['atoms_number'], dim=0).to(
-                device=self.device, dtype=torch.int64)
-
         # Atomic numbers properties
         batch['atomic_numbers'] = torch.cat(
             [
@@ -775,12 +808,7 @@ class BaseModel(torch.nn.Module):
             charge, dtype=self.dtype, device=self.device)
 
         # Compute atom pair indices
-        if not hasattr(self, 'neighbor_list'):
-            self.neighbor_list = module.TorchNeighborListRangeSeparated(
-                self.get_cutoff_ranges(),
-                self.device,
-                self.dtype)
-        batch = self.neighbor_list(batch)
+        batch = self.compute_neighborlist(batch)
 
         return batch
 
@@ -999,6 +1027,58 @@ class BaseModel(torch.nn.Module):
 
         return prediction
 
+    def compute_neighborlist(
+        self,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute neighbor list for data batch
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input and result data tensors
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Data batch including neighbor list data
+
+        """
+        
+        # System segment index of atom i
+        batch['sys_i'] = torch.repeat_interleave(
+            torch.arange(
+                batch['atoms_number'].shape[0],
+                device=self.device, dtype=torch.int64),
+            repeats=batch['atoms_number'], dim=0).to(
+                device=self.device, dtype=torch.int64)
+
+        # Compute neighbor list
+        if not hasattr(self, 'neighbor_list'):
+            self.neighbor_list = module.TorchNeighborListRangeSeparated(
+                self.get_cutoff_ranges(),
+                self.device,
+                self.dtype)
+        batch = self.neighbor_list(batch)
+
+        # Compute ML-MM neighbor list
+        if self.model_mlmm_embedding:
+            if not hasattr(self, 'mlmm_neighbor_list'):
+                self.mlmm_neighbor_list = (
+                    module.TorchNeighborListRangeSeparatedMLMM(
+                        self.get_mlmm_cutoff_ranges(),
+                        self.device,
+                        self.dtype)
+                    )
+            batch = self.mlmm_neighbor_list(batch)
+
+        return batch
+
     def compute_energy(
         self,
         batch: Dict[str, torch.Tensor],
@@ -1125,8 +1205,8 @@ class BaseModel(torch.nn.Module):
         """
         
         # For supercluster method, just use primary cell atom positions
-        if 'pbc_atoms' in batch:
-            positions_dipole = batch['positions'][batch['pbc_atoms']]
+        if 'ml_idx' in batch:
+            positions_dipole = batch['positions'][batch['ml_idx']]
         else:
             positions_dipole = batch['positions']
 
@@ -1158,5 +1238,78 @@ class BaseModel(torch.nn.Module):
             batch['dipole'] = batch['dipole'].scatter_add_(
                 0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
                 batch['atomic_dipoles'])
+
+        return batch
+
+    def compute_quadrupole(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute the molecular quadrupole moment from atom-centred charges and
+        atomic quadrupole moments
+        
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input data and predicted properties
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Dictionary with additional molecular quadrupole prediction
+
+        """
+        
+        # For supercluster method, just use primary cell atom positions
+        if 'ml_idx' in batch:
+            positions_quadrupole = batch['positions'][batch['ml_idx']]
+        else:
+            positions_quadrupole = batch['positions']
+
+        # Shift origin to center of geometry
+        system_cog = torch.zeros(
+            (batch['atoms_number'].size(0), 3),
+            device=self.device, dtype=self.dtype)
+        system_cog = (
+            system_cog.scatter_add_(
+                0,
+                batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                positions_quadrupole
+                ).reshape(-1, 3)
+            / batch['atoms_number']
+            )
+        positions_cog = positions_quadrupole - system_cog[batch['sys_i']]
+
+        # Compute detraced outer product
+        outer_product = positions_cog.unsqueeze(-1)*positions_cog.unsqueeze(-2)
+        outer_product = (
+            outer_product
+            - torch.diag_embed(
+                torch.tile(
+                    outer_product.diagonal(
+                        dim1=-2, dim2=-1).mean(
+                            dim=-1, keepdim=True),
+                    (1, 3)
+                )
+            )
+        )
+
+        # Compute molecular quadrupole moment from atomic charges
+        batch['quadrupole'] = torch.zeros(
+            (batch['atoms_number'].size(0), 3, 3),
+            device=self.device,
+            dtype=self.dtype).scatter_add_(
+                0,
+                batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
+                batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
+                * outer_product
+            )
+
+        # Refine molecular quadrupole moment with atomic quadrupole moments
+        if self.model_atomic_quadrupoles:
+            batch['quadrupole'] = batch['quadrupole'].scatter_add_(
+                0, batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
+                batch['atomic_quadrupoles'])
 
         return batch

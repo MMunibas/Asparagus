@@ -45,6 +45,9 @@ _data_source_formats = {
     'traj':     'ase.traj',
     'ase.traj': 'ase.traj',
     'traj.ase': 'ase.traj',
+    'xyz':      'ase.xyz',
+    'ase.xyz':  'ase.xyz',
+    'xyz.ase':  'ase.xyz',
     }
 
 
@@ -172,7 +175,8 @@ class DataReader():
 
         # Default property labels
         self.default_property_labels = [
-            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+            'atoms_number', 'atomic_numbers', 'positions', 'charge',
+            'cell', 'pbc', 'fragment_numbers']
 
         # Assign dataset format with respective load function
         self.data_file_format_load = {
@@ -182,6 +186,7 @@ class DataReader():
             'npz':      self.load_npz,
             'ase.db':   self.load_ase,
             'ase.traj': self.load_traj,
+            'ase.xyz':  self.load_xyz,
             }
 
         # Assign dataset format with respective metadata load function
@@ -524,7 +529,7 @@ class DataReader():
 
         # Check list of properties to skip
         default_skip_properties = [
-            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc', 'fragment_numbers']
         if data_skip_properties is None:
             data_skip_properties = default_skip_properties
         else:
@@ -905,7 +910,7 @@ class DataReader():
 
         # Check list of properties to skip
         default_skip_properties = [
-            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc', 'fragment_numbers']
         if data_skip_properties is None:
             data_skip_properties = default_skip_properties
         else:
@@ -931,7 +936,9 @@ class DataReader():
         # Get data sample property labels for label to comparison
         source_properties = ['positions', 'charge']
         source_properties += list(data_sample.calc.results)
-
+        source_properties += list(data_sample.info.keys())
+        source_properties += list(data_sample.arrays.keys())
+        
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
             data_source,
@@ -1023,6 +1030,186 @@ class DataReader():
 
         return all_atoms_properties
 
+
+    def load_xyz(
+        self,
+        data_source: List[str],
+        data_properties: Optional[List[str]] = None,
+        data_unit_properties: Optional[Dict[str, str]] = None,
+        data_skip_properties: Optional[List[str]] = None,
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
+        **kwargs,
+    ):
+        """
+        Load data from extended xyz files.
+
+        Parameters
+        ----------
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_properties: List(str), optional, default None
+            Subset of properties to load
+        data_unit_properties: dict, optional, default None
+            Dictionary from properties (keys) to corresponding unit as a
+            string (item), e.g.:
+                {property: unit}: { 'energy': 'eV',
+                                    'force': 'eV/Ang', ...}
+        data_skip_properties: List(str), optional, default None
+            Properties not to load even if in data source.
+        data_alt_property_labels: dict, optional, default None
+            Dictionary of alternative property labeling to replace
+            non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        (str, list(dict(str, any)))
+            Either data file path or list of source properties if data file is
+            not defined.
+
+        """
+
+        # Check if data source is empty
+        if os.path.isfile(data_source[0]):
+            source = ase.io.read(data_source[0], index=':', format='extxyz')
+            Ndata = len(source)
+        else:
+            source = None
+            Ndata = 0
+        if Ndata == 0:
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' is empty!")
+            return
+
+        # Check property list, units and alternative labels
+        if data_properties is None:
+            data_properties = self.data_properties
+        if data_unit_properties is None:
+            data_unit_properties = self.data_unit_properties
+        if data_alt_property_labels is None:
+            data_alt_property_labels = self.data_alt_property_labels
+
+        # Check list of properties to skip
+        default_skip_properties = [
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc']
+        if data_skip_properties is None:
+            data_skip_properties = default_skip_properties
+        else:
+            for prop in default_skip_properties:
+                if prop not in data_skip_properties:
+                    data_skip_properties.append(prop)
+
+        # Get data sample to compare property labels
+        data_sample = source[0]
+
+        # Check if data source has properties
+        if data_sample.calc is None:
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' has no properties!")
+            return
+
+        # Check if data source has properties
+        if source[0].calc is None:
+            self.logger.warning(
+                f"Data source '{data_source[0]:s}' has no properties!")
+            return
+
+        # Get data sample property labels for label to comparison
+        source_properties = ['positions', 'charge']
+        source_properties += list(data_sample.calc.results)
+        source_properties += list(data_sample.info.keys())
+        source_properties += list(data_sample.arrays.keys())
+
+        # Assign data source property labels to valid property labels.
+        assigned_properties = self.assign_property_labels(
+            data_source,
+            source_properties,
+            data_properties,
+            data_skip_properties,
+            data_alt_property_labels)
+
+        # Get source property units - default ASE units
+        source_unit_properties = settings._ase_units
+
+        # Get property unit conversion
+        unit_conversion = self.get_unit_conversion(
+            assigned_properties,
+            data_unit_properties,
+            source_unit_properties,
+        )
+
+        # Property match summary
+        self.print_property_summary(
+            data_source,
+            assigned_properties,
+            unit_conversion,
+            data_unit_properties,
+            source_unit_properties,
+        )
+
+        # If not dataset file is given, load source data to memory
+        if self.data_file is None:
+
+            # Add atoms systems to list
+            all_atoms_properties = []
+            self.logger.info(
+                f"Load {Ndata:d} data point from '{data_source[0]:s}'!")
+
+            # Iterate over source data
+            for idx in range(Ndata):
+
+                # Atoms system data
+                atoms_properties = {}
+
+                # Get atoms object and property data
+                atoms = source[idx]
+
+                # Collect system data
+                atoms_properties = self.collect_from_atoms(
+                    atoms,
+                    unit_conversion,
+                    data_properties,
+                    assigned_properties)
+
+                # Add atoms system data
+                all_atoms_properties.append(atoms_properties)
+
+        # If dataset file is given, write to dataset
+        else:
+
+            # Add atom systems to database
+            all_atoms_properties = self.data_file
+            with self.connect(self.data_file[0], mode='a') as db:
+
+                self.logger.info(
+                    f"Writing '{data_source[0]}' to database " +
+                    f"'{self.data_file[0]}'!\n" +
+                    f"{Ndata} data point will be added.")
+
+                # Iterate over source data
+                for idx in range(Ndata):
+
+                    # Atoms system data
+                    atoms_properties = {}
+
+                    # Get atoms object and property data
+                    atoms = source[idx]
+
+                    # Collect system data
+                    atoms_properties = self.collect_from_atoms(
+                        atoms,
+                        unit_conversion,
+                        data_properties,
+                        assigned_properties)
+
+                    # Write to reference database file
+                    db.write(properties=atoms_properties)
+
+        # Print completion message
+        self.logger.info(
+            f"Loading from extended xyz file '{data_source[0]:s}' complete!")
+
+        return all_atoms_properties
+
     def load_atoms(
         self,
         atoms: object,
@@ -1104,71 +1291,32 @@ class DataReader():
         # If not dataset file is given, load data to memory
         if self.data_file is None:
 
-            # Atoms system data
-            load_properties = {}
-
-            # Fundamental properties
-            load_properties['atoms_number'] = (
-                atoms.get_global_number_of_atoms())
-            load_properties['atomic_numbers'] = (
-                atoms.get_atomic_numbers())
-            load_properties['positions'] = (
-                unit_conversion['positions']*atoms.get_positions())
-            load_properties['cell'] = (
-                unit_conversion['positions']*self.convert_cell(
-                    atoms.get_cell()[:]))
-            load_properties['pbc'] = atoms.get_pbc()
-            if atoms_properties.get('charge') is None:
-                load_properties['charge'] = 0.0
-            else:
-                load_properties['charge'] = atoms_properties['charge']
-
-            # Collect properties
-            for prop, item in atoms_properties.items():
-                if item is None:
-                    raise SyntaxError(
-                        f"Requested property '{prop:s}' not available "
-                        + "in results dictionary (None)!")
-                load_properties[prop] = (
-                    unit_conversion[prop]*item)
+            # Collect system data
+            atoms_properties = self.collect_from_atoms_source(
+                atoms,
+                atoms_properties,
+                unit_conversion,
+                data_properties,
+                assigned_properties)
 
         # If dataset file is given, write to dataset
         else:
 
-            # Atoms system data
-            load_properties = {}
+            # Add atom systems to database
             with self.connect(self.data_file[0], mode='a') as db:
 
-                # Fundamental properties
-                load_properties['atoms_number'] = (
-                    atoms.get_global_number_of_atoms())
-                load_properties['atomic_numbers'] = (
-                    atoms.get_atomic_numbers())
-                load_properties['positions'] = (
-                    unit_conversion['positions']*atoms.get_positions())
-                load_properties['cell'] = (
-                    unit_conversion['positions']*self.convert_cell(
-                        atoms.get_cell()[:]))
-                load_properties['pbc'] = atoms.get_pbc()
-                if atoms_properties.get('charge') is None:
-                    load_properties['charge'] = 0.0
-                else:
-                    load_properties['charge'] = atoms_properties['charge']
-
-                # Collect properties
-                for prop, item in atoms_properties.items():
-                    if prop in data_properties:
-                        if item is None:
-                            raise SyntaxError(
-                                f"Requested property '{prop:s}' not available "
-                                + "in results dictionary (None)!")
-                        load_properties[prop] = (
-                            unit_conversion[prop]*item)
+                # Collect system data
+                atoms_properties = self.collect_from_atoms_source(
+                    atoms,
+                    atoms_properties,
+                    unit_conversion,
+                    data_properties,
+                    assigned_properties)
 
                 # Write to ASE database file
-                db.write(properties=load_properties)
+                db.write(properties=atoms_properties)
 
-        return load_properties
+        return atoms_properties
 
     def assign_property_labels(
         self,
@@ -1220,7 +1368,13 @@ class DataReader():
                 label,
                 valid_property_labels=settings._valid_properties,
                 alt_property_labels=data_alt_property_labels)
-            if match:
+            if (
+                match
+                and (
+                    valid_label in self.default_property_labels
+                    or valid_label in data_properties
+                )
+            ):
                 if 'std_' in source_label:
                     valid_label = f"std_{valid_label:s}"
                 if modified:
@@ -1230,6 +1384,11 @@ class DataReader():
                         + f"Property key '{source_label:s}' is assigned as "
                         + f"'{valid_label:s}'.")
                 assigned_properties[valid_label] = label
+            elif match:
+                self.logger.warning(
+                    f"Property key '{source_label:s}' in database "
+                    + f"'{data_source[0]:s}' found as '{valid_label:s}', but "
+                    + "not requested in 'data_properties'!\nProperty ignored.")
             else:
                 self.logger.warning(
                     f"Unknown property '{source_label:s}' in "
@@ -1366,10 +1525,6 @@ class DataReader():
         # Iterate over properties
         for data_prop, source_prop in assigned_properties.items():
 
-            # # Skip default properties
-            # if data_prop in self.default_property_labels:
-            #     continue
-
             # Check property labels
             if source_unit_properties is None:
                 source_unit_property = "None"
@@ -1396,7 +1551,6 @@ class DataReader():
             if (
                 data_prop in unit_conversion
                 or data_prop in self.default_property_labels
-                or data_prop in ['positions', 'charge']
             ):
                 load_label = " x  "
             else:
@@ -1462,8 +1616,10 @@ class DataReader():
             atoms_properties['charge'] = 0.0
         else:
             atoms_properties['charge'] = source['charge']
-        if source.get('fragments') is not None:
-            atoms_properties['fragments'] = source['fragments']
+        if source.get('fragment_numbers') is None:
+            atoms_properties['fragment_numbers'] = [0]*source['atoms_number']
+        else:
+            atoms_properties['fragment_numbers'] = source['fragment_numbers']
 
         # Collect properties
         for prop, item in property_labels.items():
@@ -1534,9 +1690,12 @@ class DataReader():
                 atoms_properties['charge'] = 0.0
             else:
                 atoms_properties['charge'] = source['charge'][idx]
-            if source.get('fragments') is not None:
-                atoms_properties['fragments'] = (
-                    source['fragments'][idx][:source['atoms_number'][idx]])
+            if source.get('fragment_numbers') is None:
+                atoms_properties['fragment_numbers'] = (
+                    [0]*source['atoms_number'][idx])
+            else:
+                atoms_properties['fragment_numbers'] = (
+                    source['fragment_numbers'][idx])
 
             # Collect properties
             for prop, item in source.items():
@@ -1617,8 +1776,26 @@ class DataReader():
                 source['initial_charges'])
         else:
             atoms_properties['charge'] = 0.0
-        if source.get('fragments') is not None:
-            atoms_properties['fragments'] = source['fragments']
+        if 'fragment_numbers' in source:
+            atoms_properties['fragment_numbers'] = source['fragment_numbers']
+        elif (
+            'fragment_numbers' in property_labels
+            and property_labels['fragment_numbers'] in source
+        ):
+            atoms_properties['fragment_numbers'] = (
+                source[property_labels['fragment_numbers']])
+        elif 'fragment_numbers' in atoms.arrays:
+            atoms_properties['fragment_numbers'] = (
+                atoms.arrays['fragment_numbers'])
+        elif (
+            'fragment_numbers' in property_labels
+            and property_labels['fragment_numbers'] in atoms.arrays
+        ):
+            atoms_properties['fragment_numbers'] = (
+                atoms.arrays[property_labels['fragment_numbers']])
+        else:
+            atoms_properties['fragment_numbers'] = (
+                [0]*atoms.get_global_number_of_atoms())
 
         # Collect properties
         for prop, item in property_labels.items():
@@ -1665,9 +1842,11 @@ class DataReader():
         # Atoms system data
         atoms_properties = {}
 
-        # Get atoms property data
+        # Get atoms property and general info data
         properties = atoms.calc
-
+        infos = atoms.info
+        infos.update(atoms.arrays)
+        
         # Fundamental properties
         atoms_properties['atoms_number'] = (
             atoms.get_global_number_of_atoms())
@@ -1684,18 +1863,48 @@ class DataReader():
         elif 'charges' in properties.results:
             atoms_properties['charge'] = sum(
                 properties.results['charges'])
+        elif 'charge' in infos:
+            if utils.is_numeric(infos['charge']):
+                atoms_properties['charge'] = infos['charge']
+            elif utils.is_numeric_array(infos['charge']):
+                atoms_properties['charge'] = infos['charge'][0]
+            else:
+                raise SyntaxError(
+                    f"Charge property '{prop:s}' cannot be read from "
+                    + "atoms info dictionary!")
         else:
             atoms_properties['charge'] = 0.0
+        if 'fragment_numbers' in infos:
+            atoms_properties['fragment_numbers'] = infos['fragment_numbers']
+        elif (
+            'fragment_numbers' in property_labels
+            and property_labels['fragment_numbers'] in infos
+        ):
+            atoms_properties['fragment_numbers'] = (
+                infos[property_labels['fragment_numbers']])
+        else:
+            atoms_properties['fragment_numbers'] = (
+                [0]*atoms.get_global_number_of_atoms())
 
         # Collect properties
         for prop, item in property_labels.items():
-            if prop in properties.results:
+            if (
+                prop in properties.results
+                and prop not in ['charge', 'fragment_numbers']
+            ):
                 if item is None:
                     raise SyntaxError(
                         f"Requested property '{prop:s}' not available "
                         + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*properties.results[prop])
+            elif prop in infos and prop not in ['charge', 'fragment_numbers']:
+                if item is None:
+                    raise SyntaxError(
+                        f"Requested property '{prop:s}' not available "
+                        + "in atoms info dictionary (None)!")
+                atoms_properties[prop] = (
+                    conversion[prop]*infos[prop])
 
         return atoms_properties
 

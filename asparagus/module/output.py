@@ -13,6 +13,10 @@ def get_Output_PaiNN():
     from .module_painn import Output_PaiNN
     return Output_PaiNN
 
+def get_Output_AMP():
+    from .module_amp import Output_AMP
+    return Output_AMP
+
 
 #======================================
 # Output Model Assignment
@@ -21,6 +25,7 @@ def get_Output_PaiNN():
 output_module_available = {
     'PhysNet'.lower(): get_Output_PhysNet,
     'PaiNN'.lower(): get_Output_PaiNN,
+    'AMP'.lower(): get_Output_AMP,
     }
 
 def get_output_module(

@@ -573,6 +573,19 @@ class Trainer:
             device=self.device,
             dtype=self.dtype)
 
+        # Get model ML/MM cutoffs
+        mlmm_cutoffs = self.model_calculator.get_mlmm_cutoff_ranges()
+
+        # Set ML/MM cutoffs for neighbor list calculation
+        self.data_train.init_mlmm_neighbor_list(
+            cutoff=mlmm_cutoffs,
+            device=self.device,
+            dtype=self.dtype)
+        self.data_valid.init_mlmm_neighbor_list(
+            cutoff=mlmm_cutoffs,
+            device=self.device,
+            dtype=self.dtype)
+
         ####################################
         # # # Prepare Property Scaling # # #
         ####################################

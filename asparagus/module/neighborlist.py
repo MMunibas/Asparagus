@@ -23,6 +23,8 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
     ----------
     cutoffs: list(float)
         List of cutoff distances
+    fragment: int, optional, default 0
+        Atomic fragment number for which atom pairs are computed
 
     """
 
@@ -31,9 +33,11 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         cutoffs: List[float],
         device: str,
         dtype: object,
+        fragment: int = 0,
     ):
         """
         Initialize neighbor list computation class
+
         """
 
         super().__init__()
@@ -41,6 +45,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         # Assign module variable parameters
         self.device = device
         self.dtype = dtype
+        self.fragment = fragment
 
         # Check and set cutoffs
         self.set_cutoffs(cutoffs)
@@ -78,6 +83,13 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
         self.max_cutoff = torch.max(self.cutoffs)
         
+        # Check max cutoff and, if infinite, disable periodic boundary 
+        # conditions forcefully
+        if torch.isinf(self.max_cutoff):
+            self.no_pbc = True
+        else:
+            self.no_pbc = False
+        
         return
 
     def forward(
@@ -100,7 +112,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         """
 
         # Assign batch data
-        atomic_numbers = batch['atomic_numbers']
+        atoms_number = batch["atoms_number"]
         positions = batch['positions']
         cell = batch['cell']
         pbc = batch['pbc']
@@ -109,18 +121,21 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         if 'sys_i' in batch:
             sys_i = batch['sys_i']
         else:
-            sys_i = torch.zeros_like(atomic_numbers)
+            sys_i = torch.zeros(
+                (positions.shape[0], ),
+                device=self.device,
+                dtype=atoms_number.dtype)
 
         # Check for system batch or single system input
         # System batch:
-        if batch["atoms_number"].dim():
+        if atoms_number.dim():
 
             # Compute cumulative atoms number list
             atoms_numbers_cumsum = torch.cat(
                 [
                     torch.zeros(
-                        (1,), device=self.device, dtype=sys_i.dtype),
-                    torch.cumsum(batch["atoms_number"][:-1], dim=0)
+                        (1, ), device=self.device, dtype=sys_i.dtype),
+                    torch.cumsum(atoms_number[:-1], dim=0)
                 ],
                 dim=0)
             
@@ -129,20 +144,54 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
             # Assign cumulative atoms number list and system index
             atoms_numbers_cumsum = torch.zeros(
-                (1,), device=self.device, dtype=sys_i.dtype)
+                (1, ), device=self.device, dtype=sys_i.dtype)
 
             # Extend periodic system data size
             cell = cell.unsqueeze(0)
             pbc = pbc.unsqueeze(0)
 
+        # Disable periodic boundary conditions for infinite cutoffs
+        if self.no_pbc:
+            pbc[:] = False
+
+        # Check fragment indices and if fragments are defined get selected
+        # fragment mask
+        if 'fragment_numbers' in batch:
+            
+            fragment_numbers = batch['fragment_numbers']
+            
+            # If multiple fragments are defined, create index pointer from
+            # full system to fragment system (e.g. atom with index 42 in the
+            # full system has only index 2 in the fragment subsystem).
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                ml_idx = (
+                    torch.arange(
+                        fragment_numbers.shape[0],
+                        device=self.device,
+                        dtype=fragment_numbers.dtype)
+                    )[fragment_numbers == self.fragment]
+                ml_idx_p = torch.full_like(
+                    fragment_numbers,
+                    -1,
+                    device=self.device,
+                    dtype=fragment_numbers.dtype)
+                for ia, ai in enumerate(ml_idx):
+                    ml_idx_p[ai] = ia
+                batch['ml_idx'] = ml_idx.detach()
+                batch['ml_idx_p'] = ml_idx_p.detach()
+
+        else:
+            
+            fragment_numbers = torch.full_like(sys_i, self.fragment)
+
         # Compute atom pair neighbor list
         idcs_i, idcs_j, pbc_offsets = self._build_neighbor_list(
             self.cutoffs,
-            atomic_numbers,
             positions,
             cell,
             pbc,
             sys_i,
+            fragment_numbers,
             atoms_numbers_cumsum)
 
         # Add neighbor lists to batch data
@@ -168,11 +217,11 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
     def _build_neighbor_list(
         self,
         cutoffs: torch.Tensor,
-        atomic_numbers: torch.Tensor,
         positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
         sys_i: torch.Tensor,
+        fragment_numbers: torch.Tensor,
         atoms_numbers_cumsum: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
         """
@@ -182,20 +231,18 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         ----------
         cutoffs: torch.Tensor
             Cutoff ranges
-        atomic_numbers: torch.Tensor
-            Atomic numbers for integer data type information
         positions: torch.Tensor
             Atom positions
         cell: torch.Tensor
             Systm cell parameter
         pbc: torch.Tensor
             Systm periodic boundary conditions
+        fragment_numbers: torch.Tensor
+            Atomic fragment indices of the atoms in the positions list to 
+            build neighbor list only within a defined fragment atoms.
         atoms_numbers_cumsum: torch.Tensor
             Cumulative atoms number sum serving as starting index for atom
             length system data lists.
-        atom_indices: torch.Tensor
-            Indices of the atoms in the positions list to build neighbor list
-            only between a subset of atoms.
 
         Returns
         -------
@@ -239,7 +286,8 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                 positions[select],
                 cell_seg,
                 seg_offsets,
-                cutoffs)
+                cutoffs,
+                fragment_numbers[select])
 
             # Create bidirectional id arrays, similar to what the ASE
             # neighbor list returns
@@ -268,10 +316,10 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                 offsets[ic].append(seg_offset)
 
         idcs_i = [
-            torch.cat(idx_i, dim=0).to(dtype=atomic_numbers.dtype)
+            torch.cat(idx_i, dim=0).to(dtype=sys_i.dtype)
             for idx_i in idcs_i]
         idcs_j = [
-            torch.cat(idx_j, dim=0).to(dtype=atomic_numbers.dtype)
+            torch.cat(idx_j, dim=0).to(dtype=sys_i.dtype)
             for idx_j in idcs_j]
         offsets = [
             torch.cat(offset, dim=0).to(dtype=positions.dtype)
@@ -285,6 +333,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         cell: torch.Tensor,
         shifts: torch.Tensor,
         cutoffs: torch.Tensor,
+        fragment_numbers: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
         """
         Compute pairs of atoms that are neighbors.
@@ -297,11 +346,13 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         positions: torch.Tensor
             Atom positions
         cell: torch.Tensor
-            Systm cell parameter
+            System cell parameter
         shifts: torch.Tensor
-            Systm cell shift parameter
+            System cell shift parameter
         cutoffs: torch.Tensor
             Cutoff ranges
+        fragment_numbers: torch.Tensor
+            Atomic fragment indices
 
         Returns
         -------
@@ -315,10 +366,13 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         """
 
         num_atoms = positions.shape[0]
-        all_atoms = torch.arange(num_atoms, device=cell.device)
+        fragment_atoms = (
+            torch.arange(num_atoms, device=cell.device
+                )[fragment_numbers == self.fragment]
+        )
 
         # 1) Central cell
-        pi_center, pj_center = torch.combinations(all_atoms).unbind(-1)
+        pi_center, pj_center = torch.combinations(fragment_atoms).unbind(-1)
         shifts_center = shifts.new_zeros(pi_center.shape[0], 3)
 
         # 2) cells with shifts
@@ -326,7 +380,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         num_shifts = shifts.shape[0]
         all_shifts = torch.arange(num_shifts, device=cell.device)
         shift_index, pi, pj = torch.cartesian_prod(
-            all_shifts, all_atoms, all_atoms
+            all_shifts, fragment_atoms, fragment_atoms
         ).unbind(-1)
         shifts_outside = shifts.index_select(0, shift_index)
 
@@ -452,6 +506,8 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         cutoffs: Union[float, List[float]],
         device: str,
         dtype: object,
+        ml_fragment: int = 0,
+        mm_fragment: int = 1,
     ):
         """
         Initialize neighbor list computation class
@@ -462,8 +518,9 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         # Assign module variable parameters
         self.device = device
         self.dtype = dtype
+        self.ml_fragment = ml_fragment
+        self.mm_fragment = mm_fragment
 
-        
         # Check and set cutoffs
         self.set_cutoffs(cutoffs)
 
@@ -492,7 +549,14 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
                 cutoffs, device=self.device, dtype=self.dtype)
 
         self.max_cutoff = torch.max(self.cutoffs)
-        
+
+        # Check max cutoff and, if infinite, disable periodic boundary 
+        # conditions forcefully
+        if torch.isinf(self.max_cutoff):
+            self.no_pbc = True
+        else:
+            self.no_pbc = False
+
         return
 
     def forward(
@@ -515,33 +579,30 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         """
 
         # Assign batch data
-        atomic_numbers = batch['atomic_numbers']
-        ml_positions = batch['positions']
-        mm_positions = batch['mm_positions']
+        atoms_number = batch["atoms_number"]
+        positions = batch['positions']
         cell = batch['cell']
         pbc = batch['pbc']
 
         # Check ML and MM system indices
         if 'sys_i' in batch:
-            ml_sys_i = batch['sys_i']
+            sys_i = batch['sys_i']
         else:
-            ml_sys_i = torch.zeros_like(atomic_numbers)
-        if 'mm_sys_i' in batch:
-            mm_sys_i = batch['mm_sys_i']
-        else:
-            mm_sys_i = torch.zeros(
-                mm_positions.size(0), device=self.device, dtype=ml_sys_i.dtype)
+            sys_i = torch.zeros(
+                (positions.shape[0], ),
+                device=self.device,
+                dtype=atoms_number.dtype)
 
         # Check for system batch or single system input
         # System batch:
-        if batch["atoms_number"].dim():
+        if atoms_number.dim():
 
             # Compute cumulative atoms number list
             atoms_numbers_cumsum = torch.cat(
                 [
                     torch.zeros(
-                        (1,), device=self.device, dtype=ml_sys_i.dtype),
-                    torch.cumsum(batch["atoms_number"][:-1], dim=0)
+                        (1,), device=self.device, dtype=sys_i.dtype),
+                    torch.cumsum(atoms_number[:-1], dim=0)
                 ],
                 dim=0)
 
@@ -550,22 +611,43 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
             # Assign cumulative atoms number list and system index
             atoms_numbers_cumsum = torch.zeros(
-                (1,), device=self.device, dtype=ml_sys_i.dtype)
+                (1,), device=self.device, dtype=sys_i.dtype)
 
             # Extend periodic system data
             cell = cell.unsqueeze(0)
             pbc = pbc.unsqueeze(0)
 
+        # Disable periodic boundary conditions for infinite cutoffs
+        if self.no_pbc:
+            pbc[:] = False
+
+        # Check fragment indices
+        if 'fragment_numbers' in batch:
+
+            fragment_numbers = batch['fragment_numbers']
+
+            # If multiple fragments are defined, create index pointer from
+            # full system to MM fragment system
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                mm_idx = (
+                    torch.arange(
+                        fragment_numbers.shape[0],
+                        device=self.device,
+                        dtype=fragment_numbers.dtype)
+                    )[fragment_numbers == self.mm_fragment]
+                batch['mm_idx'] = mm_idx.detach()
+
+        else:
+            fragment_numbers = torch.full_like(sys_i, self.ml_fragment)
+
         # Compute atom pair neighbor list
         idcs_i, idcs_j, pbc_offsets = self._build_neighbor_list(
             self.cutoffs,
-            atomic_numbers,
-            ml_positions,
-            mm_positions,
+            positions,
             cell,
             pbc,
-            ml_sys_i,
-            mm_sys_i,
+            sys_i,
+            fragment_numbers,
             atoms_numbers_cumsum)
 
         # Add neighbor lists to batch data
@@ -591,13 +673,11 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
     def _build_neighbor_list(
         self,
         cutoffs: torch.Tensor,
-        atomic_numbers: torch.Tensor,
-        ml_positions: torch.Tensor,
-        mm_positions: torch.Tensor,
+        positions: torch.Tensor,
         cell: torch.Tensor,
         pbc: torch.Tensor,
-        ml_sys_i: torch.Tensor,
-        mm_sys_i: torch.Tensor,
+        sys_i: torch.Tensor,
+        fragment_numbers: torch.Tensor,
         atoms_numbers_cumsum: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
         """
@@ -607,21 +687,17 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         ----------
         cutoffs: torch.Tensor
             Cutoff ranges
-        atomic_numbers: torch.Tensor
-            Atomic numbers for integer data type information
-        ml_positions: torch.Tensor
-            ML Atom positions
-        mm_positions: torch.Tensor
-            MM Atom positions
+        positions: torch.Tensor
+            Atom positions
         cell: torch.Tensor
             Systm cell parameter
         pbc: torch.Tensor
             Systm periodic boundary conditions
-        ml_sys_i: torch.Tensor
-            System indices of ML atoms
-        mm_sys_i: torch.Tensor
-            System indices of MM atoms
-
+        sys_i: torch.Tensor
+            System atom indices
+        fragment_numbers: torch.Tensor
+            Atomic fragment indices of the atoms in the positions list to 
+            build neighbor list between two sets of fragment atoms.
         atoms_numbers_cumsum: torch.Tensor
             Cumulative atoms number sum serving as starting index for atom
             length system data lists.
@@ -646,8 +722,7 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         for iseg, idx_off in enumerate(atoms_numbers_cumsum):
 
             # Atom system selection
-            ml_select = ml_sys_i == iseg
-            mm_select = mm_sys_i == iseg
+            select = sys_i == iseg
 
             # Check if shifts are needed for periodic boundary conditions
             if cell[iseg].dim() == 1:
@@ -663,15 +738,15 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
                     cell_seg, pbc[iseg], self.max_cutoff)
             else:
                 seg_offsets = torch.zeros(
-                    0, 3, device=self.device, dtype=ml_positions.dtype)
+                    0, 3, device=self.device, dtype=positions.dtype)
 
             # Compute pair indices
             sys_idcs_i, sys_idcs_j, seg_offsets = self._get_neighbor_pairs(
-                ml_positions[ml_select],
-                mm_positions[mm_select],
+                positions[select],
                 cell_seg,
                 seg_offsets,
-                cutoffs)
+                cutoffs,
+                fragment_numbers[select])
 
             # Sort along first dimension (necessary for atom-wise pooling)
             for ic, (sys_idx_i, sys_idx_j, seg_offset) in enumerate(
@@ -691,24 +766,24 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
                 offsets[ic].append(seg_offset)
 
         idcs_i = [
-            torch.cat(idx_i, dim=0).to(dtype=atomic_numbers.dtype)
+            torch.cat(idx_i, dim=0).to(dtype=sys_i.dtype)
             for idx_i in idcs_i]
         idcs_j = [
-            torch.cat(idx_j, dim=0).to(dtype=atomic_numbers.dtype)
+            torch.cat(idx_j, dim=0).to(dtype=sys_i.dtype)
             for idx_j in idcs_j]
         offsets = [
-            torch.cat(offset, dim=0).to(dtype=ml_positions.dtype)
+            torch.cat(offset, dim=0).to(dtype=positions.dtype)
             for offset in offsets]
 
         return idcs_i, idcs_j, offsets
 
     def _get_neighbor_pairs(
         self,
-        ml_positions: torch.Tensor,
-        mm_positions: torch.Tensor,
+        positions: torch.Tensor,
         cell: torch.Tensor,
         shifts: torch.Tensor,
         cutoffs: torch.Tensor,
+        fragment_numbers: torch.Tensor,
     ) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
         """
         Compute pairs of atoms that are neighbors.
@@ -718,16 +793,16 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
         Parameters
         ----------
-        ml_positions: torch.Tensor
-            ML Atom positions
-        mm_positions: torch.Tensor
-            MM Atom positions
+        positions: torch.Tensor
+            Atom positions
         cell: torch.Tensor
-            Systm cell parameter
+            System cell parameter
         shifts: torch.Tensor
-            Systm cell shift parameter
+            System cell shift parameter
         cutoffs: torch.Tensor
             Cutoff ranges
+        fragment_numbers: torch.Tensor
+            Atomic fragment indices
 
         Returns
         -------
@@ -741,13 +816,18 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         """
 
         # Get ML and MM atom information
-        ml_num_atoms = ml_positions.shape[0]
-        mm_num_atoms = mm_positions.shape[0]
-        ml_all_atoms = torch.arange(ml_num_atoms, device=cell.device)
-        mm_all_atoms = torch.arange(mm_num_atoms, device=cell.device)
+        num_atoms = fragment_numbers.shape[0]
+        ml_fragment_atoms = (
+            torch.arange(num_atoms, device=cell.device
+                )[fragment_numbers == self.ml_fragment]
+            )
+        mm_fragment_atoms = (
+            torch.arange(num_atoms, device=cell.device
+                )[fragment_numbers == self.mm_fragment]
+            )
 
         # Return empty list if either ML or MM atoms are missing
-        if not ml_num_atoms or not mm_num_atoms:
+        if not ml_fragment_atoms.dim() or not mm_fragment_atoms.dim():
             atom_indices_i, atom_indices_j, offsets = [], [], []
             for _ in cutoffs:
                 atom_indices_i.append(
@@ -760,7 +840,7 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
         # 1) Central cell
         pi_center, pj_center = torch.cartesian_prod(
-            ml_all_atoms, mm_all_atoms).unbind(-1)
+            ml_fragment_atoms, mm_fragment_atoms).unbind(-1)
         shifts_center = shifts.new_zeros(pi_center.shape[0], 3)
 
         # 2) cells with shifts
@@ -768,7 +848,7 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         num_shifts = shifts.shape[0]
         all_shifts = torch.arange(num_shifts, device=cell.device)
         shift_index, pi, pj = torch.cartesian_prod(
-            all_shifts, ml_all_atoms, mm_all_atoms
+            all_shifts, ml_fragment_atoms, mm_fragment_atoms
         ).unbind(-1)
         shifts_outside = shifts.index_select(0, shift_index)
 
@@ -779,7 +859,7 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
         # 4) Compute shifts and distance vectors
         shift_values = torch.mm(shifts_all.to(cell.dtype), cell)
-        Rij_all = ml_positions[pi_all] - mm_positions[pj_all] + shift_values
+        Rij_all = positions[pi_all] - positions[pj_all] + shift_values
 
         # 5) Compute squared distances, and find all pairs within cutoff
         distances2 = torch.sum(Rij_all**2, dim=1)

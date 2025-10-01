@@ -371,12 +371,12 @@ class EnsembleModel(torch.nn.Module):
             Extra keys are:
                 'pbc_offset': torch.Tensor(n_pairs)
                     Periodic boundary atom pair vector offset
-                'pbc_atoms': torch.Tensor(n_atoms)
+                'ml_idx': torch.Tensor(n_atoms)
                     Primary atom indices for the supercluster approach
-                'pbc_idx': torch.Tensor(n_pairs)
+                'ml_idx_p': torch.Tensor(n_pairs)
                     Image atom to primary atom index pointer for the atom
                     pair indices in a supercluster
-                'pbc_idx_j': torch.Tensor(n_pairs)
+                'ml_idx_jp': torch.Tensor(n_pairs)
                     Atom j pair index pointer from image atom to respective
                     primary atom index in a supercluster
         no_derivation: bool, optional, default False

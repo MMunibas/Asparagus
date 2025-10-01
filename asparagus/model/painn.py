@@ -156,7 +156,7 @@ class Model_PaiNN(model.BaseModel):
         **kwargs
     ):
         """
-        Initialize PaiNN Calculator model.
+        Initialize PaiNN calculator model.
 
         """
 
@@ -308,7 +308,7 @@ class Model_PaiNN(model.BaseModel):
             self.module_dict['repulsion'] = repulsion_module
 
         # Assign electrostatic interaction module
-        if self.model_electrostatic and self.model_electrostatic_dipole:
+        if self.model_electrostatic:
 
             electrostatic_module = module.Damped_electrostatics(
                 self.model_cutoff,
@@ -574,12 +574,12 @@ class Model_PaiNN(model.BaseModel):
             Extra keys are:
                 'pbc_offset': torch.Tensor(n_pairs)
                     Periodic boundary atom pair vector offset
-                'pbc_atoms': torch.Tensor(n_atoms)
+                'ml_idx': torch.Tensor(n_atoms)
                     Primary atom indices for the supercluster approach
-                'pbc_idx': torch.Tensor(n_pairs)
+                'ml_idx_p': torch.Tensor(n_pairs)
                     Image atom to primary atom index pointer for the atom
                     pair indices in a supercluster
-                'pbc_idx_j': torch.Tensor(n_pairs)
+                'ml_idx_jp': torch.Tensor(n_pairs)
                     Atom j pair index pointer from image atom to repsective
                     primary atom index in a supercluster
         no_derivation: bool, optional, default False

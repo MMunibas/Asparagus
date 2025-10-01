@@ -254,7 +254,7 @@ def get_ase_properties(
     calc_properties: List[str],
 ) -> Dict[str, Any]:
     """
-    ASE Calculator interface
+    Get system properties and ASE Calculator results from Atoms object
 
     Parameters
     ----------
@@ -296,7 +296,7 @@ def get_ase_properties(
     elif 'charges' in system.calc.results:
         charge = sum(system.calc.results['charges'])
     else:
-        charge = 0
+        charge = 0.0
     properties['charge'] = charge
 
     for ip, prop in enumerate(calc_properties):

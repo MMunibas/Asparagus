@@ -317,6 +317,7 @@ class D3_dispersion(torch.nn.Module):
     def get_weights(
         self,
         atomic_numbers: torch.Tensor,
+        idx_u: torch.Tensor,
         cn: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -326,6 +327,7 @@ class D3_dispersion(torch.nn.Module):
 
         # Get reference atomic coordination numbers of atom pairs ij
         rcn = self.d3_rcn[atomic_numbers]
+        # rcn = self.d3_rcn[torch.unique(idx_u)]
 
         # Selection of non-zero reference coordination numbers
         mask_rcn = rcn >= 0
@@ -454,6 +456,7 @@ class D3_dispersion(torch.nn.Module):
         # Compute atomic weights
         weights = self.get_weights(
             atomic_numbers,
+            idx_u,
             cn)
 
         # Compute atomic C6 and C8 coefficients

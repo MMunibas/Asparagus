@@ -7,6 +7,8 @@ from openmm.app import (
     DCDReporter, StateDataReporter)
 from openmm.unit import kelvin, picosecond, nanometer, angstrom, degree
 
+from asparagus import Asparagus
+
 # Read the PSF
 psf = CharmmPsfFile('charmm_data/ammonia_water.psf')
 
@@ -46,12 +48,12 @@ mm_system = psf.createSystem(
 # ML System
 
 # Define ML atoms (First chain/segid)
-chains = list(pdb.topology.chains())
-ml_atoms = [atom.index for atom in chains[0].atoms()]
+residues = list(pdb.topology.residues())
+ml_atoms = [atom.index for atom in residues[0].atoms()]
 
 # Define PaiNN potential
 model = Asparagus(
-    config='nh3_model/config.json',
+    config='model_nh3/config.json',
     device='cuda',
     )
 ml_potential = model.get_openmm_potential()
@@ -74,7 +76,7 @@ properties = {'DeviceIndex': '0', 'Precision': 'mixed'}
 #platform = Platform.getPlatform('CPU')
 #properties = {}
 
-simulation = Simulation(psf.topology, system, integrator, platform, properties)
+simulation = Simulation(psf.topology, mlmm_system, integrator, platform, properties)
 simulation.context.setPositions(pdb.getPositions())
 
 simulation.minimizeEnergy()

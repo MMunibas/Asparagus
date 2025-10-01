@@ -89,6 +89,7 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Initialize neighbor list function class parameter
         self.neighbor_list = None
+        self.mlmm_neighbor_list = None
 
         # Assign reference data conversion parameter
         self.device = device
@@ -98,13 +99,6 @@ class DataLoader(torch.utils.data.DataLoader):
         self.set_data_atomic_energies_shift(
             data_atomic_energies_shift,
             self.dataset.get_data_properties_dtype())
-
-        # # Switch to 'spawn' method for cuda device
-        # if (
-        #     self.device == 'cuda' 
-        #     and torch.multiprocessing.get_start_method() != 'spawn'
-        # ):
-        #     torch.multiprocessing.set_start_method('spawn')
 
         return
 
@@ -154,7 +148,6 @@ class DataLoader(torch.utils.data.DataLoader):
     def init_neighbor_list(
         self,
         cutoff: Optional[Union[float, List[float]]] = np.inf,
-        store: Optional[bool] = False,
         device: Optional[str] = None,
         dtype: Optional[object] = None,
     ):
@@ -165,8 +158,6 @@ class DataLoader(torch.utils.data.DataLoader):
         ----------
         cutoff: float, optional, default infinity
             Neighbor list cutoff range equal to max interaction range
-        store: bool, optional, default False
-            Pre-compute neighbor list and store in the reference dataset
 
         """
 
@@ -178,6 +169,34 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Initialize neighbor list creator
         self.neighbor_list = module.TorchNeighborListRangeSeparated(
+            cutoff, device, dtype)
+
+        return
+
+    def init_mlmm_neighbor_list(
+        self,
+        cutoff: Optional[Union[float, List[float]]] = np.inf,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
+    ):
+        """
+        Initialize MLM/M neighbor list function
+
+        Parameters
+        ----------
+        cutoff: float, optional, default infinity
+            Neighbor list cutoff range equal to max interaction range
+
+        """
+
+        # Check input parameter
+        if device is None:
+            device = self.device
+        if dtype is None:
+            dtype = self.dtype
+
+        # Initialize neighbor list creator
+        self.mlmm_neighbor_list = module.TorchNeighborListRangeSeparatedMLMM(
             cutoff, device, dtype)
 
         return
@@ -215,9 +234,7 @@ class DataLoader(torch.utils.data.DataLoader):
                 pbc_offset_uv: (Npairs, 3) torch.Tensor
                 sys_i: (Natoms,) torch.Tensor
             Optional structure properties:
-                mm_atom_types: (MM_Natoms,) torch.Tensor
-                mm_atom_charges: (MM_Natoms,) torch.Tensor
-                mm_atom_positions: (MM_Natoms, 3) torch.Tensor
+                fragment_numbers: (Natoms,) torch.Tensor
             Reference properties, e.g.:
                 energy: (Nsystem,) torch.Tensor
                 forces: (Natoms, 3) torch.Tensor
@@ -242,12 +259,6 @@ class DataLoader(torch.utils.data.DataLoader):
             torch.arange(Nsys, device=self.device, dtype=torch.int64),
             repeats=coll_batch['atoms_number'], dim=0).to(
                 device=self.device, dtype=torch.int64)
-
-        # System fragment index
-        if batch[0].get('fragments') is not None:
-            coll_batch['fragments'] = torch.cat(
-                [b['fragments'] for b in batch], 0).to(
-                    device=self.device, dtype=torch.int64)
 
         # Atomic numbers properties
         coll_batch['atomic_numbers'] = torch.cat(
@@ -276,27 +287,19 @@ class DataLoader(torch.utils.data.DataLoader):
                 device=self.device, dtype=self.dtype
                 ).reshape(Nsys, -1)
 
-        # # MM atom types
-        # if batch[0].get('mm_atom_types') is not None:
-        #     # Encode sring as integer number
-        #     coll_batch['mm_atom_types'] = torch.cat(
-        #         [
-        #             utils.encode_str2int(bi[:4])
-        #             for b in batch for bi in b['mm_atom_types']
-        #         ], 0).to(
-        #             device=self.device, dtype=torch.int64)
-        # 
-        # # MM atom charges
-        # if batch[0].get('mm_atom_charges') is not None:
-        #     coll_batch['mm_atom_charges'] = torch.cat(
-        #         [b['mm_atom_charges'] for b in batch], 0).to(
-        #             device=self.device, dtype=self.dtype)
-        # 
-        # # MM atom positions
-        # if batch[0].get('mm_atom_positions') is not None:
-        #     coll_batch['mm_atom_positions'] = torch.cat(
-        #         [b['mm_atom_positions'] for b in batch], 0).to(
-        #             device=self.device, dtype=self.dtype)
+        # System atomic fragment indices
+        # Only add to batch, if multiple fragments are defined
+        if 'fragment_numbers' in batch[0]:
+            fragment_numbers = torch.cat(
+                [b['fragment_numbers'] for b in batch], 0).to(
+                    device=self.device, dtype=torch.int64)
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                coll_batch['fragment_numbers'] = fragment_numbers
+
+            # Compute ML/MM pair indices and position offsets
+            if self.mlmm_neighbor_list is None:
+                self.init_mlmm_neighbor_list()
+            coll_batch = self.mlmm_neighbor_list(coll_batch)
 
         # Compute pair indices and position offsets
         if self.neighbor_list is None:

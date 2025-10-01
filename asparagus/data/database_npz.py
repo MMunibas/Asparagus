@@ -32,9 +32,7 @@ structure_properties_dtype = {
     'charge':           np.float32,
     'cell':             np.float32,
     'pbc':              np.bool_,
-    # 'mm_atom_types':    'U4',
-    # 'mm_charges':       np.float32,
-    # 'mm_positions':     np.float32,
+    'fragment_numbers': integer_numpy_dtype,
 }
 
 # Structural property labels and array shape
@@ -45,9 +43,7 @@ structure_properties_shape = {
     'charge':           (-1,),
     'cell':             (-1, 9,),
     'pbc':              (-1, 3,),
-    # 'mm_atom_types':    (-1,),
-    # 'mm_charges':       (-1,),
-    # 'mm_positions':     (-1, 3,),
+    'fragment_numbers': (-1,),
     }
 
 # Known reference property array shape
@@ -71,13 +67,10 @@ structure_properties_ids = {
     'charge':           'system:id',
     'cell':             'system:id',
     'pbc':              'system:id',
-    # 'mm_atom_types':    'mm_atoms:id',
-    # 'mm_charges':       'mm_atoms:id',
-    # 'mm_positions':     'mm_atoms:id',
+    'fragment_numbers': 'atoms:id',
 }
 system_id_property = 'atoms_number'
 atoms_id_property = 'atomic_numbers'
-# mm_atoms_id_property = 'mm_charges'
 
 
 def connect(

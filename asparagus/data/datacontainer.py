@@ -35,7 +35,7 @@ class DataContainer():
             'settings._alt_property_labels'
         Dictionary of alternative property labeling to replace
         non-valid property labels with the valid one if possible.
-    data_properties: list(str), optional,
+    data_properties: list(str), optional, 
             default ['energy', 'forces', 'dipole']
         Set of properties to store in the DataSet
     data_unit_properties: dictionary, optional,
@@ -49,7 +49,7 @@ class DataContainer():
         string (item) in the source data files.
         If None, the property units as defined in 'data_unit_properties'
         are assumed.
-     ^   This input is only regarded for data source format, where no property
+        This input is only regarded for data source format, where no property
         units are defined such as the Numpy npz files.
     #data_source_property_filter: dictionary, optional, default None
         #Property conditions to avoid/filter out data from data source which
@@ -115,7 +115,7 @@ class DataContainer():
         'data_source':                  [
             utils.is_string, utils.is_string_array_inhomogeneous,
             utils.is_None],
-        'data_properties':              [utils.is_array_like],
+        'data_properties':              [utils.is_string_array],
         'data_unit_properties':         [utils.is_dictionary],
         'data_source_unit_properties':  [utils.is_dictionary, utils.is_None],
         #'data_source_property_filter':  [utils.is_dictionary, utils.is_None],
@@ -169,7 +169,7 @@ class DataContainer():
 
         # Check 'data_file' input for file format information
         data_file = self.check_data_files(data_file)
-            
+
         # If not to overwrite, get metadata from existing database
         if data_overwrite or config.get('data_overwrite') or data_file is None:
 

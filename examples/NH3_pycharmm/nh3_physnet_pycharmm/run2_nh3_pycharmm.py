@@ -191,7 +191,7 @@ energy.show()
 #-----------------------------------------------------------
 
 # Load Asparagus model
-ml_model = Asparagus(config='model_nh3/nh3_physnet.json')
+ml_model = Asparagus(config='model_nh3/config.json')
 
 # Get atomic number from ASE atoms object
 ml_Z = ase_ammonia.get_atomic_numbers()
@@ -256,7 +256,7 @@ energy.show()
 # Step 5: Heating - CHARMM, PhysNet
 #-----------------------------------------------------------
 
-if True:
+if False:
     
     timestep = 0.00025   # 0.25 fs
     nsteps = 10.*1./timestep # 10 ps
@@ -339,7 +339,7 @@ if True:
         'iunrea': str_file.file_unit,
         'iunwri': res_file.file_unit,
         'iuncrd': dcd_file.file_unit,
-        'nprint': 100, # Frequency to write to output
+        'nprint': 10, # Frequency to write to output
         'iprfrq': 500, # Frequency to calculate averages
         'isvfrq': 1000, # Frequency to save restart file
         'ntrfrq': 0,

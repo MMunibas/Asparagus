@@ -21,6 +21,10 @@ def get_Model_PaiNN():
     from .painn import Model_PaiNN
     return Model_PaiNN
 
+def get_Model_AMP():
+    from .amp import Model_AMP
+    return Model_AMP
+
 
 #======================================
 # Calculator Model Assignment
@@ -29,6 +33,7 @@ def get_Model_PaiNN():
 model_available = {
     'PhysNet'.lower(): get_Model_PhysNet,
     'PaiNN'.lower(): get_Model_PaiNN,
+    'AMP'.lower(): get_Model_AMP,
     }
 
 def _get_model_calculator(
