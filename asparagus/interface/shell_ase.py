@@ -656,8 +656,8 @@ class ShellCalculator(FileIOCalculator):
             charge = 0
         else:
             charge = self.charge
-        if multiplicity is None:
-            multiplicity = self.multiplicity
+        if multiplicity is not None:
+            multiplicity = self.set_system_properties(None, multiplicity)[1]
         elif self.multiplicity is None and 'multiplicity' in atoms.info:
             multiplicity = self.set_system_properties(
                 None, atoms.info['multiplicity'])[1]
