@@ -92,6 +92,7 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 - Production: 
   - [x] ASE calculator
   - [x] PyCharmm interface
+  - [x] OpenMM interface
   - [ ] Gaussian interface
 - Documentation:
   - [ ] Improve documentation

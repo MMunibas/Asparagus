@@ -20,6 +20,14 @@ asparagus.model.calculator module
    :undoc-members:
    :show-inheritance:
 
+asparagus.model.ensemble module
+-------------------------------
+
+.. automodule:: asparagus.model.ensemble
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.model.filemanager module
 ----------------------------------
 

@@ -36,6 +36,22 @@ asparagus.module.input module
    :undoc-members:
    :show-inheritance:
 
+asparagus.module.module\_painn module
+-------------------------------------
+
+.. automodule:: asparagus.module.module_painn
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+asparagus.module.module\_physnet module
+---------------------------------------
+
+.. automodule:: asparagus.module.module_physnet
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.module.neighborlist module
 ------------------------------------
 
@@ -48,22 +64,6 @@ asparagus.module.output module
 ------------------------------
 
 .. automodule:: asparagus.module.output
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-asparagus.module.painn\_modules module
---------------------------------------
-
-.. automodule:: asparagus.module.painn_modules
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-asparagus.module.physnet\_modules module
-----------------------------------------
-
-.. automodule:: asparagus.module.physnet_modules
    :members:
    :undoc-members:
    :show-inheritance:
