@@ -20,14 +20,6 @@ asparagus.tools.DMC module
    :undoc-members:
    :show-inheritance:
 
-asparagus.tools.EnsembleLearning module
----------------------------------------
-
-.. automodule:: asparagus.tools.EnsembleLearning
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 asparagus.tools.HyperParameterTuning module
 -------------------------------------------
 

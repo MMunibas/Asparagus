@@ -1,12 +1,26 @@
 Examples
 =========
 
-Asparagus can be used for different tasks. Here are some examples:
+The example section has grown (and it is expected to grow further). You can find them in the main github repository, here_ .
 
-- NH<sub>3</sub>: Some of the basic capacities of Asparagus are shown on the example of ammonia. Among them: Sampling methods, training and testing.
-- Formaldehyde
-- Zundel
-- QM9 Chemical space
-- Sn2 Reactive potential
-- tools Tools for the analysis of the data and the potential energy surface
+.. _here: https://github.com/MMunibas/Asparagus/tree/main/examples
+
+Some examples are:
+
+- Argon in Water
+- Hexaaquairon3
+- Diffusion Monte Carlo for NH<sub>3</sub>.
+- Use of VP2. 
+- Zundel complex sampling with Metadynamics
+- Examples of capacities with NH<sub>3</sub>:
+  - Calculator
+  - Model
+  - OpenMM
+  - Pycharmm
+  - Full example with PBE
+
+A couple of tutorials to set up the reference calculation and different sampling methodologies can be found in this folder_.
+
+.. _folder: https://github.com/MMunibas/Asparagus/tree/main/tutorials
+
 
