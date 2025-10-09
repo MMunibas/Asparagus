@@ -6,18 +6,22 @@ import torch
 
 from asparagus import utils
 from asparagus import layer
-from asparagus import module as asparagus_module
 
 try:
-
     # Import OpenMM modules if possible
     import openmm
     import openmmtorch
     from openmmml import mlpotential
 
-except ModuleNotFoundError:
+except ModuleNotFoundError as e:
+    raise ImportError(
+        "OpenMM is not installed. Install it before continuing."
+    ) from e
 
-    pass
+#except ModuleNotFoundError:
+
+#    pass
+    
 
 __all__ = ['OpenMM_Calculator']
 
