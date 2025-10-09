@@ -36,6 +36,14 @@ asparagus.module.input module
    :undoc-members:
    :show-inheritance:
 
+asparagus.module.module\_amp module
+-----------------------------------
+
+.. automodule:: asparagus.module.module_amp
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.module.module\_painn module
 -------------------------------------
 

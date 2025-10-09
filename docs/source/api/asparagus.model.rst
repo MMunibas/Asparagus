@@ -4,6 +4,14 @@ asparagus.model package
 Submodules
 ----------
 
+asparagus.model.amp module
+--------------------------
+
+.. automodule:: asparagus.model.amp
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.model.basemodel module
 --------------------------------
 
