@@ -49,7 +49,7 @@ autodoc_mock_imports = [
     'pytest',
     'openmm',
     'openmm-torch',
-    'openmm-ml]
+    'openmm-ml']
 
 intersphinx_disabled_domains = ['std']
 
