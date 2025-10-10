@@ -25,9 +25,7 @@ structure_properties_dtype = {
     'charge':           np.float32,
     'cell':             np.float32,
     'pbc':              np.bool_,
-    'mm_atom_types':    'U4',
-    'mm_charges':       np.float32,
-    'mm_positions':     np.float32,
+    'fragment_numbers': np.int32,
 }
 
 # Structural property labels and array shape
@@ -38,9 +36,7 @@ structure_properties_shape = {
     'charge':           (-1,),
     'cell':             (-1),
     'pbc':              (1, 3,),
-    'mm_atom_types':    (-1,),
-    'mm_charges':       (-1,),
-    'mm_positions':     (-1, 3,),
+    'fragment_numbers': (-1,),
 }
 reference_properties_shape = {
     # 'energy':           (-1,),
@@ -51,6 +47,8 @@ reference_properties_shape = {
     # 'atomic_charges':   (-1,),
     # 'dipole':           (3),
     # 'atomic_dipoles':   (-1,),
+    # 'quadrupole':       (-1, 9,),
+    # 'atomic_quadrupole':(-1, 9,),
     'polarizability':   (3, 3,),
     }
 
@@ -319,13 +317,13 @@ class DataBase_hdf5(data.DataBase):
             raise SyntaxError(
                 "At least one input 'ref_data' or 'properties' should "
                 + "contain reference data!")
-        
+
         elif ref_data is None:
-            
+
             row_id = self._write(properties, row_id)
-            
+
         else:
-        
+
             # Add or update database values
             key_id = f"{row_id:d}"
             if self.data['systems'].get(key_id) is None:

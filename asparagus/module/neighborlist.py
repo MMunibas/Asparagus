@@ -539,7 +539,7 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
             List of cutoff distances
 
         """
-        
+
         # Check and set cutoffs
         if utils.is_numeric(cutoffs):
             self.cutoffs = torch.tensor(
@@ -638,6 +638,7 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
                 batch['mm_idx'] = mm_idx.detach()
 
         else:
+
             fragment_numbers = torch.full_like(sys_i, self.ml_fragment)
 
         # Compute atom pair neighbor list

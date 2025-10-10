@@ -160,6 +160,8 @@ class Model_AMP(model.BaseModel):
         'atomic_quadrupoles',
         ]
 
+    _required_input_properties = ['atomic_charges']
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -616,7 +618,7 @@ class Model_AMP(model.BaseModel):
         batch: Dict[str, torch.Tensor],
         no_derivation: bool = False,
         create_graph: bool = False,
-        verbose_results: bool = False,
+        verbose_results: bool = True,
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of AMP calculator model.

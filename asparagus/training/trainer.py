@@ -322,12 +322,21 @@ class Trainer:
         # # # Prepare Reference Data Loader # # #
         #########################################
 
+        # Check the model for additional required reference properties
+        self.additional_properties = []
+        if hasattr(self.model_calculator, '_required_input_properties'):
+            for prop in self.model_calculator._required_input_properties:
+                if prop in self.data_container.data_properties:
+                    self.additional_properties.append(prop)
+
         # Initialize training, validation and test data loader
         self.data_container.init_dataloader(
             self.trainer_train_batch_size,
             self.trainer_valid_batch_size,
             self.trainer_test_batch_size,
-            reference_properties=self.trainer_properties,
+            reference_properties=(
+                self.trainer_properties
+                + self.additional_properties),
             num_workers=self.trainer_num_batch_workers,
             device=self.device,
             dtype=self.dtype)
@@ -411,6 +420,7 @@ class Trainer:
                 config=config,
                 data_container=self.data_container,
                 test_datasets='test',
+                test_properties=self.trainer_properties,
                 test_batch_size=self.trainer_test_batch_size,
                 test_num_batch_workers=self.trainer_num_batch_workers)
 

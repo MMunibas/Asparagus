@@ -56,6 +56,8 @@ reference_properties_shape = {
     'atomic_charges':   (-1,),
     'dipole':           (-1, 3,),
     'atomic_dipoles':   (-1, 3,),
+    'quadrupole':       (-1, 9,),
+    'atomic_quadrupole':(-1, 9,),
     'polarizability':   (-1, 3, 3,),
     }
 

@@ -218,7 +218,7 @@ class Damped_electrostatics(torch.nn.Module):
 
         # Add electrostatic atomic energy contributions
         batch['atomic_energies'] = batch['atomic_energies'] + Eelec_atom
-        
+
         # If verbose, store a copy of the electrostatic atomic energy 
         # contributions
         if verbose:
@@ -922,7 +922,7 @@ class MLMM_electrostatics(torch.nn.Module):
 
         # Add electrostatic atomic energy contributions
         batch['atomic_energies'] = batch['atomic_energies'] + Eelec_atom
-        
+
         # If verbose, store a copy of the electrostatic atomic energy 
         # contributions
         if verbose:

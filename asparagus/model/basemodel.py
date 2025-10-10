@@ -1277,7 +1277,7 @@ class BaseModel(torch.nn.Module):
                 batch['sys_i'].unsqueeze(-1).repeat(1, 3),
                 positions_quadrupole
                 ).reshape(-1, 3)
-            / batch['atoms_number']
+            / batch['atoms_number'].unsqueeze(-1)
             )
         positions_cog = positions_quadrupole - system_cog[batch['sys_i']]
 

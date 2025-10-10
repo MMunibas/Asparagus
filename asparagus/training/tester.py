@@ -332,8 +332,18 @@ class Tester:
             test_properties = self.check_test_properties(
                 test_properties,
                 self.data_properties)
-            for dataloader in self.test_data:
-                dataloader.set_reference_properties(test_properties)
+
+        # Check the model for additional required reference properties
+        additional_properties = []
+        if hasattr(model_calculator, '_required_input_properties'):
+            for prop in model_calculator._required_input_properties:
+                if prop in self.data_properties:
+                    additional_properties.append(prop)
+
+        # Update test properties
+        for dataloader in self.test_data.values():
+            dataloader.set_reference_properties(
+                test_properties + additional_properties)
 
         # Check test properties model to reference data conversion
         test_conversion = {}
@@ -353,18 +363,6 @@ class Tester:
             raise SyntaxError(
                 "Test results output directory input 'test_directory' is not "
                 + "a string of a valid file path.")
-
-        # Compare model properties with test properties and store properties
-        # to evaluate
-        eval_properties = []
-        for prop in test_properties:
-            if prop in model_properties:
-                eval_properties.append(prop)
-            else:
-                self.logger.warning(
-                    f"Requested property '{prop}' in " +
-                    "'test_properties' is not predicted by the " +
-                    "model calculator and will be ignored!")
 
         ##############################
         # # # Compute Properties # # #
@@ -395,7 +393,7 @@ class Tester:
 
             # Get model cutoffs
             cutoffs = model_calculator.get_cutoff_ranges()
-            
+
             # Set maximum model cutoff for neighbor list calculation
             if datasubset.neighbor_list is None:
                 datasubset.init_neighbor_list(
@@ -405,22 +403,34 @@ class Tester:
             else:
                 datasubset.neighbor_list.set_cutoffs(cutoffs)
 
+            # Get model ML/MM cutoffs
+            mlmm_cutoffs = model_calculator.get_mlmm_cutoff_ranges()
+
+            # Set maximum model cutoff for neighbor list calculation
+            if datasubset.mlmm_neighbor_list is None:
+                datasubset.init_mlmm_neighbor_list(
+                    cutoff=mlmm_cutoffs,
+                    device=self.device,
+                    dtype=self.dtype)
+            else:
+                datasubset.mlmm_neighbor_list.set_cutoffs(mlmm_cutoffs)
+
             # Prepare dictionary for property values, number of atoms per
             # system, and reference energy shifts
-            test_prediction = {prop: [] for prop in eval_properties}
+            test_prediction = {prop: [] for prop in test_properties}
             if model_ensemble:
                 test_prediction.update(
                     {
-                        imodel: {prop: [] for prop in eval_properties}
+                        imodel: {prop: [] for prop in test_properties}
                         for imodel in range(model_ensemble_num)
                     })
-            test_reference = {prop: [] for prop in eval_properties}
+            test_reference = {prop: [] for prop in test_properties}
             test_prediction['atoms_number'] = []
             test_shifts = {prop: [] for prop in ['energy', 'atomic_energies']}
 
             # Reset property metrics
             metrics_test = self.reset_metrics(
-                eval_properties, model_ensemble, model_ensemble_num)
+                test_properties, model_ensemble, model_ensemble_num)
 
             # Loop over data batches
             for batch in datasubset:
@@ -434,7 +444,7 @@ class Tester:
                 metrics_batch = self.compute_metrics(
                     batch,
                     batch['reference'],
-                    eval_properties,
+                    test_properties,
                     test_conversion,
                     model_ensemble,
                     model_ensemble_num)
@@ -443,7 +453,7 @@ class Tester:
                 self.update_metrics(
                     metrics_test,
                     metrics_batch,
-                    eval_properties,
+                    test_properties,
                     model_ensemble,
                     model_ensemble_num)
 
@@ -451,7 +461,7 @@ class Tester:
                 Nsys = len(batch['atoms_number'])
                 Natoms = len(batch['atomic_numbers'])
                 Npairs = len(batch['idx_i'])
-                for prop in eval_properties:
+                for prop in test_properties:
                     
                     # Detach prediction and reference data
                     data_prediction = batch[prop].detach().cpu().numpy()
@@ -555,7 +565,7 @@ class Tester:
             if verbose:
                 self.print_metric(
                     metrics_test,
-                    eval_properties,
+                    test_properties,
                     label,
                     model_ensemble,
                     model_ensemble_num)
@@ -618,7 +628,7 @@ class Tester:
             if utils.is_string(test_scale_per_atom):
                 test_scale_per_atom = [test_scale_per_atom]
             test_property_atoms_scaling = {}
-            for prop in eval_properties:
+            for prop in test_properties:
                 if prop in test_scale_per_atom:
                     test_property_atoms_scaling[prop] = (
                         1./np.array(
@@ -629,7 +639,7 @@ class Tester:
 
             # Plot correlation between model and reference properties
             if test_plot_correlation:
-                for prop in eval_properties:
+                for prop in test_properties:
                     self.plot_correlation(
                         label,
                         prop,
@@ -661,7 +671,7 @@ class Tester:
 
             # Plot histogram of the prediction error
             if test_plot_histogram:
-                for prop in eval_properties:
+                for prop in test_properties:
                     self.plot_histogram(
                         label,
                         prop,
@@ -691,7 +701,7 @@ class Tester:
 
             # Plot histogram of the prediction error
             if test_plot_residual:
-                for prop in eval_properties:
+                for prop in test_properties:
                     self.plot_residual(
                         label,
                         prop,

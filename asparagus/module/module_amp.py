@@ -465,7 +465,6 @@ class Input_AMP(torch.nn.Module):
             
             # Assign ML atom pair results as long-range pair results
             batch['mlmm_idx_u'] = batch['mlmm_idx_i']
-            batch['ml_idx_u'] = batch['ml_idx_i']
             batch['mlmm_idx_v'] = batch['mlmm_idx_j']
             mlmm_vectors_uv = mlmm_vectors
             mlmm_distances_uv = mlmm_distances
