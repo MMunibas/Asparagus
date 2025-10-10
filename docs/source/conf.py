@@ -46,7 +46,10 @@ autodoc_mock_imports = [
     'matplotlib',
     'seaborn',
     'scipy',
-    'pytest',]
+    'pytest',
+    'openmm',
+    'openmm-torch',
+    'openmm-ml']
 
 intersphinx_disabled_domains = ['std']
 
