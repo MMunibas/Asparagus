@@ -621,9 +621,9 @@ class BaseModel(torch.nn.Module):
         # Iterate over all trainable model parameters
         for name, parameter in self.named_parameters():
             # Catch all parameters to not apply weight decay on
-            if no_weight_decay and 'scaling' in name.split('.')[0].split('_'):
+            if no_weight_decay and 'scaling' in name.split('.')[-1]:
                 trainable_parameters['no_weight_decay'].append(parameter)
-            elif no_weight_decay and 'shift' in name.split('.')[0].split('_'):
+            elif no_weight_decay and 'dispersion_module' in name:
                 trainable_parameters['no_weight_decay'].append(parameter)
             else:
                 trainable_parameters['default'].append(parameter)

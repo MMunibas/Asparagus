@@ -354,7 +354,7 @@ class Trainer:
             self.trainer_optimizer,
             self.model_calculator.get_trainable_parameters(),
             self.trainer_optimizer_args)
-
+        
         # Assign learning rate scheduler
         self.trainer_scheduler, trainer_scheduler_args = get_scheduler(
             self.trainer_scheduler,
@@ -520,6 +520,7 @@ class Trainer:
             # epoch parameter if available
             optimizer_state, scheduler_state = "None", "None"
             if restart:
+
                 if loaded_checkpoint.get('optimizer_state_dict') is not None:
                     self.trainer_optimizer.load_state_dict(
                         loaded_checkpoint['optimizer_state_dict'])
@@ -548,7 +549,8 @@ class Trainer:
                     best_loss = loaded_checkpoint['best_loss']
 
             # Print checkpoint file info
-            if verbose:               
+            if verbose:    
+
                 if restart:
                     message = "Restart"
                 else:

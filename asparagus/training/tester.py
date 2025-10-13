@@ -90,6 +90,10 @@ class Tester:
         'test_directory':               [utils.is_string],
         }
 
+    # Model properties available for all fragment atoms, which will be 
+    # additionally evaluated separately
+    _fragment_properties = ['forces']
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -428,9 +432,29 @@ class Tester:
             test_prediction['atoms_number'] = []
             test_shifts = {prop: [] for prop in ['energy', 'atomic_energies']}
 
+            # Check for number of fragments in the dataset systems
+            fragments_available = np.all([
+                'fragment_numbers' in batch
+                for batch in datasubset
+                ])
+            if fragments_available:
+                test_fragments = []
+                for batch in datasubset:
+                    fragments = torch.unique(batch['fragment_numbers'])
+                    for fragment in fragments:
+                        if fragment not in test_fragments:
+                            test_fragments.append(
+                                fragment.detach().cpu().numpy())
+                    test_prediction['fragment_numbers'] = []
+            else:
+                test_fragments = None
+
             # Reset property metrics
             metrics_test = self.reset_metrics(
-                test_properties, model_ensemble, model_ensemble_num)
+                test_properties,
+                model_ensemble,
+                model_ensemble_num,
+                test_fragments=test_fragments)
 
             # Loop over data batches
             for batch in datasubset:
@@ -447,7 +471,8 @@ class Tester:
                     test_properties,
                     test_conversion,
                     model_ensemble,
-                    model_ensemble_num)
+                    model_ensemble_num,
+                    test_fragments=test_fragments)
 
                 # Update average metrics
                 self.update_metrics(
@@ -455,7 +480,8 @@ class Tester:
                     metrics_batch,
                     test_properties,
                     model_ensemble,
-                    model_ensemble_num)
+                    model_ensemble_num,
+                    test_fragments=test_fragments)
 
                 # Store prediction and reference data system resolved
                 Nsys = len(batch['atoms_number'])
@@ -541,6 +567,11 @@ class Tester:
                 test_prediction['atoms_number'] += list(
                     batch['atoms_number'].cpu().numpy())
 
+                # Store fragment numbers
+                if 'fragment_numbers' in test_prediction:
+                    test_prediction['fragment_numbers'] += list(
+                        batch['fragment_numbers'].cpu().numpy())
+
                 # Compute energy and atomic energies shifts
                 test_shifts_energy = np.zeros(Nsys, dtype=float)
                 test_shifts_atomic_energies = np.zeros(Natoms, dtype=float)
@@ -568,7 +599,8 @@ class Tester:
                     test_properties,
                     label,
                     model_ensemble,
-                    model_ensemble_num)
+                    model_ensemble_num,
+                    test_fragments=test_fragments)
 
             ###########################
             # # # Save Properties # # #
@@ -668,6 +700,39 @@ class Tester:
                                 test_directory_model,
                                 test_plot_format,
                                 test_plot_dpi)
+                    if (
+                        test_fragments is not None
+                        and len(test_fragments) > 1
+                        and prop in self._fragment_properties
+                    ):
+                        for fragment in test_fragments:
+                            fragment_prop = f'{prop:s}_{fragment:d}'
+                            fragment_selection = (
+                                fragment == np.array(
+                                    test_prediction['fragment_numbers'])
+                                )
+                            self.plot_correlation(
+                                label,
+                                fragment_prop,
+                                self.plain_data([
+                                    prediction
+                                    for ii, prediction in enumerate(
+                                        test_prediction[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.plain_data([
+                                    reference
+                                    for ii, reference in enumerate(
+                                        test_reference[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.data_units[prop],
+                                metrics_test[fragment_prop],
+                                test_property_atoms_scaling[prop],
+                                test_directory,
+                                test_plot_format,
+                                test_plot_dpi)
+                            
 
             # Plot histogram of the prediction error
             if test_plot_histogram:
@@ -696,6 +761,37 @@ class Tester:
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
                                 test_directory_model,
+                                test_plot_format,
+                                test_plot_dpi)
+                    if (
+                        test_fragments is not None
+                        and len(test_fragments) > 1
+                        and prop in self._fragment_properties
+                    ):
+                        for fragment in test_fragments:
+                            fragment_prop = f'{prop:s}_{fragment:d}'
+                            fragment_selection = (
+                                fragment == np.array(
+                                    test_prediction['fragment_numbers'])
+                                )
+                            self.plot_histogram(
+                                label,
+                                fragment_prop,
+                                self.plain_data([
+                                    prediction
+                                    for ii, prediction in enumerate(
+                                        test_prediction[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.plain_data([
+                                    reference
+                                    for ii, reference in enumerate(
+                                        test_reference[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.data_units[prop],
+                                metrics_test[fragment_prop],
+                                test_directory,
                                 test_plot_format,
                                 test_plot_dpi)
 
@@ -728,6 +824,38 @@ class Tester:
                                 metrics_test[prop][imodel],
                                 test_property_atoms_scaling[prop],
                                 test_directory_model,
+                                test_plot_format,
+                                test_plot_dpi)
+                    if (
+                        test_fragments is not None
+                        and len(test_fragments) > 1
+                        and prop in self._fragment_properties
+                    ):
+                        for fragment in test_fragments:
+                            fragment_prop = f'{prop:s}_{fragment:d}'
+                            fragment_selection = (
+                                fragment == np.array(
+                                    test_prediction['fragment_numbers'])
+                                )
+                            self.plot_residual(
+                                label,
+                                fragment_prop,
+                                self.plain_data([
+                                    prediction
+                                    for ii, prediction in enumerate(
+                                        test_prediction[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.plain_data([
+                                    reference
+                                    for ii, reference in enumerate(
+                                        test_reference[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.data_units[prop],
+                                metrics_test[fragment_prop],
+                                test_property_atoms_scaling[prop],
+                                test_directory,
                                 test_plot_format,
                                 test_plot_dpi)
 
@@ -940,6 +1068,7 @@ class Tester:
         test_properties: List[str],
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ) -> Dict[str, float]:
         """
         Reset the metrics dictionary.
@@ -952,6 +1081,12 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If None or just one, properties metrics are not separately 
+            evaluated for each fragment.
+            If two or more indices, possible properties are evaluated for each
+            fragment also individually.
 
         Returns
         -------
@@ -966,15 +1101,34 @@ class Tester:
         # Add data counter
         metrics['Ndata'] = 0
 
-        # Add training property metrics
+        # Add property metrics
         for prop in test_properties:
+            
             metrics[prop] = {
                 'mae': 0.0,
                 'mse': 0.0}
+            
+            # For model ensemble, reset individual model metrics
             if model_ensemble:
                 metrics[prop]['std'] = 0.0
                 for imodel in range(model_ensemble_num):
                     metrics[prop][imodel] = {
+                        'mae': 0.0,
+                        'mse': 0.0}
+            
+            # If multiple fragments are available, reset metrics for each
+            # fragment system but just for suited properties
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+
+                # Iterate over fragment indices
+                for fragment in test_fragments:
+                    
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    metrics[fragment_prop] = {
                         'mae': 0.0,
                         'mse': 0.0}
 
@@ -988,6 +1142,7 @@ class Tester:
         test_conversion: Dict[str, float],
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ) -> Dict[str, float]:
         """
         Compute the metrics mean absolute error (MAE) and mean squared error
@@ -1007,6 +1162,12 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If None or just one, properties metrics are not separately 
+            evaluated for each fragment.
+            If two or more indices, possible properties are evaluated for each
+            fragment also individually.
 
         Returns
         -------
@@ -1059,6 +1220,37 @@ class Tester:
                         * test_conversion[prop],
                         torch.flatten(reference[prop]))
 
+            # If multiple fragments are available, compute metrics for each
+            # fragment system but just for suited properties
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+                
+                # Iterate over fragment indices
+                for fragment in test_fragments:
+                    
+                    # Fragment property tag
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+
+                    # Initialize single property metrics dictionary
+                    metrics[fragment_prop] = {}
+
+                    # Fragment selection
+                    fragment_selection = (
+                        fragment == prediction['fragment_numbers'])
+
+                    # Compute MAE and MSE
+                    metrics[fragment_prop]['mae'] = mae_fn(
+                        torch.flatten(prediction[prop][fragment_selection])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop][fragment_selection]))
+                    metrics[fragment_prop]['mse'] = mse_fn(
+                        torch.flatten(prediction[prop][fragment_selection])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop][fragment_selection]))
+
         return metrics
 
     def update_metrics(
@@ -1068,6 +1260,7 @@ class Tester:
         test_properties: List[str],
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ) -> Dict[str, float]:
         """
         Update the metrics dictionary.
@@ -1084,6 +1277,12 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If None or just one, properties metrics are not separately 
+            evaluated for each fragment.
+            If two or more indices, possible properties are evaluated for each
+            fragment also individually.
 
         Returns
         -------
@@ -1101,11 +1300,13 @@ class Tester:
         # Update metrics
         metrics['Ndata'] = metrics['Ndata'] + metrics_update['Ndata']
         for prop in test_properties:
+            
             for metric in ['mae', 'mse']:
                 metrics[prop][metric] = (
                     fdata*metrics[prop][metric]
                     + fdata_update*metrics_update[prop][metric].detach().item()
                     )
+            
             if model_ensemble:
                 metrics[prop]['std'] = (
                     fdata*metrics[prop]['std']
@@ -1120,6 +1321,20 @@ class Tester:
                                )[prop][imodel][metric].detach().item()
                             )
 
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+                for fragment in test_fragments:
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    for metric in ['mae', 'mse']:
+                        metrics[fragment_prop][metric] = (
+                            fdata*metrics[fragment_prop][metric]
+                            + fdata_update*metrics_update[
+                                fragment_prop][metric].detach().item()
+                            )
+
         return metrics
 
     def print_metric(
@@ -1129,6 +1344,7 @@ class Tester:
         test_label: str,
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ):
         """
         Print the values of MAE and RMSE for the test set.
@@ -1145,6 +1361,10 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If two or more indices, properties are shown for each
+            fragment if possible.
 
         """
 
@@ -1184,6 +1404,19 @@ class Tester:
                         message += f"     {f'Model {imodel:d}':<16s}  "
                     message += f"{metrics[prop][imodel]['mae']:3.2e},  "
                     message += f"{np.sqrt(metrics[prop][imodel]['mse']):3.2e}"
+                    message += f" {self.data_units[prop]:s}\n"
+
+            # For multiple fragments and possible property
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+                for fragment in test_fragments:
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    message += f"     {f'Fragment {fragment:d}':<16s}  "
+                    message += f"{metrics[fragment_prop]['mae']:3.2e},  "
+                    message += f"{np.sqrt(metrics[fragment_prop]['mse']):3.2e}"
                     message += f" {self.data_units[prop]:s}\n"
 
         # Print metrics

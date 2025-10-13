@@ -558,7 +558,10 @@ class PaiNNOutput_scalar(torch.nn.Module):
             Scaling parameter
 
         """
-        if self.trainable_scaling:
+
+        if hasattr(self, 'scaling'):
+            self.scaling.data = scaling
+        elif self.trainable_scaling:
             self.scaling = torch.nn.Parameter(scaling)
         else:
             self.scaling = self.register_buffer("scaling", scaling)

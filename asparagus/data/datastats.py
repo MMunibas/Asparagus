@@ -506,7 +506,7 @@ def compute_atomic_property_sum_scaling(
                 property_prediction[selection])
             property_atomic_prediction_scale = np.std(
                 property_prediction[selection])
-            if property_atomic_prediction_scale == 0.0:
+            if property_atomic_prediction_scale <= 1.0e-3:
                 property_atomic_prediction_scale = 1.0
 
             # Attune atomic property shift and scaling parameter

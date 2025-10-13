@@ -504,44 +504,6 @@ class Model_PaiNN(model.BaseModel):
 
         return
 
-    def get_trainable_parameters(
-        self,
-        no_weight_decay: Optional[bool] = True,
-    ) -> Dict[str, List]:
-        """
-        Return a  dictionary of lists for different optimizer options.
-
-        Parameters
-        ----------
-        no_weight_decay: bool, optional, default True
-            Separate parameters on which weight decay should not be applied
-
-        Returns
-        -------
-        dict(str, List)
-            Dictionary of trainable model parameters. Contains 'default' entry
-            for all parameters not affected by special treatment. Further
-            entries are, if true, the parameter names of the input
-        """
-
-        # Trainable parameter dictionary
-        trainable_parameters = {}
-        trainable_parameters['default'] = []
-        if no_weight_decay:
-            trainable_parameters['no_weight_decay'] = []
-
-        # Iterate over all trainable model parameters
-        for name, parameter in self.named_parameters():
-            # Catch all parameters to not apply weight decay on
-            if no_weight_decay and 'output_scaling' in name:
-                trainable_parameters['no_weight_decay'].append(parameter)
-            elif no_weight_decay and 'dispersion_module' in name:
-                trainable_parameters['no_weight_decay'].append(parameter)
-            else:
-                trainable_parameters['default'].append(parameter)
-
-        return trainable_parameters
-
     def forward(
         self,
         batch: Dict[str, torch.Tensor],

@@ -1018,7 +1018,7 @@ class Graph_AMP(torch.nn.Module):
                 else:
                     mlmm_rbfs_features = torch.cat(
                         (
-                            dipoles_vectors.squeeze(-1).squeeze(1),
+                            dipoles_vectors.squeeze(-1),
                             batch['mlmm_rbfs']
                         ),
                         dim=-1)
@@ -1790,7 +1790,7 @@ class Output_AMP(torch.nn.Module):
 
         # Get scaling factor and shifts for output properties
         scaling_parameters = {}
-        
+
         # Get current scaling parameter from scalar output block
         for prop in self.output_property_block:
             block = self.output_property_block[prop]
