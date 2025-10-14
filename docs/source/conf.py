@@ -1,17 +1,36 @@
 # Configuration file for the Sphinx documentation builder.
 import os
 import sys
-import asparagus
-sys.path.insert(0, os.path.abspath(os.path.join('.','..','..')))
+from unittest.mock import MagicMock
+from importlib.metadata import version as pkg_version, PackageNotFoundError
+
+# Make package importable for autodoc (adjust as needed)
+sys.path.insert(0, os.path.abspath(os.path.join('.', '..', '..')))
+
+MOCK_MODULES = [
+    "numpy", "pandas", "scipy", "h5py", "matplotlib", "seaborn",
+    "torch", "torchvision", "torchaudio", "tensorboard", "torch_ema",
+    "ase", "xtb",
+    "openmm", "openmmtorch", "openmmml",
+    "openmm.unit", "torch.multiprocessing",
+]
+
+for m in MOCK_MODULES:
+    sys.modules.setdefault(m, MagicMock())
+
 # -- Project information
 
 project = 'Asparagus Bundle'
 copyright = '2025, L.I.Vazquez-Salazar, K. Toepfer & M. Meuwly'
 author = 'L.I.Vazquez-Salazar & K. Toepfer'
 
-release = '0.6'
-version = '0.6.0'
-
+try:
+    release = pkg_version("asparagus")
+    version = release
+except PackageNotFoundError:
+    release = "0.6"
+    version  = "0.6.0"
+    
 # -- General configuration
 
 extensions = [
@@ -25,6 +44,9 @@ extensions = [
     'sphinxemoji.sphinxemoji',
     'sphinx.ext.todo',
     'myst_parser',]
+    
+autosummary_generate = True
+
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3/', None),
@@ -32,24 +54,25 @@ intersphinx_mapping = {
 }
 
 autodoc_mock_imports = [
-    'numpy',
-    'ase',
-    'ctype',
-    'torchvision',
-    'torchaudio',
-    'torch',
-    'torch-ema',
-    'tensorboard',
-    'xtb',
-    'h5py',
-    'pandas',
-    'matplotlib',
-    'seaborn',
-    'scipy',
-    'pytest',
-    'openmm',
-    'openmm-torch',
-    'openmm-ml']
+    "numpy",
+    "ase",
+    "ctypes",
+    "torchvision",
+    "torchaudio",
+    "torch",
+    "torch_ema",
+    "tensorboard",
+    "xtb",
+    "h5py",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "scipy",
+    "openmm",
+    "openmmtorch",
+    "openmmml",
+    "pytest",
+]
 
 intersphinx_disabled_domains = ['std']
 
