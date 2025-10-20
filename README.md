@@ -75,10 +75,16 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 - [x] Electronic structure calculations:
    - [x] ASE calculator
    - [x] Custom Calculators (via shell run or slurm batch files)
-- Trainer class:
+- [ ] Model potentials:
+   - [x] PhysNet
+   - [x] PaiNN
+   - [ ] AMP
+   - [ ] MACE
+- [x] Trainer class:
   - [x] Training of model ensemble 
-- Tester class: 
-  - [x] Model and Moddel Ensemble automatic evaluation 
+- [x] Tester class: 
+  - [x] Model and Moddel Ensemble automatic evaluation
+  - [x] Model automatic evaluation for data with different multiple fragments (e.g. in ML/MM)
 - Active learning
    - [x] Adaptive Sampling (first iteration)
    - [x] Uncertainty calculations
