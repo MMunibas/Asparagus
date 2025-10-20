@@ -118,7 +118,7 @@ class Trainer:
         'trainer_restart':              False,
         'trainer_max_epochs':           10_000,
         'trainer_properties':           None,
-        'trainer_properties_metrics':   {'else': 'mse'},
+        'trainer_properties_metrics':   {'else': 'SmoothL1Loss'},
         'trainer_properties_weights':   {
             'energy': 1., 'forces': 50., 'dipole': 25., 'else': 1.},
         'trainer_batch_size':           32,
@@ -322,7 +322,7 @@ class Trainer:
         # # # Prepare Reference Data Loader # # #
         #########################################
 
-        # Check the model for additional required reference properties
+        # Check the model for additionally required reference properties
         self.additional_properties = []
         if hasattr(self.model_calculator, '_required_input_properties'):
             for prop in self.model_calculator._required_input_properties:
@@ -685,7 +685,11 @@ class Trainer:
         metrics_best['loss'] = best_loss
 
         # Define loss function
-        loss_fn = torch.nn.SmoothL1Loss(reduction='mean')
+        loss_fn = {}
+        for prop in self.trainer_properties:
+            loss_fn[prop] = self.get_loss_fn(
+                self.trainer_properties_metrics[prop],
+                reduction='mean')
 
         # Get scheduler argument list for correct parameter passing
         scheduler_arguments = (
@@ -1114,6 +1118,7 @@ class Trainer:
                     trainer_properties_metrics.get('else'))
 
         # Check property weights
+        sum_properties_weights = 0.0
         for prop in trainer_properties:
             if (
                 trainer_properties_weights.get(prop) is None
@@ -1123,8 +1128,68 @@ class Trainer:
             elif trainer_properties_weights.get(prop) is None:
                 trainer_properties_weights[prop] = (
                     trainer_properties_weights.get('else'))
+            sum_properties_weights += trainer_properties_weights[prop]
+
+        # Normalize property weights to factor 100 for better loss value
+        # comparison and display convenience
+        for prop in trainer_properties:
+            trainer_properties_weights[prop] /= sum_properties_weights
+            trainer_properties_weights[prop] *= 100.0
 
         return trainer_properties_metrics, trainer_properties_weights
+
+    def get_loss_fn(
+        self,
+        loss_label: str,
+        reduction: str = 'mean'
+    ) -> 'torch.nn.Loss':
+        """
+        Return loss function callable of the requested label from Torch.
+        
+        Parameter
+        ---------
+        loss_label: str
+            Loss function label. Available are any implemented Torch loss
+            function or special cases:
+                'SmoothL1Loss': getattr(torch.nn, 'SmoothL1Loss')
+                'mae': Mean absolute error (torch.nn.L1Loss)
+                'mse': Mean square error (torch.nn.MSELoss)
+        reduction: str, optional, default 'mean'
+            Reduction keyword of the Torch loss function.
+
+
+        Returns
+        -------
+        torch.nn._Loss
+            Torch callable of a loss function
+
+        """
+
+        # Available loss functions
+        loss_fn_available = {
+            'mae': torch.nn.L1Loss,
+            'mse': torch.nn.MSELoss,
+            }
+
+        # Return loss function of the requested label
+        if utils.is_string(loss_label):
+            loss_label_lower = loss_label.strip().lower()
+            if loss_label_lower in loss_fn_available.keys():
+                return loss_fn_available[loss_label_lower](reduction=reduction)
+            elif hasattr(torch.nn, loss_label):
+                return getattr(torch.nn, loss_label)(reduction=reduction)
+            else:
+                raise SyntaxError(
+                    f"Loss function label '{loss_label:s}' us not valid!\n"
+                    + "Choose either correct 'torch.nn' function name or from "
+                    + "the list:\n"
+                    + str(loss_fn_available.keys()))
+        else:
+            raise ValueError(
+                "Loss function label must be a string and not of type "
+                + f"{type(loss_label):}!")
+
+        return
 
     def check_model_units(
         self,
@@ -1258,7 +1323,7 @@ class Trainer:
         self,
         prediction: Dict[str, Any],
         reference: Dict[str, Any],
-        loss_fn: Optional[object] = None,
+        loss_fn: Optional[Dict[str, Callable]] = None,
         loss_only: Optional[bool] = True,
     ) -> Dict[str, float]:
         """
@@ -1268,10 +1333,11 @@ class Trainer:
         ----------
         prediction: dict
             Model prediction dictionary
-        reference:
+        reference: dict
             Reference data dictionary
-        loss_fn:
-            Loss function if not defined it is set to torch.nn.L1Loss
+        loss_fn: dict
+            Dictioanry of loss function for each training property. If None,
+            it is set to torch.nn.SmoothL1Loss
         loss_only
             Compute only loss function or compute MAE and MSE as well
 
@@ -1282,29 +1348,32 @@ class Trainer:
 
         """
 
-        # Check loss function input
-        if loss_fn is None:
-            loss_fn = torch.nn.L1Loss(reduction="mean")
-
-        # Initialize MAE calculator function if needed
-        if not loss_only:
-            mae_fn = torch.nn.L1Loss(reduction="mean")
-            mse_fn = torch.nn.MSELoss(reduction="mean")
-
         # Initialize metrics dictionary
         metrics = {}
 
         # Add batch size
         metrics['Ndata'] = prediction['atoms_number'].size()[0]
 
+        # Initialize MAE and MSE calculator function if needed
+        if not loss_only:
+            mae_fn = torch.nn.L1Loss(reduction="mean")
+            mse_fn = torch.nn.MSELoss(reduction="mean")
+
         # Iterate over training properties
         for ip, prop in enumerate(self.trainer_properties):
+
+            # Check loss function input
+            if loss_fn is None:
+                loss = torch.nn.SmoothL1Loss(reduction="mean")
+            else:
+                loss = loss_fn[prop]
 
             # Initialize single property metrics dictionary
             metrics[prop] = {}
 
-            # Compute loss value per atom
-            metrics[prop]['loss'] = loss_fn(
+            # Compute loss value system-wise or atom-wise multiplied by
+            # 100 for display convenience
+            metrics[prop]['loss'] = loss(
                 torch.flatten(prediction[prop])
                 * self.model_conversion[prop],
                 torch.flatten(reference[prop]))
@@ -1349,7 +1418,7 @@ class Trainer:
             + f" {'Data Unit':<12s} |"
             + f" {'Conv. fact.':<12s} |"
             + f" {'Loss Metric':<12s} |"
-            + f" {'Loss Weight':<12s}\n")
+            + f" {'Loss Weight (%)':<16s}\n")
         message += "-"*len(message) + "\n"
         for prop, model_unit in self.model_units.items():
             if self.data_units.get(prop) is None:

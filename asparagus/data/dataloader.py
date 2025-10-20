@@ -338,7 +338,7 @@ class DataLoader(torch.utils.data.DataLoader):
                         for b in batch
                     ],
                     0).to(device=self.device, dtype=self.dtype)
-            
+
             else:
 
                 # Concatenate tensor data

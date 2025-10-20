@@ -381,6 +381,8 @@ class BaseModel(torch.nn.Module):
                 self.module_dict['input'].input_radial_cutoff)
             if short_range_cutoff != long_range_cutoff:
                 cutoffs = [short_range_cutoff, long_range_cutoff]
+            else:
+                cutoffs = [long_range_cutoff]
         else:
             cutoffs = [long_range_cutoff]
 
@@ -409,11 +411,15 @@ class BaseModel(torch.nn.Module):
                 self.module_dict['input'].input_mlmm_radial_cutoff)
             if short_range_cutoff != long_range_cutoff:
                 mlmm_cutoffs = [short_range_cutoff, long_range_cutoff]
+            else:
+                mlmm_cutoffs = [short_range_cutoff]
         elif hasattr(self.module_dict['input'], 'input_radial_cutoff'):
             short_range_cutoff = (
                 self.module_dict['input'].input_radial_cutoff)
             if short_range_cutoff != long_range_cutoff:
                 mlmm_cutoffs = [short_range_cutoff, long_range_cutoff]
+            else:
+                mlmm_cutoffs = [short_range_cutoff]
         else:
             mlmm_cutoffs = [long_range_cutoff]
 
@@ -706,6 +712,12 @@ class BaseModel(torch.nn.Module):
             atoms,
             charge=charge)
 
+        # TODO
+        atoms_batch['reference'] = {}
+        atoms_batch['reference']['atomic_charges'] = torch.tensor(
+            atoms.arrays['atomic_charges'],
+            device=self.device, dtype=self.dtype)
+
         return self.forward(atoms_batch, **kwargs)
 
     def create_batch(
@@ -806,6 +818,17 @@ class BaseModel(torch.nn.Module):
             raise ValueError("Input 'charge' is not a numeric value or array!")
         batch['charge'] = torch.tensor(
             charge, dtype=self.dtype, device=self.device)
+
+        # Check for fragment definition
+        if 'fragment' in atoms[0].arrays:
+            fragment_numbers = torch.cat(
+                [
+                    torch.tensor(image.arrays['fragment'], dtype=torch.int64)
+                    for image in atoms
+                ], 0).to(
+                    device=self.device, dtype=torch.int64)
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                batch['fragment_numbers'] = fragment_numbers
 
         # Compute atom pair indices
         batch = self.compute_neighborlist(batch)
@@ -955,6 +978,17 @@ class BaseModel(torch.nn.Module):
         batch['charge'] = torch.tensor(
             charge, dtype=self.dtype, device=self.device)
 
+        # Check for fragment definition
+        if 'fragment' in atoms.arrays:
+            fragment_numbers = torch.cat(
+                [
+                    torch.tensor(atoms.arrays['fragment'], dtype=torch.int64)
+                    for _ in range(ncopies)
+                ], 0).to(
+                    device=self.device, dtype=torch.int64)
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                batch['fragment_numbers'] = fragment_numbers
+
         # Compute atom pair indices
         if not hasattr(self, 'neighbor_list'):
             self.neighbor_list = module.TorchNeighborListRangeSeparated(
@@ -969,7 +1003,7 @@ class BaseModel(torch.nn.Module):
         self,
         dataset: Union[data.DataContainer, data.DataSet, data.DataSubSet],
         batch_size: Optional[int] = 32,
-        num_workers: Optional[int] = 1,
+        num_workers: Optional[int] = 0,
         **kwargs,
     ) -> Dict[str, torch.Tensor]:
 
@@ -996,36 +1030,39 @@ class BaseModel(torch.nn.Module):
         dataloader = data.DataLoader(
             dataset,
             batch_size,
-            [],
+            dataset.get_metadata()['load_properties'],
             False,
             num_workers,
             self.device,
             self.dtype)
 
+        # Prepare result dictionary
+        results = {}
+
         # Iterate over data batches
         for ib, batch in enumerate(dataloader):
-            
+
             # Predict model properties from data batch
-            prediction = self.forward(batch, **kwargs)
+            batch = self.forward(batch, **kwargs)
 
             # Append prediction to result dictionary
             for prop in self.model_properties:
                 if results.get(prop) is None:
-                    results[prop] = [prediction[prop].cpu().detach()]
+                    results[prop] = [batch[prop].cpu().detach()]
                 else:
-                    results[prop].append(prediction[prop].cpu().detach())
-    
+                    results[prop].append(batch[prop].cpu().detach())
+
         # Concatenate results
         for prop in self.model_properties:
-            if ib and prediction[prop][0].shape:
-                results[prop] = torch.cat(prediction[prop])
+            if ib and results[prop][0].shape:
+                results[prop] = torch.cat(results[prop])
             elif ib:
                 results[prop] = torch.cat(
-                    [result.reshape(1) for result in prediction[prop]], dim=0)
+                    [result.reshape(1) for result in results[prop]], dim=0)
             else:
-                results[prop] = prediction[prop][0]
+                results[prop] = results[prop][0]
 
-        return prediction
+        return results
 
     def compute_neighborlist(
         self,
@@ -1283,17 +1320,17 @@ class BaseModel(torch.nn.Module):
 
         # Compute detraced outer product
         outer_product = positions_cog.unsqueeze(-1)*positions_cog.unsqueeze(-2)
-        outer_product = (
-            outer_product
-            - torch.diag_embed(
-                torch.tile(
-                    outer_product.diagonal(
-                        dim1=-2, dim2=-1).mean(
-                            dim=-1, keepdim=True),
-                    (1, 3)
-                )
-            )
-        )
+        # detraced_outer_product = (
+        #     outer_product
+        #     - torch.diag_embed(
+        #         torch.tile(
+        #             outer_product.diagonal(
+        #                 dim1=-2, dim2=-1).mean(
+        #                     dim=-1, keepdim=True),
+        #             (1, 3)
+        #         )
+        #     )
+        # )
 
         # Compute molecular quadrupole moment from atomic charges
         batch['quadrupole'] = torch.zeros(

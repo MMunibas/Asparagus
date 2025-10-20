@@ -877,13 +877,12 @@ class MLMM_electrostatics(torch.nn.Module):
             factor_charge, _ = utils.check_units(
                 unit_properties.get('charge'))
     
-        # Convert 1/(2*4*pi*epsilon) from e**2/eV/Ang to model units
+        # Convert 1/(4*pi*epsilon) from e**2/eV/Ang to model units
         ke_ase = 14.399645351950548
         ke = torch.tensor(
             ke_ase*factor_charge**2/factor_energy/factor_positions,
             device=self.device, dtype=self.dtype)
-        self.register_buffer(
-            'ke', ke)
+        self.register_buffer('ke', ke)
 
         return
 
@@ -926,7 +925,7 @@ class MLMM_electrostatics(torch.nn.Module):
         # If verbose, store a copy of the electrostatic atomic energy 
         # contributions
         if verbose:
-            batch['electrostatic_atomic_energies'] = Eelec_atom.detach()
+            batch['mlmm_electrostatic_atomic_energies'] = Eelec_atom.detach()
 
         return batch
 
@@ -1000,8 +999,8 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         """
 
         # Compute reciprocal distances
-        distances = batch['mlmm_distances_uv']
-        chi = 1.0/distances
+        mlmm_distances = batch['mlmm_distances_uv']
+        chi = 1.0/mlmm_distances
 
         # Gather atomic charge pairs
         ml_atomic_charges_u = batch['atomic_charges'][batch['mlmm_idx_u']]
@@ -1018,7 +1017,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
             chi2 = chi**2
 
             # Normalize atom pair vectors
-            chi_vectors = batch['mlmm_vectors_uv']/distances.unsqueeze(-1)
+            chi_vectors = batch['mlmm_vectors_uv']/mlmm_distances.unsqueeze(-1)
 
             # Gather ML atomic dipoles
             ml_atomic_dipoles_u = batch['atomic_dipoles'][batch['mlmm_idx_u']]
@@ -1029,6 +1028,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
             # Compute ML/MM dipole-charge electrostatics
             # Usually 1/r**3 but here one 1/r is already included in the
             # normalization of the atom pair connection vector.
+            # TODO check sign
             Eelec = Eelec - mm_atomic_charges_v*dot_vu*chi2
 
         # Compute ML/MM quadrupole-charge electrostatics
@@ -1056,7 +1056,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
             )
             chi_traceless_outer_product = (
                 traceless_outer_product
-                / torch.square(distances).unsqueeze(-1).unsqueeze(-1)
+                / torch.square(mlmm_distances).unsqueeze(-1).unsqueeze(-1)
             )
 
             # Sum up the product of quadrupole tensor and outer product 
@@ -1075,7 +1075,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
 
         # Apply interaction cutoff
         Eelec = torch.where(
-            distances <= self.cutoff,
+            mlmm_distances <= self.cutoff,
             Eelec,
             torch.zeros_like(Eelec))
 

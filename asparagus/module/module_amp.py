@@ -315,7 +315,9 @@ class Input_AMP(torch.nn.Module):
         distances = torch.norm(vectors, dim=-1)
 
         # Compute ML atom pair vectors outer product
-        outer_product = vectors.unsqueeze(-1)*vectors.unsqueeze(-2)
+        vectors_normalized = vectors/distances.unsqueeze(-1)
+        outer_product = (
+            vectors_normalized.unsqueeze(-1)*vectors_normalized.unsqueeze(-2))
 
         # Compute ML atom pair distance cutoff values
         cutoffs = self.cutoff(distances)
@@ -356,8 +358,10 @@ class Input_AMP(torch.nn.Module):
             distances_uv = torch.norm(vectors_uv, dim=-1)
             
             # Compute long-range ML atom pair vectors outer product
+            vectors_uv_normalized = vectors_uv/distances_uv.unsqueeze(-1)
             outer_product_uv = (
-                vectors_uv.unsqueeze(-1)*vectors_uv.unsqueeze(-2))
+                vectors_uv_normalized.unsqueeze(-1)
+                * vectors_uv_normalized.unsqueeze(-2))
 
             # ML/MM approach - Point ML atom pair indices from full ML/MM
             # system to the ML system indices 
@@ -407,8 +411,10 @@ class Input_AMP(torch.nn.Module):
         mlmm_distances = torch.norm(mlmm_vectors, dim=-1)
 
         # Compute ML-MM atom pair vectors outer product
+        mlmm_vectors_normalized = mlmm_vectors/mlmm_distances.unsqueeze(-1)
         mlmm_outer_product = (
-            mlmm_vectors.unsqueeze(-1)*mlmm_vectors.unsqueeze(-2))
+            mlmm_vectors_normalized.unsqueeze(-1)
+            * mlmm_vectors_normalized.unsqueeze(-2))
 
         # Compute ML-MM atom pair distance cutoff values
         mlmm_cutoffs = self.cutoff(mlmm_distances)
@@ -440,14 +446,17 @@ class Input_AMP(torch.nn.Module):
                     positions[mlmm_idx_v] - positions[mlmm_idx_u]
                     + batch['mlmm_pbc_offset_uv'])
             else:
-                mlmm_vectors_uv = positions[mlmm_idx_v] - positions[mlmm_idx_u]
+                mlmm_vectors_uv = positions[mlmm_idx_u] - positions[mlmm_idx_v]
             
             # Compute long-range  ML-MM atom pair distances
             mlmm_distances_uv = torch.norm(mlmm_vectors_uv, dim=-1)
 
             # Compute long-range ML-MM atom pair vectors outer product
+            mlmm_vectors_uv_normalized = (
+                mlmm_vectors_uv/mlmm_distances_uv.unsqueeze(-1))
             mlmm_outer_product_uv = (
-                mlmm_vectors_uv.unsqueeze(-1)*mlmm_vectors_uv.unsqueeze(-2))
+                mlmm_vectors_uv_normalized.unsqueeze(-1)
+                * mlmm_vectors_uv_normalized.unsqueeze(-2))
             
             # ML/MM approach - Point ML/MM atom pair indices u (ML atom) from
             # full ML/MM system to the ML system indices and store as 
@@ -1400,8 +1409,11 @@ class Output_AMP(torch.nn.Module):
         'atomic_energies': {
             **_default_output,
              },
+        'atomic_charges': {
+            **_default_output,
+             },
         }
-    
+
     # Default output block assignment to properties
     # key: output property
     # item: list -> [0]:    dict or None, output block options including the
@@ -1448,9 +1460,12 @@ class Output_AMP(torch.nn.Module):
             None,
             ['atomic_charges', 'atomic_quadrupoles']
             ],
+        # 'atomic_charges': [
+        #     None,
+        #     [],
+        #     ],
         'atomic_charges': [
-            None,
-            [],
+            _property_output_options['atomic_charges']
             ],
         'atomic_dipoles': [
             None,

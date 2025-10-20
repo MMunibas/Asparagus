@@ -75,9 +75,11 @@ class Model_AMP(model.BaseModel):
     model_dispersion_trainable: bool, optional, default False
         If True, empirical parameter in the D3 dispersion model are
         trainable. If False, empirical parameter are fixed to default
-    model_mlmm_embedding: bool, optional, default True
+    model_mlmm_embedding: bool, optional, default None
         Use ML/MM embedding scheme if two fragements (ML and MM) are available
-        in the input.
+        in the input and property requirements are matched.
+        If None, ML/MM embedding scheme is applied if atomic charges are 
+        available.
     model_num_threads: int, optional, default 4
         Sets the number of threads used for intraop parallelism on CPU.
     device: str, optional, default global setting
@@ -111,7 +113,7 @@ class Model_AMP(model.BaseModel):
             True,
         'model_dispersion':             True,
         'model_dispersion_trainable':   False,
-        'model_mlmm_embedding':         True,
+        'model_mlmm_embedding':         None,
         'model_num_threads':            4,
         }
 
@@ -180,6 +182,7 @@ class Model_AMP(model.BaseModel):
         model_repulsion_trainable: Optional[bool] = None,
         model_electrostatic: Optional[bool] = None,
         model_electrostatic_dipole: Optional[bool] = None,
+        model_electrostatic_quadrupole: Optional[bool] = None,
         model_dispersion: Optional[bool] = None,
         model_dispersion_trainable: Optional[bool] = None,
         model_mlmm_embedding: Optional[bool] = None,
@@ -304,6 +307,14 @@ class Model_AMP(model.BaseModel):
             else:
                 self.model_electrostatic = False
 
+        # If ML/MM embedding contribution is undefined, activate 
+        # contribution if atomic charges are predicted.
+        if self.model_mlmm_embedding is None:
+            if self.model_atomic_charges:
+                self.model_mlmm_embedding = True
+            else:
+                self.model_mlmm_embedding = False
+
         # Check repulsion, electrostatic and dispersion module requirement
         if self.model_repulsion and not self.model_energy:
             raise SyntaxError(
@@ -322,6 +333,15 @@ class Model_AMP(model.BaseModel):
             raise SyntaxError(
                 "Dispersion energy contribution is requested without "
                 + "having 'energy' assigned as model property!")
+        if self.model_mlmm_embedding and not self.model_energy:
+            raise SyntaxError(
+                "ML/MM Electrostatic energy contribution is requested without "
+                + "having 'energy' assigned as model property!")
+        if self.model_mlmm_embedding and not self.model_atomic_charges:
+            raise SyntaxError(
+                "ML/MM Electrostatic energy contribution is requested without "
+                + "having 'atomic_charges' or 'dipole' assigned as model "
+                + "property!")
 
         # Assign atom repulsion module
         if self.model_repulsion:
@@ -348,7 +368,7 @@ class Model_AMP(model.BaseModel):
                 **kwargs)
             self.module_dict['repulsion'] = repulsion_module
 
-        # Assign ML/ML and ML/MM electrostatic interaction module
+        # Assign ML/ML electrostatic interaction module
         if self.model_electrostatic:
 
             electrostatic_module = module.Damped_electrostatics(
@@ -362,17 +382,6 @@ class Model_AMP(model.BaseModel):
                 atomic_quadrupoles=self.model_atomic_quadrupoles,
                 **kwargs)
             self.module_dict['electrostatic'] = electrostatic_module
-
-            mlmm_electrostatic_module = module.MLMM_electrostatics(
-                self.model_mlmm_cutoff,
-                self.device,
-                self.dtype,
-                unit_properties=self.model_unit_properties,
-                truncation='None',
-                atomic_dipoles=self.model_atomic_dipoles,
-                atomic_quadrupoles=self.model_atomic_quadrupoles,
-                **kwargs)
-            self.module_dict['mlmm_electrostatic'] = mlmm_electrostatic_module
 
         # Assign dispersion interaction module
         if self.model_dispersion:
@@ -398,6 +407,20 @@ class Model_AMP(model.BaseModel):
                 d3_a2=d3_a2,
             )
             self.module_dict['dispersion'] = dispersion_module
+
+        # Assign ML/MM electrostatic interaction module
+        if self.model_mlmm_embedding:
+
+            mlmm_electrostatic_module = module.MLMM_electrostatics(
+                self.model_mlmm_cutoff,
+                self.device,
+                self.dtype,
+                unit_properties=self.model_unit_properties,
+                truncation='None',
+                atomic_dipoles=self.model_atomic_dipoles,
+                atomic_quadrupoles=self.model_atomic_quadrupoles,
+                **kwargs)
+            self.module_dict['mlmm_electrostatic'] = mlmm_electrostatic_module
 
         ###################################
         # # # AMP Miscellaneous Setup # # #
@@ -580,7 +603,7 @@ class Model_AMP(model.BaseModel):
         batch: Dict[str, torch.Tensor],
         no_derivation: bool = False,
         create_graph: bool = False,
-        verbose_results: bool = True,
+        verbose_results: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of AMP calculator model.

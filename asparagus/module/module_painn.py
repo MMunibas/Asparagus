@@ -1356,7 +1356,6 @@ class Output_PaiNN(torch.nn.Module):
             
             # Compute prediction
             batch[prop] = output_block(sfeatures, atomic_numbers)
-            print(prop, output_block.scaling[6])
 
         # Iterate over tensor output blocks
         for vprop, output_block in self.output_property_tensor_block.items():
