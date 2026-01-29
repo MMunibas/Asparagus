@@ -738,5 +738,19 @@ class Model_PhysNet(model.BaseModel):
                 results['atomic_charges'][..., None]*positions_com,
                 sys_i, dim=0, shape=(*atoms_number.shape, 3)
                 ).reshape(-1, 3)
+            
+            dipole_derivative = torch.zeros((3, positions.size(0), 3), device=positions.device)
+            for i in range(3):
+                dipole_component = results['dipole'][:, i]
+                grad_outputs = torch.ones_like(dipole_component)
+                dipole_derivative_component = torch.autograd.grad(
+                    outputs=dipole_component,
+                    inputs=positions,
+                    grad_outputs=grad_outputs,
+                    create_graph=True, # Needed if you ever need Hessian of Dipole (unlikely for VPT2 but safe)
+                    retain_graph=True
+                )[0]
+                dipole_derivative[i] = dipole_derivative_component
 
+            results['dipder'] = dipole_derivative
         return results
