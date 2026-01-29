@@ -335,5 +335,18 @@ class ASE_Calculator(ase_calc.Calculator):
 
             # Assign to results
             self.results[prop] = pred
+       if 'dipder' in prediction:
+            dipder_np = prediction['dipder'].cpu().detach().numpy()
 
+            if multi_sys:
+                if dipder_np.shape[0] == 3: # Assuming shape (3, N, 3)
+
+                     self.results['dipder'] = [
+                        dipder_np[:, atoms_batch['sys_i'] == i_sys, :]
+                        for i_sys in range(Nsys)
+                     ]
+                else:
+                     self.results['dipder'] = dipder_np
+            else:
+                self.results['dipder'] = dipder_np
         return
