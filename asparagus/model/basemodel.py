@@ -1168,14 +1168,47 @@ class BaseModel(torch.nn.Module):
 
         return batch
 
+    def compute_derivatives(
+        self,
+        batch: Dict[str, torch.Tensor],
+        create_graph: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute the derivatives forces and, eventually, Hessian of the
+        potential energy with respect to atom positions
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input and result data tensors for gradient and 
+            Hessian computation
+        create_graph: bool, optional, default False
+            Parameter for 'torch.autograd.grad' to force keeping derivative
+            graph if set to true.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+        
+        # Compute forces
+        batch = self.compute_forces(batch, create_graph=create_graph)
+        
+        # If demanded, compute Hessian (computationally expensive!)
+        if self.model_hessian:
+            self.compute_hessian(batch)
+
+        return batch
+
     def compute_forces(
         self,
         batch: Dict[str, torch.Tensor],
         create_graph: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """
-        Compute forces and, eventually, Hessian of the potential energy with
-        respect to atom positions
+        Compute forces of the potential energy with respect to atom positions
 
         Parameters
         ----------
@@ -1205,19 +1238,40 @@ class BaseModel(torch.nn.Module):
         # Provoke crashing if forces are none
         assert gradient is not None
         batch['forces'] = -gradient
-        
-        # If demanded, compute Hessian (computationally expensive!)
-        if self.model_hessian:
-            dim_hessian = 3*batch['positions'].size(0)
-            hessian = batch['energy'].new_zeros((dim_hessian, dim_hessian))
-            for ig, grad_i in enumerate(gradient.view(-1)):
-                hessian_ig = torch.autograd.grad(
-                    [grad_i],
-                    [batch['positions']],
-                    retain_graph=(ig < dim_hessian))[0]
-                if hessian_ig is not None:
-                    hessian[ig] = hessian_ig.view(-1)
-            batch['hessian'] = hessian
+
+        return batch
+
+    def compute_hessian(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute Hessian from the gradient with respect to atom positions
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of input and result data tensors for gradient and 
+            Hessian computation
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Model property predictions
+
+        """
+
+        # Compute Hessian (computationally expensive!)
+        dim_hessian = 3*batch['positions'].size(0)
+        hessian = batch['energy'].new_zeros((dim_hessian, dim_hessian))
+        for ig, grad_i in enumerate(-batch['forces'].view(-1)):
+            hessian_ig = torch.autograd.grad(
+                [grad_i],
+                [batch['positions']],
+                retain_graph=(ig < dim_hessian))[0]
+            if hessian_ig is not None:
+                hessian[ig] = hessian_ig.view(-1)
+        batch['hessian'] = hessian
 
         return batch
 
@@ -1249,21 +1303,24 @@ class BaseModel(torch.nn.Module):
 
         # In case of non-zero system charges, shift origin to center of
         # mass
-        atomic_masses = self.atomic_masses[batch['atomic_numbers']]
-        system_mass = torch.zeros_like(batch['charge']).scatter_add_(
-            0, batch['sys_i'], atomic_masses)
+        if 'positions_com' in batch:
+            positions_com = batch['positions_com']
+        else:
+            atomic_masses = self.atomic_masses[batch['atomic_numbers']]
+            system_mass = torch.zeros_like(batch['charge']).scatter_add_(
+                0, batch['sys_i'], atomic_masses)
 
-        system_com = torch.zeros(
-            (batch['atoms_number'].size(0), 3),
-            device=self.device, dtype=self.dtype)
-        system_com = (
-            system_com.scatter_add_(
-                0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-                atomic_masses.unsqueeze(-1)*positions_dipole
-                ).reshape(-1, 3)
-            / system_mass.unsqueeze(-1)
-            )
-        positions_com = positions_dipole - system_com[batch['sys_i']]
+            system_com = torch.zeros(
+                (batch['atoms_number'].size(0), 3),
+                device=self.device, dtype=self.dtype)
+            system_com = (
+                system_com.scatter_add_(
+                    0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                    atomic_masses.unsqueeze(-1)*positions_dipole
+                    ).reshape(-1, 3)
+                / system_mass.unsqueeze(-1)
+                )
+            positions_com = positions_dipole - system_com[batch['sys_i']]
 
         # Compute molecular dipole moment from atomic charges
         batch['dipole'] = torch.zeros_like(system_com).scatter_add_(
@@ -1318,19 +1375,44 @@ class BaseModel(torch.nn.Module):
             )
         positions_cog = positions_quadrupole - system_cog[batch['sys_i']]
 
+#         # In case of non-zero system charges, shift origin to center of
+#         # mass
+#         if 'positions_com' in batch:
+#             positions_com = batch['positions_com']
+#         else:
+#             atomic_masses = self.atomic_masses[batch['atomic_numbers']]
+#             system_mass = torch.zeros_like(batch['charge']).scatter_add_(
+#                 0, batch['sys_i'], atomic_masses)
+#         
+#             system_com = torch.zeros(
+#                 (batch['atoms_number'].size(0), 3),
+#                 device=self.device, dtype=self.dtype)
+#             system_com = (
+#                 system_com.scatter_add_(
+#                     0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+#                     atomic_masses.unsqueeze(-1)*positions_quadrupole
+#                     ).reshape(-1, 3)
+#                 / system_mass.unsqueeze(-1)
+#                 )
+#             positions_com = positions_quadrupole - system_com[batch['sys_i']]
+
         # Compute detraced outer product
         outer_product = positions_cog.unsqueeze(-1)*positions_cog.unsqueeze(-2)
-        # detraced_outer_product = (
-        #     outer_product
-        #     - torch.diag_embed(
-        #         torch.tile(
-        #             outer_product.diagonal(
-        #                 dim1=-2, dim2=-1).mean(
-        #                     dim=-1, keepdim=True),
-        #             (1, 3)
-        #         )
-        #     )
-        # )
+        # outer_product = positions_com.unsqueeze(-1)*positions_com.unsqueeze(-2)
+        # outer_product = (
+        #     positions_quadrupole.unsqueeze(-1)
+        #     * positions_quadrupole.unsqueeze(-2))
+        detraced_outer_product = (
+            3.0*outer_product
+            - torch.diag_embed(
+                torch.tile(
+                    outer_product.diagonal(
+                        dim1=-2, dim2=-1).sum(
+                            dim=-1, keepdim=True),
+                    (1, 3)
+                )
+            )
+        )
 
         # Compute molecular quadrupole moment from atomic charges
         batch['quadrupole'] = torch.zeros(
@@ -1340,8 +1422,17 @@ class BaseModel(torch.nn.Module):
                 0,
                 batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
                 batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
-                * outer_product
+                * detraced_outer_product
             )
+
+        # print(batch['quadrupole'][0])
+        # print(batch['atomic_charges'][:3])
+        # print(detraced_outer_product[:3])
+        # print(
+        #     (batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
+        #     * detraced_outer_product)[:3])
+        # print(batch['reference']['quadrupole'][:9].reshape(3,3))
+        # exit()
 
         # Refine molecular quadrupole moment with atomic quadrupole moments
         if self.model_atomic_quadrupoles:

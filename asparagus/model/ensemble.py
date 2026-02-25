@@ -156,11 +156,11 @@ class EnsembleModel(torch.nn.Module):
             self.model_calculator_list[0].model_properties.copy())
         self.model_unit_properties = (
             self.model_calculator_list[0].model_unit_properties.copy())
-        for prop in self.model_calculator_list[0].model_properties:
-            prop_std = f"std_{prop:s}"
-            self.model_properties.append(prop_std)
-            self.model_unit_properties[prop_std] = (
-                self.model_calculator_list[0].model_unit_properties[prop])
+        # for prop in self.model_calculator_list[0].model_properties:
+        #     prop_std = f"std_{prop:s}"
+        #     self.model_properties.append(prop_std)
+        #     self.model_unit_properties[prop_std] = (
+        #         self.model_calculator_list[0].model_unit_properties[prop])
 
         # Model cutoff ranges
         if hasattr(self.model_calculator_list[0], 'model_cutoff'):
@@ -401,7 +401,7 @@ class EnsembleModel(torch.nn.Module):
 
         # Iterate over ensemble models
         for ic, model_calculator in enumerate(self.model_calculator_list):
-            model_results[ic] = model_calculator(
+            batch[ic] = model_calculator(
                 batch,
                 no_derivation=no_derivation,
                 verbose_results=verbose_results)
@@ -409,18 +409,17 @@ class EnsembleModel(torch.nn.Module):
         # Accumulate model results
         for prop in self.model_properties:
             prop_std = f"std_{prop:s}"
-            ensemble_results[prop_std], ensemble_results[prop] = (
+            batch[prop_std], batch[prop] = (
                 torch.std_mean(
                     torch.stack(
-                        [results[prop] for results in model_results.values()]),
+                        [
+                            batch[ic][prop]
+                            for ic in range(self.model_ensemble_num)
+                        ]),
                     dim=0)
                 )
 
-        # Update model ensemble results with single results, if requested
-        if verbose_results:
-            ensemble_results.update(model_results)
-
-        return ensemble_results
+        return batch
 
     def calculate(
         self,

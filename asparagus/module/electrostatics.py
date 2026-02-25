@@ -489,73 +489,73 @@ class Damped_electrostatics_ShiftedPotential(torch.nn.Module):
         # Compute damped charge-charge electrostatics
         Eelec = atomic_charges_u*atomic_charges_v*(chi - chi_shift)
 
-        # Compute damped charge-dipole and dipole-dipole electrostatics
-        if self.atomic_dipoles:
-
-            # Compute powers of damped reciprocal distances
-            chi2 = chi**2
-            chi3 = chi2*chi
-            chi2_shift = chi_shift**2
-            chi3_shift = chi2_shift*chi_shift
-
-            # Normalize atom pair vectors
-            chi_vectors = batch['vectors_uv']/distances.unsqueeze(-1)
-
-            # Gather atomic dipole pairs
-            atomic_dipoles_u = batch['atomic_dipoles'][batch['idx_u']]
-            atomic_dipoles_v = batch['atomic_dipoles'][batch['idx_v']]
-
-            # Compute dot products of atom pair vector and atomic dipole
-            dot_uv = torch.sum(chi_vectors*atomic_dipoles_v, dim=1)
-            dot_vu = torch.sum(chi_vectors*atomic_dipoles_u, dim=1)
-
-            # Compute damped charge-dipole electrostatics (times 2 to counter
-            # kehalf = ke/2, as charge(i)-dipole(j) != charge(j)-dipole(i))
-            Eelec = Eelec + 2.0*atomic_charges_u*dot_uv*(chi2 - chi2_shift)
-
-            # Compute damped dipole-dipole electrostatics
-            Eelec = Eelec + (
-                torch.sum(atomic_dipoles_u*atomic_dipoles_v, dim=1)
-                - 3*dot_uv*dot_vu
-                )*(chi3 - chi3_shift)
-
-        if self.atomic_quadrupoles:
-            
-            # Here, only the charge-quadrupole interaction is included!
-
-            # Gather atomic quadrupole pairs
-            # atomic_quadrupoles_u = batch['atomic_quadrupoles'][batch['idx_u']]
-            atomic_quadrupoles_v = batch['atomic_quadrupoles'][batch['idx_v']]
-
-            # Normalize traceless outer product
-            # Here, traceless outer procuct already divided by 3.
-            traceless_outer_product = (
-                batch['outer_product_uv']
-                - torch.diag_embed(
-                    torch.tile(
-                        batch['outer_product_uv'].diagonal(
-                            dim1=-2, dim2=-1).mean(
-                                dim=-1, keepdim=True),
-                        (1, 3)
-                    )
-                )
-            )
-            chi_traceless_outer_product = (
-                traceless_outer_product
-                / torch.square(distances).unsqueeze(-1).unsqueeze(-1)
-            )
-
-            # Sum up the product of quadrupole tensor and outer product 
-            # components
-            sum_uv = torch.sum(
-                chi_traceless_outer_product*atomic_quadrupoles_v, dim=(1, 2))
-
-            # Compute damped charge-quadrupole electrostatics (by physics times
-            # 0.5 but also times 2 (= 1) to counter kehalf = ke/2, as 
-            # charge(i)-quadrupole(j) != charge(j)-quadrupole(i)).
-            # Usually 1/r**5 but here one 1/r**2 is already included in the
-            # normalization of the outer product.
-            Eelec = Eelec + atomic_charges_u*sum_uv*(chi3 - chi3_shift)
+#         # Compute damped charge-dipole and dipole-dipole electrostatics
+#         if self.atomic_dipoles:
+# 
+#             # Compute powers of damped reciprocal distances
+#             chi2 = chi**2
+#             chi3 = chi2*chi
+#             chi2_shift = chi_shift**2
+#             chi3_shift = chi2_shift*chi_shift
+# 
+#             # Normalize atom pair vectors
+#             chi_vectors = batch['vectors_uv']/distances.unsqueeze(-1)
+# 
+#             # Gather atomic dipole pairs
+#             atomic_dipoles_u = batch['atomic_dipoles'][batch['idx_u']]
+#             atomic_dipoles_v = batch['atomic_dipoles'][batch['idx_v']]
+# 
+#             # Compute dot products of atom pair vector and atomic dipole
+#             dot_uv = torch.sum(chi_vectors*atomic_dipoles_v, dim=1)
+#             dot_vu = torch.sum(chi_vectors*atomic_dipoles_u, dim=1)
+# 
+#             # Compute damped charge-dipole electrostatics (times 2 to counter
+#             # kehalf = ke/2, as charge(i)-dipole(j) != charge(j)-dipole(i))
+#             Eelec = Eelec + 2.0*atomic_charges_u*dot_uv*(chi2 - chi2_shift)
+# 
+#             # Compute damped dipole-dipole electrostatics
+#             Eelec = Eelec + (
+#                 torch.sum(atomic_dipoles_u*atomic_dipoles_v, dim=1)
+#                 - 3*dot_uv*dot_vu
+#                 )*(chi3 - chi3_shift)
+# 
+#         if self.atomic_quadrupoles:
+#             
+#             # Here, only the charge-quadrupole interaction is included!
+# 
+#             # Gather atomic quadrupole pairs
+#             # atomic_quadrupoles_u = batch['atomic_quadrupoles'][batch['idx_u']]
+#             atomic_quadrupoles_v = batch['atomic_quadrupoles'][batch['idx_v']]
+# 
+#             # Normalize traceless outer product
+#             # Here, traceless outer procuct already divided by 3.
+#             traceless_outer_product = (
+#                 batch['outer_product_uv']
+#                 - torch.diag_embed(
+#                     torch.tile(
+#                         batch['outer_product_uv'].diagonal(
+#                             dim1=-2, dim2=-1).mean(
+#                                 dim=-1, keepdim=True),
+#                         (1, 3)
+#                     )
+#                 )
+#             )
+#             chi_traceless_outer_product = (
+#                 traceless_outer_product
+#                 / torch.square(distances).unsqueeze(-1).unsqueeze(-1)
+#             )
+# 
+#             # Sum up the product of quadrupole tensor and outer product 
+#             # components
+#             sum_uv = torch.sum(
+#                 chi_traceless_outer_product*atomic_quadrupoles_v, dim=(1, 2))
+# 
+#             # Compute damped charge-quadrupole electrostatics (by physics times
+#             # 0.5 but also times 2 (= 1) to counter kehalf = ke/2, as 
+#             # charge(i)-quadrupole(j) != charge(j)-quadrupole(i)).
+#             # Usually 1/r**5 but here one 1/r**2 is already included in the
+#             # normalization of the outer product.
+#             Eelec = Eelec + atomic_charges_u*sum_uv*(chi3 - chi3_shift)
 
         # Sum electrostatic contributions
         Eelec = self.kehalf*Eelec

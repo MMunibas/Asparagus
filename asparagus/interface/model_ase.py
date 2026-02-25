@@ -291,7 +291,7 @@ class ASE_Calculator(ase_calc.Calculator):
 
         # Convert model properties
         self.results = self.assign_prediction(self.atoms_batch)
-
+        
         return self.results
 
     def assign_prediction(

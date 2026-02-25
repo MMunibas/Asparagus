@@ -596,7 +596,7 @@ class Model_PhysNet(model.BaseModel):
 
         # Compute gradients and Hessian if demanded
         if self.model_forces and not no_derivation:
-            batch = self.compute_forces(batch, create_graph=create_graph)
+            batch = self.compute_derivatives(batch, create_graph=create_graph)
 
         # Compute molecular dipole
         if self.model_dipole:

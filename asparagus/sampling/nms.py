@@ -419,15 +419,19 @@ class NormalModeScanner(sampling.Sampler):
         # Compute and store equilibrium positions and center of mass,
         # moments of inertia and principle axis of inertia
         system_init_positions = system.get_positions()
-        if reset_com and nms_indeces is not None:
-        		self.logger.warning(f"The center of mass of the system would be recalculated" 
-                                + f"The new COM is on atoms:{atom_indices:i}" 
-                                + "This might lead to identifying vibrations as translations")
-        		system_init_com = system[atom_indices].get_center_of_mass()
+        if reset_com and nms_indices is not None:
+            self.logger.warning(
+                "The center of mass of the system would be recalculated!\n" 
+                + f"The new COM is on atoms: '{atom_indices}'\n" 
+                + "This might lead to identifying vibrations as "
+                + "translations")
+            system_init_com = system[atom_indices].get_center_of_mass()
         else:
-        		self.logger.warning(f"The Center of Mass to use would be the same for the complete molecule")
-        		system_init_com = system.get_center_of_mass()
-        	
+            self.logger.warning(
+                "The Center of Mass to use would be the same for the "
+                + "complete molecule")
+            system_init_com = system.get_center_of_mass()
+
         # Compute and compare same quantities for displaced system
         system_com_shift = np.zeros(Nmodes, dtype=float)
         system_mode_shift = np.zeros(Nmodes, dtype=float)
@@ -479,23 +483,26 @@ class NormalModeScanner(sampling.Sampler):
                         + "vibrational modes!")
 
         if nms_frequency_range is not None:
+
             # Initially include all modes
             include_modes = np.ones_like(system_vib_modes)
             combined_mask = np.zeros_like(system_vib_modes)
             interval_mask = np.ones_like(system_vib_modes)
             has_upper = False
+
             # Iterate over all exclusion conditions
             for (condition, frequency) in nms_frequency_range:
+
                 # Compare absolute if requested
                 if '||' in condition:
                     comp_frequencies = np.abs(system_frequencies)
                 else:
                     comp_frequencies = system_frequencies
 
-                #Remove the absolute value from the condition
+                # Remove the absolute value from the condition
                 cond_clean = condition.replace("||","")
-                is_lower = cond_clean in (">=",">")
-                is_upper = cond_clean in ("<=","<")
+                is_lower = cond_clean in (">=", ">")
+                is_upper = cond_clean in ("<=", "<")
                 
                 if is_lower and has_upper:
                     combined_mask = np.logical_or(combined_mask,interval_mask)
@@ -524,8 +531,9 @@ class NormalModeScanner(sampling.Sampler):
                 # Mask for the interval
                 interval_mask = np.logical_and(interval_mask, cond_mask)
 
-            #Combine all masks
+            # Combine all masks
             combined_mask = np.logical_or(combined_mask, interval_mask)
+
             # Modes to be kept
             include_modes = np.logical_and(include_modes, combined_mask)
 
