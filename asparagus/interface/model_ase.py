@@ -104,8 +104,9 @@ class ASE_Calculator(ase_calc.Calculator):
         # Get unit conversion dictionary
         self.model_conversion = self.check_model_units(
             self.model_calculator.model_unit_properties)
-
+        
         # Initialize atoms object batch
+        
         self.charge = charge
         if atoms is None:
             self.atoms_batch = {}
@@ -224,9 +225,9 @@ class ASE_Calculator(ase_calc.Calculator):
     def calculate(
         self,
         atoms: Optional[Union[ase.Atoms, List[ase.Atoms]]] = None,
-        properties: Optional[List[str]] = None,
-        system_changes: Optional[List[str]] = ase_calc.all_changes,
         charge: Optional[Union[float, List[float]]] = None,
+        properties: List[str] = None,
+        system_changes: List[str] = ase_calc.all_changes,
         verbose_results: Optional[bool] = False
     ) -> Dict[str, Any]:
         """
@@ -262,10 +263,6 @@ class ASE_Calculator(ase_calc.Calculator):
                 "ASE atoms object is not defined!")
         elif atoms is None:
             atoms = self.atoms
-        elif self.atoms is None:
-            self.atoms = atoms
-            # Potential different atom system needs a reset of the atom batch
-            self.atoms_batch = {}
         elif not (
             len(atoms) == len(self.atoms)
             and np.all(atoms.numbers == self.atoms.numbers)
@@ -273,88 +270,118 @@ class ASE_Calculator(ase_calc.Calculator):
             # Different atoms system needs a reset of the atom batch
             self.atoms_batch = {}
 
-        # Check system charge input
-        if charge is None:
-            charge = self.charge
-
         # Prepare or update atoms data batch
         self.atoms_batch = self.update_model_input(
                 self.atoms_batch,
                 atoms,
-                charge=charge,
-                )
+                charge)
 
         # Compute model properties
-        self.atoms_batch = self.model_calculator(
+        prediction = self.model_calculator(
             self.atoms_batch,
             verbose_results=verbose_results)
 
         # Convert model properties
-        self.results = self.assign_prediction(self.atoms_batch)
-        
+        self.assign_prediction(prediction, self.atoms_batch)
+
         return self.results
 
     def assign_prediction(
         self,
+        prediction: Dict[str, torch.Tensor],
         atoms_batch: Dict[str, torch.Tensor],
-    ) -> Dict[str, np.ndarray]:
+    ):
         """
         Convert and assign and model prediction to the results dictionary.
         
         Parameter
         ---------
+        prediction: list(float)
+            Model prediction dictionary for ASE atoms system in batch
         atoms_batch: dict(str, torch.Tensor)
-            ASE atoms systems data batch containing model predictions
-
-        Returns
-        -------
-        dict
-            Model results
+            ASE atoms systems data batch
 
         """
 
-        # Initialize results dictionary
-        results = {}
-
         # Check for multiple system prediction
-        multi_sys = atoms_batch['atoms_number'].shape[0] > 1
-        Nsys = atoms_batch['atoms_number'].shape[0]
-        Natoms = atoms_batch['atomic_numbers'].shape[0]
-        Npairs = atoms_batch['idx_i'].shape[0]
+        multi_sys = len(atoms_batch['atoms_number']) > 1
+        if multi_sys:
+            Nsys = atoms_batch['atoms_number'].shape[0]
+            Natoms = atoms_batch['atomic_numbers'].shape[0]
+            Npairs = atoms_batch['idx_i'].shape[0]
 
         # Iterate over model properties
         for prop in self.implemented_properties:
 
             # Convert property prediction
+            pred = (
+                prediction[prop].cpu().detach().numpy()
+                *self.model_conversion[prop])
+            conversion = self.model_conversion.get(prop, 1.0)
             prediction = (
                 atoms_batch[prop].cpu().detach().numpy()
-                *self.model_conversion[prop])
+                * conversion)
 
-            # Check prediction shape system-wise
+            # ==================================================================
+            # NEW: Intercept 'dipder' before standard shape checks
+            # Shape is (3 components, N_total_atoms, 3 coordinates)
+            # ==================================================================
+            if prop == 'dipder':
+                if multi_sys:
+                    sys_i_np = atoms_batch['sys_i'].cpu().detach().numpy()
+                    # Slice along the Natoms axis (index 1) for each system
+                    results[prop] = [
+                        prediction[:, sys_i_np == i_sys, :]
+                        for i_sys in range(Nsys)
+                    ]
+                else:
+                    # Single system, assign directly
+                    results[prop] = prediction
+                    
+                continue
+            # ==================================================================
+
+            # Resolve prediction system-wise
             if multi_sys:
 
-                if not prediction.shape:
+                if not pred.shape:
                     pass
+                elif pred.shape[0] == Nsys:
+                    pred = [pred_i for pred_i in pred]
+                elif pred.shape[0] == Natoms:
+                    pred = [
+                        pred[atoms_batch['sys_i'] == i_sys]
+                        for i_sys in range(Nsys)]
+                elif pred.shape[0] == Npairs:
+                    pred = [
+                        pred[
+                            atoms_batch['sys_i'][atoms_batch['idx_i']] == i_sys
                 elif prediction.shape[0] == Nsys:
                     prediction = [pred_i for pred_i in prediction]
                 elif prediction.shape[0] == Natoms:
                     prediction = [
-                        prediction[atoms_batch['sys_i'] == i_sys]
+                        prediction[atoms_batch['sys_i'].cpu().numpy() == i_sys]
                         for i_sys in range(Nsys)]
                 elif prediction.shape[0] == Npairs:
                     prediction = [
                         prediction[
-                            atoms_batch['sys_i'][atoms_batch['idx_i']] == i_sys
+                            atoms_batch['sys_i'][atoms_batch['idx_i']].cpu().numpy() == i_sys
                         ] for i_sys in range(Nsys)]
 
-            else:
-                
-                if not prediction.shape:
-                    pass
-                elif prediction.shape[0] == 1:
-                    prediction = prediction[0]
-
             # Assign to results
-            results[prop] = prediction
+            self.results[prop] = pred
+       if 'dipder' in prediction:
+            dipder_np = prediction['dipder'].cpu().detach().numpy()
 
-        return results
+            if multi_sys:
+                if dipder_np.shape[0] == 3: # Assuming shape (3, N, 3)
+
+                     self.results['dipder'] = [
+                        dipder_np[:, atoms_batch['sys_i'] == i_sys, :]
+                        for i_sys in range(Nsys)
+                     ]
+                else:
+                     self.results['dipder'] = dipder_np
+            else:
+                self.results['dipder'] = dipder_np
+        return
