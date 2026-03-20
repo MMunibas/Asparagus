@@ -20,7 +20,7 @@ from asparagus import utils
 __all__ = ['connect', 'DataBase_SQLite3']
 
 # Current SQLite3 database version
-VERSION = 3
+VERSION = 4
 
 all_tables = ['systems']
 
@@ -71,8 +71,21 @@ init_systems_version = {
             fragments BLOB,
             """
         ],
+    4: [
+            """CREATE TABLE systems (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mtime TEXT,
+            username TEXT,
+            atoms_number BLOB,
+            atomic_numbers BLOB,
+            positions BLOB,
+            charge BLOB,
+            cell BLOB,
+            pbc BLOB,
+            fragment_numbers BLOB,
+            """
+        ],
     }
-
 
 init_information = [
     """CREATE TABLE information (
@@ -111,6 +124,15 @@ structure_properties_dtype_version = {
             'atom_types':       'U4',
             'fragments':        np.int32,
         },
+    4: {
+            'atoms_number':     np.int32,
+            'atomic_numbers':   np.int32,
+            'positions':        np.float32,
+            'charge':           np.float32,
+            'cell':             np.float32,
+            'pbc':              np.bool_,
+            'fragment_numbers': np.int32,
+        },
 }
 
 # Structural property labels and array shape
@@ -144,15 +166,27 @@ structure_properties_shape_version = {
             'atom_types':       (-1,),
             'fragments':        (-1,),
     },
+    4: {
+            'atoms_number':     (-1,),
+            'atomic_numbers':   (-1,),
+            'positions':        (-1, 3,),
+            'charge':           (-1,),
+            'cell':             (-1, 9,),
+            'pbc':              (-1, 3,),
+            'fragment_numbers': (-1,),
+    },
 }
 reference_properties_shape = {
     # 'energy':               (-1,),
     # 'atomic_energies':      (-1,),
     'forces':               (-1, 3,),
+    'mm_forces':            (-1, 3,),
     # 'hessian':              (-1,),
     # 'atomic_charges':       (-1,),
     # 'dipole':               (3),
     # 'atomic_dipoles':       (-1,),
+    # 'quadrupole':           (-1, 9,),
+    # 'atomic_quadrupole':    (-1, 9,),
     'polarizability':       (3, 3,),
     # 'fragment_energies':    (-1,),
     # 'interaction_energy':   (-1,),
@@ -555,11 +589,11 @@ class DataBase_SQLite3(data.DataBase):
                     con.execute(statement)
                 con.commit()
 
-        # # Check version compatibility
-        # if self.version > VERSION:
-        #     raise IOError(
-        #         f"Can not read newer version of the database format "
-        #         f"(version {self.version}).")
+        # Check version compatibility
+        if self.version > VERSION:
+            raise IOError(
+                f"Can not read newer version of the database format "
+                f"(version {self.version}).")
 
         return
 

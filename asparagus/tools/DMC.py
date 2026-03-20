@@ -394,17 +394,17 @@ class DMC:
             conversion=self.ase_conversion)
 
         # First evaluation of the potential energy
-        results_initial = self.model_calculator(
+        batch_initial = self.model_calculator(
             batch_initial,
             no_derivation=True)
         energy_initial = (
-            results_initial['energy'].cpu().detach().numpy()
+            batch_initial['energy'].cpu().detach().numpy()
             * self.dmc_conversion['energy'])
-        results_minimum = self.model_calculator(
+        batch_minimum = self.model_calculator(
             batch_minimum,
             no_derivation=True)
         energy_minimum = (
-            results_minimum['energy'].cpu().detach().numpy()
+            batch_minimum['energy'].cpu().detach().numpy()
             * self.dmc_conversion['energy'])
 
         # Initialize the DMC
@@ -818,11 +818,11 @@ class DMC:
                 charge=self.charge,
                 conversion=self.ase_conversion)
 
-            w_results = self.model_calculator(
+            w_batch = self.model_calculator(
                 w_batch,
                 no_derivation=True)
             w_energies = (
-                w_results['energy'].cpu().detach().numpy()
+                w_batch['energy'].cpu().detach().numpy()
                 * self.dmc_conversion['energy'])
 
         else:
@@ -848,11 +848,11 @@ class DMC:
                     charge=self.charge,
                     conversion=self.ase_conversion)
 
-                w_results_batch = self.model_calculator(
-                                w_batch,
-                                no_derivation=True)
+                w_batch = self.model_calculator(
+                    w_batch,
+                    no_derivation=True)
                 w_energies_batch = (
-                    w_results_batch['energy'].cpu().detach().numpy()
+                    w_batch['energy'].cpu().detach().numpy()
                     * self.dmc_conversion['energy'])
 
                 # Assign batch energies

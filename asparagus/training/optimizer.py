@@ -119,8 +119,8 @@ def get_optimizer(
 
             raise ValueError(
                 f"Optimizer class '{trainer_optimizer}' is not valid!" +
-                "Choose from:\n" +
-                str(optimizer_avaiable.keys()))
+                "Choose from:\n"
+                + str(optimizer_avaiable.keys()))
 
     else:
 

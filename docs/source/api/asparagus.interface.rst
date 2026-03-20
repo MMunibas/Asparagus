@@ -20,6 +20,14 @@ asparagus.interface.model\_ase module
    :undoc-members:
    :show-inheritance:
 
+asparagus.interface.model\_openmm module
+----------------------------------------
+
+.. automodule:: asparagus.interface.model_openmm
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 asparagus.interface.model\_pycharmm module
 ------------------------------------------
 

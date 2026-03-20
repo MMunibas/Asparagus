@@ -7,8 +7,64 @@ import torch
 from asparagus import utils
 
 
+def encode_str2int(
+    name: str,
+    nchar: Optional[int] = 4,
+) -> int:
+    """
+    Encode string of length 4 to a max 12-digit number of ncharx3 blocks of the
+    respective ASCII list number of each character.
+    
+    Parameters
+    ----------
+    name: str
+        Input name tag
+    nchar: int
+        Number of character to encode
+
+    Returns
+    -------
+    int
+        Encoded name tag
+
+    """
+
+    return int(''.join([f'{ord(char):03d}' for char in name[:nchar]]))
+
+
+def decode_int2str(
+    code: int,
+    nchar: Optional[int] = 4,
+) -> str:
+    """
+    Decode max 12-digit number into a 4 character string. Each of the ncharx3 
+    blocks of numbers are the ASCII list numbers of the respective character.
+    
+    Parameters
+    ----------
+    code: int
+        Encoded name tag number
+    nchar: int
+        Number of number blocks to decode
+
+    Returns
+    -------
+    str
+        Decoded Name tag
+
+    """
+    numbers = []
+    str_code = str(code)
+    for ii in range(nchar):
+        if ii:
+            numbers.append(int(str_code[-(ii + 1)*3:-ii*3]))
+        else:
+            numbers.append(int(str_code[-(ii + 1)*3:]))
+    return ''.join(chr(numb) for numb in numbers[::-1])
+
+
 def detach_tensor(
-    x: torch.Tensor
+    x: torch.Tensor,
 ) -> np.ndarray:
     """
     Detach a torch tensor from the computational graph
@@ -22,6 +78,7 @@ def detach_tensor(
     -------
     Any
         Detached input variable
+
     """
     if utils.in_cuda(x):
         x.cpu()
@@ -74,6 +131,7 @@ def segment_sum(
     torch.Tensor
         A tensor of the same type as data containing the results of the
         segmented summation.
+
     """
 
     if debug:
@@ -229,9 +287,8 @@ def _broadcast(
 def scatter_sum(
     data: torch.Tensor,
     index: torch.Tensor,
-    dim: int = 0,
+    dim: int = -1,
     out: Optional[torch.Tensor] = None,
-    shape: Optional[torch.Tensor] = None,
     dim_size: Optional[int] = None,
 ) -> torch.Tensor:
     """
@@ -241,42 +298,38 @@ def scatter_sum(
 
     Parameters
     ----------
-    data: torch.tensor
+    data: torch.Tensor
         Source segmented data tensor
-    index: torch.tensor
+    index: torch.Tensor
         Index array to assign source data to output tensor
-    dim: int, optional, default 0
+    dim: int, optional, default -1
         Dimension of output tensor to add source data
-    out: torch.tensor, optional, default None
+    out: torch.Tensor, optional, default None
         Output tensor to which source data are added.
         If None, output tensor shape is predicted (takes more time) and
         initialized as zero tensor with dtype and device of source data.
-    shape: torch.tensor, optional, default None
-        Output tensor shape used for the initialization of a zero tensor to
-        which source data are added.
-        If None, output tensor shape is predicted (takes more time).
-        Ignored if parameter for 'out' is provided.
     dim_size: int, optional, default None
         Size of output tensor shape at 'dim'.
         If None, it will be predicted by maximum number in index array (takes
         more time).
-        Ignored if a parameter for 'out' or 'shape' is provided.
+        Ignored if a parameter for 'out' is provided.
 
     Returns
     -------
-    torch.tensor
+    torch.Tensor
         Output tensor to which source data are added
 
     """
     index = _broadcast(index, data, dim)
     if out is None:
-        if shape is None:
-            shape = list(data.size())
-            if dim_size is not None:
-                shape[dim] = dim_size
-            elif index.numel() == 0:
-                shape[dim] = 0
-            else:
-                shape[dim] = int(index.max()) + 1
-        out = torch.zeros(shape, dtype=data.dtype, device=data.device)
-    return out.scatter_add_(dim, index, data)
+        size = list(data.size())
+        if dim_size is not None:
+            size[dim] = dim_size
+        elif index.numel() == 0:
+            size[dim] = 0
+        else:
+            size[dim] = int(index.max()) + 1
+        out = torch.zeros(size, dtype=data.dtype, device=data.device)
+        return out.scatter_add_(dim, index, data)
+    else:
+        return out.scatter_add_(dim, index, data)

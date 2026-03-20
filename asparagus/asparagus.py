@@ -932,6 +932,7 @@ class Asparagus():
         -------
         callable object
             PyCHARMM calculator object
+
         """
 
         ###################################
@@ -953,6 +954,62 @@ class Asparagus():
             **kwargs)
 
         return pycharmm_calculator
+
+    def get_openmm_potential(
+        self,
+        config: Optional[
+            Union[str, Dict[str, Any], settings.Configuration]] = None,
+        config_file: Optional[str] = None,
+        model_checkpoint: Optional[int] = None,
+        **kwargs
+    ) -> Callable:
+        """
+        Return OpenMM potential class object of the initialized model
+        calculator.
+
+        Parameters
+        ----------
+        config: (str, dict, object), optional, default 'self.config'
+            Either the path to json file (str), dictionary (dict) or
+            settings.config class object of model parameters
+        config_file: str, optional, default see settings.default['config_file']
+            Path to json file (str)
+        model_checkpoint: int, optional, default None
+            If None, load best model checkpoint. Otherwise define a checkpoint
+            index number of the respective checkpoint file.
+
+        Returns
+        -------
+        callable object
+            OpenMM potential object
+
+        """
+
+        ###################################
+        # # # Assign Model Calculator # # #
+        ###################################
+
+        model_calculator = self.get_model_calculator(
+            config=config,
+            config_file=config_file,
+            model_checkpoint=model_checkpoint,
+            **kwargs)
+
+        ####################################
+        # # # Prepare OpenMM Potential # # #
+        ####################################
+
+        # Load OpenMM-ML modules
+        from openmmml import mlpotential
+
+        # Register Asparagus potential factory to OpenMM-ML registry
+        mlpotential.MLPotential.registerImplFactory(
+            'asparagus', interface.AsparagusPotentialImplFactory())
+
+        # Return OpenMM model potential
+        return mlpotential.MLPotential(
+            'asparagus',
+            model_calculator=model_calculator)
 
     @property
     def config(self):

@@ -1,0 +1,8 @@
+REMARK  GENERATE LIGAND                                                               
+REMARK   DATE:    12/20/23     12:16:54      CREATED BY USER: apache                  
+ATOM      1  N1  AMM1    1       0.000   0.000  -0.000  1.00  0.00      AMM1
+ATOM      2  H11 AMM1    1      -0.341   0.964   0.000  1.00  0.00      AMM1
+ATOM      3  H12 AMM1    1       1.022   0.000  -0.000  1.00  0.00      AMM1
+ATOM      4  H13 AMM1    1      -0.341  -0.482  -0.835  1.00  0.00      AMM1
+TER       5      AMM1     1
+END

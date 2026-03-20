@@ -6,12 +6,16 @@ import torch
 #======================================
 
 def get_Output_PhysNet():
-    from .physnet_modules import Output_PhysNet
+    from .module_physnet import Output_PhysNet
     return Output_PhysNet
 
 def get_Output_PaiNN():
-    from .painn_modules import Output_PaiNN
+    from .module_painn import Output_PaiNN
     return Output_PaiNN
+
+def get_Output_AMP():
+    from .module_amp import Output_AMP
+    return Output_AMP
 
 
 #======================================
@@ -21,6 +25,7 @@ def get_Output_PaiNN():
 output_module_available = {
     'PhysNet'.lower(): get_Output_PhysNet,
     'PaiNN'.lower(): get_Output_PaiNN,
+    'AMP'.lower(): get_Output_AMP,
     }
 
 def get_output_module(

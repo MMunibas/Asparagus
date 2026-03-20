@@ -5,7 +5,7 @@ import torch
 
 from asparagus import utils
 
-__all__ = ['get_radial_fn', 'GaussianRBF', 'GaussianRBF_PhysNet']
+__all__ = ['get_radial_fn', 'GaussianRBF', 'GaussianRBF_PhysNet', 'SinusRBF']
 
 #======================================
 # Radial basis functions
@@ -163,6 +163,72 @@ class GaussianRBF_PhysNet(torch.nn.Module):
         return rbf
 
 
+class SinusRBF(torch.nn.Module):
+    """
+    Sinus kernel type radial basis functions.
+
+    Parameters
+    ----------
+    rbf_n_basis: int
+        Number of RBF center
+    rbf_center_start: float
+        Lower RBF cutoff limit - Ignored
+    rbf_center_end: float
+        Upper RBF cutoff limit
+    rbf_trainable: bool
+        Trainable RBF center positions
+    device: str, optional, default 'cpu'
+        Device type for model variable allocation
+    dtype: dtype object, optional, default 'torch.float64'
+        Model variables data type
+
+    """
+
+    def __init__(
+        self,
+        rbf_n_basis: int,
+        rbf_center_start: float,
+        rbf_center_end: float,
+        rbf_trainable: bool,
+        device: str,
+        dtype: 'dtype',
+    ):
+        """
+        Initialize sinus kernel radial basis function.
+
+        """
+
+        super(SinusRBF, self).__init__()
+
+        self.rbf_center_end = rbf_center_end
+
+        # Initialize sinus kernel frequencies
+        frequencies = (
+            2.0*torch.acos(torch.tensor(0.0))
+            * torch.arange(1.0, rbf_n_basis + 1.0)
+            ).to(device=device, dtype=dtype).unsqueeze(0)
+
+        if rbf_trainable:
+            self.frequencies = torch.nn.Parameter(frequencies)
+        else:
+            self.register_buffer("frequencies", frequencies)
+
+        return
+
+    def __str__(self):
+        return 'SinusRBF'        
+
+    def forward(
+        self,
+        d: torch.Tensor
+    ) -> torch.Tensor:
+
+        x = d.unsqueeze(-1)/self.rbf_center_end
+        rbf = torch.sin(self.frequencies*x/self.rbf_center_end)
+
+        return rbf
+
+
 #======================================
 # Function assignment
 #======================================
@@ -171,6 +237,7 @@ functions_avaiable = {
     'default'.lower(): GaussianRBF,
     'GaussianRBF'.lower(): GaussianRBF,
     'GaussianRBF_PhysNet'.lower(): GaussianRBF_PhysNet,
+    'SinusRBF'.lower(): SinusRBF,
     }
 
 

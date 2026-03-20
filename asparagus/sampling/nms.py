@@ -282,6 +282,7 @@ class NormalModeScanner(sampling.Sampler):
         nms_exclude_modes: List[int],
         nms_frequency_range: List[Tuple[str, float]],
         nms_clean: bool,
+        reset_com: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -418,12 +419,23 @@ class NormalModeScanner(sampling.Sampler):
         # Compute and store equilibrium positions and center of mass,
         # moments of inertia and principle axis of inertia
         system_init_positions = system.get_positions()
-        system_init_com = system[atom_indices].get_center_of_mass()
+        if reset_com and nms_indices is not None:
+            self.logger.warning(
+                "The center of mass of the system would be recalculated!\n" 
+                + f"The new COM is on atoms: '{atom_indices}'\n" 
+                + "This might lead to identifying vibrations as "
+                + "translations")
+            system_init_com = system[atom_indices].get_center_of_mass()
+        else:
+            self.logger.warning(
+                "The Center of Mass to use would be the same for the "
+                + "complete molecule")
+            system_init_com = system.get_center_of_mass()
 
         # Compute and compare same quantities for displaced system
         system_com_shift = np.zeros(Nmodes, dtype=float)
         system_mode_shift = np.zeros(Nmodes, dtype=float)
-
+        
         for imode, mode in enumerate(system_modes):
 
             # Normal mode displacements
@@ -441,7 +453,7 @@ class NormalModeScanner(sampling.Sampler):
             system_mode_shift[imode] = (
                 np.sum(
                     np.sum(
-                        system.get_masses().reshape(Natoms, 1)
+                        system.get_masses()[atom_indices].reshape(Natoms, 1)
                         * mode*check_scale
                         / np.sum(system.get_masses()),
                         axis=0
@@ -471,36 +483,43 @@ class NormalModeScanner(sampling.Sampler):
                         + "vibrational modes!")
 
         if nms_frequency_range is not None:
-            
+
             # Initially include all modes
             include_modes = np.ones_like(system_vib_modes)
-            
+            combined_mask = np.zeros_like(system_vib_modes)
+            interval_mask = np.ones_like(system_vib_modes)
+            has_upper = False
+
             # Iterate over all exclusion conditions
             for (condition, frequency) in nms_frequency_range:
-                
+
                 # Compare absolute if requested
                 if '||' in condition:
                     comp_frequencies = np.abs(system_frequencies)
                 else:
                     comp_frequencies = system_frequencies
+
+                # Remove the absolute value from the condition
+                cond_clean = condition.replace("||","")
+                is_lower = cond_clean in (">=", ">")
+                is_upper = cond_clean in ("<=", "<")
                 
-                # Modes are still include if conditions are matched
-                if '<=' in condition:
-                    include_modes = np.logical_and(
-                        include_modes, 
-                        comp_frequencies <= frequency)
-                elif '>=' in condition:
-                    include_modes = np.logical_and(
-                        include_modes, 
-                        comp_frequencies >= frequency)
-                elif '<' in condition:
-                    include_modes = np.logical_and(
-                        include_modes, 
-                        comp_frequencies < frequency)
-                elif '>' in condition:
-                    include_modes = np.logical_and(
-                        include_modes, 
-                        comp_frequencies >= frequency)
+                if is_lower and has_upper:
+                    combined_mask = np.logical_or(combined_mask,interval_mask)
+                    interval_mask = np.ones_like(system_vib_modes)
+                    has_upper = False
+
+                # First obtain the mask for the individual condition
+                if cond_clean == "<=":
+                    cond_mask = comp_frequencies <= frequency
+                    has_upper = True
+                elif cond_clean == ">=":
+                    cond_mask = comp_frequencies >= frequency
+                elif cond_clean == "<":
+                    cond_mask = comp_frequencies < frequency
+                    has_upper = True
+                elif cond_clean == ">":
+                    cond_mask = comp_frequencies > frequency
                 else:
                     raise SyntaxError(
                         f"Normal mode selection condition '{condition}' in "
@@ -508,6 +527,15 @@ class NormalModeScanner(sampling.Sampler):
                         + "recognized! Choose between ('<', '<=', '>=', '>') "
                         + "or for comparing absolute frequencies "
                         + "('<||', '<=||', '>=||', '>||')")
+
+                # Mask for the interval
+                interval_mask = np.logical_and(interval_mask, cond_mask)
+
+            # Combine all masks
+            combined_mask = np.logical_or(combined_mask, interval_mask)
+
+            # Modes to be kept
+            include_modes = np.logical_and(include_modes, combined_mask)
 
             # Combine normal mode exclusion list
             system_vib_modes = np.logical_and(system_vib_modes, include_modes)
@@ -1284,7 +1312,7 @@ class NormalModeSampler(sampling.Sampler):
             message += f"{system.get_chemical_formula():s}\n"
         else:
             message += f"{self.sample_data_file[0]:s}\n"
-        message = (
+        message += (
             f" {'Index':5s} |"
             + f" {'Frequency (cm**-1)':18s} |"
             + f" {'Vib. Mode':9s} |"
@@ -1387,7 +1415,7 @@ class NormalModeSampler(sampling.Sampler):
         # Print sampling info
         for ithread in range(self.sample_num_threads):
             if self.Nsamples[ithread] == 0:
-                message += f"No samples written to "
+                message = f"No samples written to "
             else:
                 message = (
                     f"Sampling method '{self.sample_tag:s}' complete for "

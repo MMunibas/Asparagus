@@ -6,7 +6,7 @@ with open('README.md','r') as fh:
 
 setup(
     name='Asparagus',
-    version='0.5.0',
+    version='0.6.0',
     description='Function Bundle from Sampling, Training to Application of NN Potentials',
     author=(
         'L.I.Vazquez-Salazar, Silvan Kaeser, '
@@ -18,7 +18,7 @@ setup(
     packages=find_packages(include=['asparagus']),
     include_package_data=True,
     install_requires=[
-        'ase>=3.21.0',
+        'ase==3.22.1',
         'numpy',
         'scipy',
         'ctype',

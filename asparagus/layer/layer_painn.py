@@ -1,4 +1,4 @@
-from typing import Optional, Union, List, Dict, Callable
+from typing import Optional, Union, List, Tuple, Dict, Callable, Any
 
 import torch
 
@@ -73,7 +73,7 @@ class PaiNNInteraction(torch.nn.Module):
         idx_j: torch.Tensor,
         n_atoms: int,
         n_features: int
-    ) -> (torch.Tensor, torch.Tensor):
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
 
         # Apply context layer on scalar features
         cfea = self.context(sfeatures)
@@ -92,7 +92,7 @@ class PaiNNInteraction(torch.nn.Module):
             ).index_add(0, idx_i, ds)
 
         # Compute equivariant feature vector update and reduce to atom i
-        de = dev*vectors[..., None] + dee*efeatures[idx_j]
+        de = dev*vectors.unsqueeze(-1) + dee*efeatures[idx_j]
         de = torch.zeros(
             (n_atoms, 3, n_features),
             device=de.device, dtype=de.dtype
@@ -177,7 +177,7 @@ class PaiNNMixing(torch.nn.Module):
         sfeatures: torch.Tensor,
         vfeatures: torch.Tensor,
         n_features: int,
-    ) -> (torch.Tensor, torch.Tensor):
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         
         # Apply context layer on vectorial feature vector and split 
         # information
@@ -186,7 +186,7 @@ class PaiNNMixing(torch.nn.Module):
         
         # Mix scalar and vectorial feature vector
         U = torch.sqrt(
-            torch.sum(U**2, dim=-2, keepdim=True) 
+            torch.sum(U**2, dim=-2, keepdim=True)
             + self.stability_constant)
         mix = torch.cat([sfeatures, U], dim=-1)
         mix = self.mixing(mix)
@@ -201,7 +201,7 @@ class PaiNNMixing(torch.nn.Module):
         # Update feature and message vector 
         sfeatures = sfeatures + ds
         vfeatures = vfeatures + dv
-        
+
         return sfeatures, vfeatures
 
 
@@ -236,6 +236,10 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         weights are used.
     bias_init: callable, optional, default 'torch.nn.init.zeros_'
         By Default, zero bias values are initialized.
+    kwargs_weight_init: dict, optional, default {}
+        Additional keyword arguments for weight values initialization
+    kwargs_bias_init: dict, optional, default {}
+        Additional keyword arguments for bias values initialization
 
     """
     def __init__(
@@ -252,6 +256,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
         dtype: 'dtype',
         weight_init: Optional[Callable] = torch.nn.init.xavier_normal_,
         bias_init: Optional[Callable] = torch.nn.init.zeros_,
+        kwargs_weight_init: Optional[dict[str, Any]] = {},
+        kwargs_bias_init: Optional[dict[str, Any]] = {},
     ):
         """
         Initialize gated equivariant block.
@@ -291,6 +297,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
                 dtype,
                 weight_init=weight_init,
                 bias_init=bias_init,
+                kwargs_weight_init=kwargs_weight_init,
+                kwargs_bias_init=kwargs_bias_init,
                 ),
             DenseLayer(
                 hidden_n_neurons,
@@ -301,6 +309,8 @@ class PaiNNGatedEquivarience(torch.nn.Module):
                 dtype,
                 weight_init=weight_init,
                 bias_init=bias_init,
+                kwargs_weight_init=kwargs_weight_init,
+                kwargs_bias_init=kwargs_bias_init,
                 ),                
         )
 
@@ -312,31 +322,28 @@ class PaiNNGatedEquivarience(torch.nn.Module):
     def forward(
         self,
         features: List[torch.Tensor],
-    ) -> List[torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Forward pass of the gated equivariant block.
         
         Parameter
         ---------
-        features: list(torch.tensor)
-            List of scalar and vector feature vectors:
-            sfeatures: torch.tensor(N_atoms, n_atombasis)
-                Scalar atomic feature vectors
-            vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
-                Vector atomic feature vectors
+        sfeatures: torch.tensor(N_atoms, n_atombasis)
+            Scalar atomic feature vectors
+        vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
+            Vector atomic feature vectors
         
         Returns
         -------
-        sfeatures: torch.tensor(N_atoms, n_atombasis)
+        sfeatures_out: torch.tensor(N_atoms, n_atombasis)
             Modified scalar atomic feature vectors
-        vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
+        vfeatures_out: torch.tensor(N_atoms, 3, n_atombasis)
             Modified vector atomic feature vectors
         
         """
-        
-        # Extract scalar and vector features
-        sfeatures, vfeatures = features
-        
+
+        (sfeatures, vfeatures) = features
+
         # Branch vector features
         vmix = self.branch_vector(vfeatures)
         vfeatures_norm, vfeatures_keep = torch.split(
@@ -354,12 +361,12 @@ class PaiNNGatedEquivarience(torch.nn.Module):
             output, [self.scalar_n_output, self.vector_n_output], dim=-1)
         
         # Scale vector features
-        vfeatures_out = vfeatures_keep*vfeatures_scale[:, None, :]
+        vfeatures_out = vfeatures_keep*vfeatures_scale.unsqueeze(1)
 
         # Apply scalar activation function
         sfeatures_out = self.scalar_activation_fn(sfeatures_out)
 
-        return (sfeatures_out, vfeatures_out)
+        return sfeatures_out, vfeatures_out
 
 
 class PaiNNOutput_scalar(torch.nn.Module):
@@ -371,8 +378,13 @@ class PaiNNOutput_scalar(torch.nn.Module):
     ----------
     n_atombasis: int
         Number of atomic features (length of the atomic feature vector)
+    n_maxatom: int
+        Maximum Number of atomic elements for atomic property scaling
     n_property: int
-        Dimension of the predicted property.
+        Dimension of the predicted property
+    atomic_scaling: bool
+        Prediction shift term and scaling factor per atom type (True) or
+        universal (False)
     device: str
         Device type for model variable allocation
     dtype: dtype object
@@ -383,25 +395,58 @@ class PaiNNOutput_scalar(torch.nn.Module):
         Number of neurons of the hidden layers (int) or per hidden layer (list)
     activation_fn: callable, optional, default None
         Residual layer activation function.
-    
+    bias_layer: bool, optional, default True
+        Add bias parameter for hidden layer neurons
+    bias_last: bool, optional, default True
+        Add bias parameter for last layer neuron(s)
+    trainable_scaling: bool, optional, default True
+        If True the scaling factor and shift term parameters are trainable.
+    weight_init_layer: callable, optional, default 'torch.nn.init.zeros_'
+        Weight parameter initialization function of the hidden layer
+    weight_init_last: callable, optional, default 'torch.nn.init.zeros_'
+        Weight parameter initialization function of the last layer
+    bias_init_layer: callable, optional, default 'torch.nn.init.zeros_'
+        Bias parameter initialization function of the hidden layer
+    bias_init_last: callable, optional, default 'torch.nn.init.zeros_'
+        Bias parameter initialization function of the last layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the last layer
+    kwargs_bias_init_layer: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the last layer
+
     """
     
     _default_output_scalar = {
-        'n_layer':              2,
-        'n_neurons':            None,
-        'activation_fn':        None,
-        'bias_layer':           True,
-        'bias_last':            True,
-        'weight_init_layer':    torch.nn.init.zeros_,
-        'weight_init_last':     torch.nn.init.zeros_,
-        'bias_init_layer':      torch.nn.init.zeros_,
-        'bias_init_last':       torch.nn.init.zeros_,
+        'n_layer':                  2,
+        'n_neurons':                None,
+        'activation_fn':            None,
+        'bias_layer':               True,
+        'bias_last':                True,
+        'trainable_scaling':        True,
+        'weight_init_layer':        torch.nn.init.zeros_,
+        'weight_init_last':         torch.nn.init.zeros_,
+        'bias_init_layer':          torch.nn.init.zeros_,
+        'bias_init_last':           torch.nn.init.zeros_,
+        'kwargs_weight_init_layer': {},
+        'kwargs_weight_init_last':  {},
+        'kwargs_bias_init_layer':   {},
+        'kwargs_bias_init_last':    {},
         }
     
     def __init__(
         self,
         n_atombasis: int,
+        n_maxatom: int,
         n_property: int,
+        atomic_scaling: bool,
         device: str,
         dtype: 'dtype',
         n_layer: Optional[int] = None,
@@ -409,10 +454,15 @@ class PaiNNOutput_scalar(torch.nn.Module):
         activation_fn: Optional[Callable] = None,
         bias_layer: Optional[bool] = None,
         bias_last: Optional[bool] = None,
+        trainable_scaling: Optional[bool] = None,
         weight_init_layer: Optional[Callable] = None,
         weight_init_last: Optional[Callable] = None,
         bias_init_layer: Optional[Callable] = None,
         bias_init_last: Optional[Callable] = None,
+        kwargs_weight_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_weight_init_last: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_last: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize PaiNN scalar output block.
@@ -461,6 +511,8 @@ class PaiNNOutput_scalar(torch.nn.Module):
                     dtype,
                     weight_init=self.weight_init_layer,
                     bias_init=self.bias_init_layer,
+                    kwargs_weight_init=self.kwargs_weight_init_layer,
+                    kwargs_bias_init=self.kwargs_bias_init_layer,
                     ),
                 )
         
@@ -475,22 +527,61 @@ class PaiNNOutput_scalar(torch.nn.Module):
                 dtype,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
+                kwargs_weight_init=self.kwargs_weight_init_last,
+                kwargs_bias_init=self.kwargs_bias_init_last,
                 ),
             )
-        
+
+        # Assign output scaling parameter
+        if self.atomic_scaling:
+            scaling = torch.tensor(
+                [[0.0, 1.0] for _ in torch.arange(0, self.n_maxatom + 1)],
+                device=self.device, dtype=self.dtype)
+        else:
+            scaling = torch.tensor(
+                [0.0, 1.0],
+                device=self.device, dtype=self.dtype)
+        self.set_scaling(scaling)
+
+        return
+
+    def set_scaling(
+        self,
+        scaling: torch.Tensor,
+    ):
+        """
+        Set scaling parameter
+
+        Parameters
+        ----------
+        scaling: torch.tensor
+            Scaling parameter
+
+        """
+
+        if hasattr(self, 'scaling'):
+            self.scaling.data = scaling
+        elif self.trainable_scaling:
+            self.scaling = torch.nn.Parameter(scaling)
+        else:
+            self.scaling = self.register_buffer("scaling", scaling)
+
         return
 
     def forward(
         self,
-        features: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+        sfeatures: torch.Tensor,
+        atomic_numbers: torch.Tensor,
+    ) -> torch.Tensor:
         """
         Apply interaction block.
         
         Parameters
         ----------
-        features: torch.Tensor(N_atoms, n_atombasis)
-            Atomic feature vectors
+        sfeatures: torch.tensor(N_atoms, n_atombasis)
+            Scalar atomic feature vectors
+        atomic_numbers: torch.Tensor(N_atoms)
+            List of atomic numbers
 
         Returns
         -------
@@ -500,7 +591,26 @@ class PaiNNOutput_scalar(torch.nn.Module):
         """
         
         # Transform to result properties
-        result = self.output(features)
+        result = self.output(sfeatures)
+
+        # Flatten prediction
+        if self.n_property == 1:
+            result = torch.flatten(result, start_dim=0)
+
+        # Apply scaling
+        if self.atomic_scaling:
+            shift = self.scaling[atomic_numbers].T[0]
+            scale = self.scaling[atomic_numbers].T[1]
+            if result.dim() > 1:
+                compatible_shape = (
+                    [atomic_numbers.shape[0]]
+                    + (result.dim() - 1)*[1])
+                shift = shift.reshape(compatible_shape)
+                scale = scale.reshape(compatible_shape)
+        else:
+            shift = self.scaling[0]
+            scale = self.scaling[1]
+        result = result*scale + shift
 
         return result
 
@@ -514,8 +624,13 @@ class PaiNNOutput_tensor(torch.nn.Module):
     ----------
     n_atombasis: int
         Number of atomic features (length of the atomic feature vector)
+    n_maxatom: int
+        Maximum Number of atomic elements for atomic property scaling
     n_property: int
-        Dimension of the predicted property.
+        Dimension of the predicted property
+    atomic_scaling: bool
+        Prediction shift term and scaling factor per atom type (True) or
+        universal (False)    
     device: str
         Device type for model variable allocation
     dtype: dtype object
@@ -536,6 +651,8 @@ class PaiNNOutput_tensor(torch.nn.Module):
         Add bias parameter for hidden layer neurons
     bias_last: bool, optional, default True
         Add bias parameter for last layer neuron(s)
+    trainable_scaling: bool, optional, default True
+        If True the scaling factor and shift term parameters are trainable.
     weight_init_layer: callable, optional, default 'torch.nn.init.zeros_'
         Weight parameter initialization function of the hidden layer
     weight_init_last: callable, optional, default 'torch.nn.init.zeros_'
@@ -544,27 +661,46 @@ class PaiNNOutput_tensor(torch.nn.Module):
         Bias parameter initialization function of the hidden layer
     bias_init_last: callable, optional, default 'torch.nn.init.zeros_'
         Bias parameter initialization function of the last layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the weight parameter initialization
+        function of the last layer
+    kwargs_bias_init_layer: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the hidden layer
+    kwargs_bias_init_last: dict, optional, default {}
+        Additional key arguments for the bias parameter initialization function
+        of the last layer
     
     """
     
     _default_output_tensor = {
-        'n_layer':              2,
-        'n_neurons':            None,
-        'hidden_n_neurons':     None,
-        'scalar_activation_fn': None,
-        'hidden_activation_fn': None,
-        'bias_layer':           True,
-        'bias_last':            True,
-        'weight_init_layer':    torch.nn.init.zeros_,
-        'weight_init_last':     torch.nn.init.zeros_,
-        'bias_init_layer':      torch.nn.init.zeros_,
-        'bias_init_last':       torch.nn.init.zeros_,
+        'n_layer':                  2,
+        'n_neurons':                None,
+        'hidden_n_neurons':         None,
+        'scalar_activation_fn':     None,
+        'hidden_activation_fn':     None,
+        'bias_layer':               True,
+        'bias_last':                True,
+        'trainable_scaling':        True,
+        'weight_init_layer':        torch.nn.init.zeros_,
+        'weight_init_last':         torch.nn.init.zeros_,
+        'bias_init_layer':          torch.nn.init.zeros_,
+        'bias_init_last':           torch.nn.init.zeros_,
+        'kwargs_weight_init_layer': {},
+        'kwargs_weight_init_last':  {},
+        'kwargs_bias_init_layer':   {},
+        'kwargs_bias_init_last':    {},
         }
     
     def __init__(
         self,
         n_atombasis: int,
+        n_maxatom: int,
         n_property: int,
+        atomic_scaling: bool,
         device: str,
         dtype: 'dtype',
         n_layer: Optional[int] = None,
@@ -572,12 +708,17 @@ class PaiNNOutput_tensor(torch.nn.Module):
         hidden_n_neurons: Optional[Union[int, List[int]]] = None,
         scalar_activation_fn: Optional[Callable] = None,
         hidden_activation_fn: Optional[Callable] = None,
-        bias_layer: Optional[bool] = True,
-        bias_last: Optional[bool] = True,
-        weight_init_layer: Optional[Callable] = torch.nn.init.zeros_,
-        weight_init_last: Optional[Callable] = torch.nn.init.zeros_,
-        bias_init_layer: Optional[Callable] = torch.nn.init.zeros_,
-        bias_init_last: Optional[Callable] = torch.nn.init.zeros_,
+        bias_layer: Optional[bool] = None,
+        bias_last: Optional[bool] = None,
+        trainable_scaling: Optional[bool] = None,
+        weight_init_layer: Optional[Callable] = None,
+        weight_init_last: Optional[Callable] = None,
+        bias_init_layer: Optional[Callable] = None,
+        bias_init_last: Optional[Callable] = None,
+        kwargs_weight_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_weight_init_last: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_layer: Optional[dict[str, Any]] = None,
+        kwargs_bias_init_last: Optional[dict[str, Any]] = None,
     ):
         """
         Initialize PaiNN tensor output block.
@@ -640,6 +781,8 @@ class PaiNNOutput_tensor(torch.nn.Module):
                     dtype,
                     weight_init=self.weight_init_layer,
                     bias_init=self.bias_init_layer,
+                    kwargs_weight_init=self.kwargs_weight_init_layer,
+                    kwargs_bias_init=self.kwargs_bias_init_layer,
                     ),
                 )
         
@@ -658,8 +801,52 @@ class PaiNNOutput_tensor(torch.nn.Module):
                 dtype,
                 weight_init=self.weight_init_last,
                 bias_init=self.bias_init_last,
+                kwargs_weight_init=self.kwargs_weight_init_last,
+                kwargs_bias_init=self.kwargs_bias_init_last,
                 ),
             )
+
+        # Assign output scaling parameter
+        if self.atomic_scaling:
+            sscaling = torch.tensor(
+                [[0.0, 1.0] for _ in torch.arange(0, self.n_maxatom + 1)],
+                device=self.device, dtype=self.dtype)
+            vscaling = torch.tensor(
+                [[0.0, 1.0] for _ in torch.arange(0, self.n_maxatom + 1)],
+                device=self.device, dtype=self.dtype)
+        else:
+            sscaling = torch.tensor(
+                [0.0, 1.0],
+                device=self.device, dtype=self.dtype)
+            vscaling = torch.tensor(
+                [0.0, 1.0],
+                device=self.device, dtype=self.dtype)
+        self.set_scaling(sscaling, vscaling)
+
+        return
+
+    def set_scaling(
+        self,
+        sscaling: torch.Tensor,
+        vscaling: torch.Tensor,
+    ):
+        """
+        Set scaling parameter
+
+        Parameters
+        ----------
+        sscaling: torch.tensor
+            Scaling parameter for scalar property
+        vscaling: torch.tensor
+            Scaling parameter for vector property
+
+        """
+        if self.trainable_scaling:
+            self.sscaling = torch.nn.Parameter(sscaling)
+            self.vscaling = torch.nn.Parameter(vscaling)
+        else:
+            self.sscaling = self.register_buffer("sscaling", sscaling)
+            self.vscaling = self.register_buffer("vscaling", vscaling)
 
         return
 
@@ -667,7 +854,8 @@ class PaiNNOutput_tensor(torch.nn.Module):
         self,
         sfeatures: torch.Tensor,
         vfeatures: torch.Tensor,
-    ) -> List[torch.Tensor]:
+        atomic_numbers: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Apply scalar output block.
         
@@ -677,30 +865,58 @@ class PaiNNOutput_tensor(torch.nn.Module):
             Scalar atomic feature vectors
         vfeatures: torch.tensor(N_atoms, 3, n_atombasis)
             Vector atomic feature vectors
-        
+        atomic_numbers: torch.Tensor(N_atoms)
+            List of atomic numbers
+
         Returns
         -------
         torch.Tensor(N_atoms, n_property)
             Resulting atomic scalar property vector
         torch.Tensor(N_atoms, 3, n_property)
             Resulting atomic vector properties.
-        
-        Parameter
-        ---------
-        
-        Returns
-        -------
-        scalar_result: torch.tensor(N_atoms, n_atombasis)
-            Modified scalar atomic feature vectors
-        vector_result: torch.tensor(N_atoms, 3, n_atombasis)
-            Modified vector atomic feature vectors
-        
+
         """
         
         # Transform to scalar and vector results
-        scalar_result, vector_result = self.output(
-            (sfeatures, vfeatures)
-            )
+        for layer in self.output:
+            sfeatures, vfeatures = layer(
+                (sfeatures, vfeatures),
+                )
 
-        return scalar_result, vector_result
+        # Flatten predictions
+        if self.n_property == 1:
+            sfeatures = torch.flatten(sfeatures, start_dim=0)
+            vfeatures = vfeatures.reshape(-1, 3)
+
+        # Apply scaling
+        if self.atomic_scaling:
+            
+            sshift = self.sscaling[atomic_numbers].T[0]
+            sscale = self.sscaling[atomic_numbers].T[1]
+            if sfeatures.dim() > 1:
+                compatible_shape = (
+                    [atomic_numbers.shape[0]]
+                    + (sfeatures.dim() - 1)*[1])
+                sshift = sshift.reshape(compatible_shape)
+                sscale = sscale.reshape(compatible_shape)
+            
+            vshift = self.vscaling[atomic_numbers].T[0]
+            vscale = self.vscaling[atomic_numbers].T[1]
+            if vfeatures.dim() > 1:
+                compatible_shape = (
+                    [atomic_numbers.shape[0]]
+                    + (vfeatures.dim() - 1)*[1])
+                vshift = vshift.reshape(compatible_shape)
+                vscale = vscale.reshape(compatible_shape)
+        else:
+            
+            sshift = self.sscaling[0]
+            sscale = self.sscaling[1]
+            vshift = self.vscaling[0]
+            vscale = self.vscaling[1]
+
+        sfeatures = sfeatures*sscale + sshift
+        vfeatures = vfeatures*vscale + vshift
+
+        return sfeatures, vfeatures
         

@@ -490,7 +490,7 @@ class ShellCalculator(FileIOCalculator):
                     for files_replace_i in files_replace
                 ]
 
-        # Check if template file exists
+        # Check if template file exists or look into asparagus templates
         if utils.is_string(files):
             files = [files]
         elif not utils.is_array_like(files):
@@ -656,8 +656,8 @@ class ShellCalculator(FileIOCalculator):
             charge = 0
         else:
             charge = self.charge
-        if multiplicity is None:
-            multiplicity = self.multiplicity
+        if multiplicity is not None:
+            multiplicity = self.set_system_properties(None, multiplicity)[1]
         elif self.multiplicity is None and 'multiplicity' in atoms.info:
             multiplicity = self.set_system_properties(
                 None, atoms.info['multiplicity'])[1]

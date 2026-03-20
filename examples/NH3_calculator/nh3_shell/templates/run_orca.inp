@@ -1,0 +1,5 @@
+! engrad RI PBE D3BJ def2-SVP def2/J TightSCF 
+%pal nprocs 1 end 
+*xyz %charge% %multiplicity%
+%xyz%
+*

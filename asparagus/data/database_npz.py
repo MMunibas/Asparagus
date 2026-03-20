@@ -32,6 +32,7 @@ structure_properties_dtype = {
     'charge':           np.float32,
     'cell':             np.float32,
     'pbc':              np.bool_,
+    'fragment_numbers': integer_numpy_dtype,
 }
 
 # Structural property labels and array shape
@@ -42,6 +43,7 @@ structure_properties_shape = {
     'charge':           (-1,),
     'cell':             (-1, 9,),
     'pbc':              (-1, 3,),
+    'fragment_numbers': (-1,),
     }
 
 # Known reference property array shape
@@ -49,10 +51,13 @@ reference_properties_shape = {
     'energy':           (-1,),
     'atomic_energies':  (-1,),
     'forces':           (-1, 3,),
+    'mm_forces':        (-1, 3,),
     #'hessian':          (-1,),
     'atomic_charges':   (-1,),
     'dipole':           (-1, 3,),
     'atomic_dipoles':   (-1, 3,),
+    'quadrupole':       (-1, 9,),
+    'atomic_quadrupole':(-1, 9,),
     'polarizability':   (-1, 3, 3,),
     }
 
@@ -64,6 +69,7 @@ structure_properties_ids = {
     'charge':           'system:id',
     'cell':             'system:id',
     'pbc':              'system:id',
+    'fragment_numbers': 'atoms:id',
 }
 system_id_property = 'atoms_number'
 atoms_id_property = 'atomic_numbers'
@@ -281,7 +287,7 @@ class DataBase_npz(data.DataBase):
         for prop in self.data:
 
             # Skip system and atoms id
-            if prop in ['system:id', 'atoms:id']:
+            if prop in ['system:id', 'atoms:id', 'mm_atoms:id']:
                 continue
 
             # Skip metadata keys
@@ -293,7 +299,7 @@ class DataBase_npz(data.DataBase):
 
             # Generate row id and system id lists from certain property
             if prop == system_id_property:
-                
+
                 next_sys_id = self.data['system:id'][-1]
                 new_sys_id = next_sys_id + np.cumsum(
                     [data_i.shape[0] for data_i in self.data_new[prop]])
@@ -310,12 +316,23 @@ class DataBase_npz(data.DataBase):
 
             # Generate atoms id lists from certain property
             if prop == atoms_id_property:
+
                 next_sys_id = self.data['atoms:id'][-1]
                 new_sys_id = next_sys_id + np.cumsum(
                     [data_i.shape[0] for data_i in self.data_new[prop]])
                 data_merged['atoms:id'] = np.concatenate(
                     (self.data['atoms:id'], new_sys_id),
                     axis=0)
+
+            # # Generate MM atoms id lists from certain property
+            # if prop == mm_atoms_id_property:
+            # 
+            #     next_sys_id = self.data['mm_atoms:id'][-1]
+            #     new_sys_id = next_sys_id + np.cumsum(
+            #         [data_i.shape[0] for data_i in self.data_new[prop]])
+            #     data_merged['mm_atoms:id'] = np.concatenate(
+            #         (self.data['mm_atoms:id'], new_sys_id),
+            #         axis=0)
 
             # Each other property must be found in the new data
             if self.data_new.get(prop) is None:
@@ -555,7 +572,11 @@ class DataBase_npz(data.DataBase):
                 id_end = self.data[structure_properties_ids[prop_i]][idx]
 
                 # Get property
-                row[prop_i] = torch.tensor(self.data[prop_i][id_start:id_end])
+                if self.data[prop_i].dtype.char == 'U':
+                    row[prop_i] = self.data[prop_i][id_start:id_end]
+                else:
+                    row[prop_i] = torch.tensor(
+                        self.data[prop_i][id_start:id_end])
 
             # Get reference properties
             for prop_i in self.metadata.get('load_properties'):
@@ -565,9 +586,12 @@ class DataBase_npz(data.DataBase):
                 id_end = self.data[prop_i + ':id'][idx]
 
                 # Get property
-                row[prop_i] = torch.tensor(
-                    self.data[prop_i][id_start:id_end],
-                    dtype=self.properties_torch_dtype)
+                if self.data[prop_i].dtype.char == 'U':
+                    row[prop_i] = self.data[prop_i][id_start:id_end]
+                else:
+                    row[prop_i] = torch.tensor(
+                        self.data[prop_i][id_start:id_end],
+                        dtype=self.properties_torch_dtype)
 
             # Append data
             rows.append(row)
@@ -583,6 +607,7 @@ class DataBase_npz(data.DataBase):
         self.data['id'] = np.array([], dtype=integer_numpy_dtype)
         self.data['system:id'] = np.array([0], dtype=integer_numpy_dtype)
         self.data['atoms:id'] = np.array([0], dtype=integer_numpy_dtype)
+        # self.data['mm_atoms:id'] = np.array([0], dtype=integer_numpy_dtype)
 
         # Initialize lists for current data time and User name
         self.data['mtime'] = np.array([], dtype=string_numpy_dtype)
@@ -676,6 +701,7 @@ class DataBase_npz(data.DataBase):
         for prop_i, dtype_i in structure_properties_dtype.items():
             if properties.get(prop_i) is None:
                 self.data_new[prop_i].append(None)
+                    
             else:
                 self.data_new[prop_i].append(
                     np.array(properties.get(prop_i), dtype=dtype_i).reshape(

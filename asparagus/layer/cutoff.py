@@ -105,7 +105,7 @@ class Poly6Cutoff_range(torch.nn.Module):
     def __init__(
         self,
         cutoff: float,
-        cuton: float,
+        cuton: float = 0.0,
         device: Optional[str] = 'cpu',
         dtype: Optional['dtype'] = torch.float64,
     ):
@@ -254,8 +254,8 @@ class CosineCutoff_range(torch.nn.Module):
 
     def __init__(
         self,
-        cuton: float,
         cutoff: float,
+        cuton: float = 0.0,
         device: Optional[str] = 'cpu',
         dtype: Optional['dtype'] = torch.float64,
     ):

@@ -549,7 +549,36 @@ def is_None_array(
         return result
 
 
-def is_ase_atoms(x: Any, verbose: Optional[bool] = False) -> bool:
+def is_torch_tensor(
+    x: Any,
+    verbose: Optional[bool] = False,
+) -> bool:
+    """
+    Check if the input is an torch Tensor object.
+
+    Parameters
+    ----------
+    x: Any
+        Input variable of which to check object type
+    verbose: bool, optional, default False
+        If True, return the object type of the input and the expected type
+
+    Returns
+    -------
+    bool
+        True, if input variable match object type, else False.
+
+    """
+    if verbose:
+        return isinstance(x, torch.Tensor), type(x), "torch.Tensor"
+    else:
+        return isinstance(x, torch.Tensor)
+
+
+def is_ase_atoms(
+    x: Any,
+    verbose: Optional[bool] = False,
+) -> bool:
     """
     Check if the input is an ASE atoms object.
 
@@ -646,7 +675,7 @@ def is_callable(x: Any, verbose: Optional[bool] = False) -> bool:
 
 def is_object(x: Any, verbose: Optional[bool] = False) -> bool:
     """
-    Check if the input is an object (everything in python is an object ...)
+    Check if the input is an object (everything in Python is an object ...)
 
     Parameters
     ----------

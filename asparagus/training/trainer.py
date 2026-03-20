@@ -118,7 +118,7 @@ class Trainer:
         'trainer_restart':              False,
         'trainer_max_epochs':           10_000,
         'trainer_properties':           None,
-        'trainer_properties_metrics':   {'else': 'mse'},
+        'trainer_properties_metrics':   {'else': 'SmoothL1Loss'},
         'trainer_properties_weights':   {
             'energy': 1., 'forces': 50., 'dipole': 25., 'else': 1.},
         'trainer_batch_size':           32,
@@ -261,23 +261,6 @@ class Trainer:
         # Get reference data property units
         self.data_units = self.data_container.data_unit_properties
 
-        #########################################
-        # # # Prepare Reference Data Loader # # #
-        #########################################
-
-        # Initialize training, validation and test data loader
-        self.data_container.init_dataloader(
-            self.trainer_train_batch_size,
-            self.trainer_valid_batch_size,
-            self.trainer_test_batch_size,
-            num_workers=self.trainer_num_batch_workers,
-            device=self.device,
-            dtype=self.dtype)
-
-        # Get training and validation data loader
-        self.data_train = self.data_container.get_dataloader('train')
-        self.data_valid = self.data_container.get_dataloader('valid')
-
         ##################################
         # # # Check Model Calculator # # #
         ##################################
@@ -335,6 +318,33 @@ class Trainer:
         if hasattr(self.model_calculator, 'set_unit_properties'):
             self.model_calculator.set_unit_properties(self.model_units)
 
+        #########################################
+        # # # Prepare Reference Data Loader # # #
+        #########################################
+
+        # Check the model for additionally required reference properties
+        self.additional_properties = []
+        if hasattr(self.model_calculator, '_required_input_properties'):
+            for prop in self.model_calculator._required_input_properties:
+                if prop in self.data_container.data_properties:
+                    self.additional_properties.append(prop)
+
+        # Initialize training, validation and test data loader
+        self.data_container.init_dataloader(
+            self.trainer_train_batch_size,
+            self.trainer_valid_batch_size,
+            self.trainer_test_batch_size,
+            reference_properties=(
+                self.trainer_properties
+                + self.additional_properties),
+            num_workers=self.trainer_num_batch_workers,
+            device=self.device,
+            dtype=self.dtype)
+
+        # Get training and validation data loader
+        self.data_train = self.data_container.get_dataloader('train')
+        self.data_valid = self.data_container.get_dataloader('valid')
+
         ###################################################################
         # # # Prepare Optimizer, Scheduler and Gradient Normalization # # #
         ###################################################################
@@ -344,7 +354,7 @@ class Trainer:
             self.trainer_optimizer,
             self.model_calculator.get_trainable_parameters(),
             self.trainer_optimizer_args)
-
+        
         # Assign learning rate scheduler
         self.trainer_scheduler, trainer_scheduler_args = get_scheduler(
             self.trainer_scheduler,
@@ -410,6 +420,7 @@ class Trainer:
                 config=config,
                 data_container=self.data_container,
                 test_datasets='test',
+                test_properties=self.trainer_properties,
                 test_batch_size=self.trainer_test_batch_size,
                 test_num_batch_workers=self.trainer_num_batch_workers)
 
@@ -498,7 +509,7 @@ class Trainer:
             # Assign model parameters
             self.model_calculator.load_state_dict(
                 loaded_checkpoint['model_state_dict'])
-            
+
             self.model_calculator.checkpoint_loaded = True
             self.model_calculator.checkpoint_file = checkpoint_file
             if verbose:
@@ -507,19 +518,17 @@ class Trainer:
 
             # If restart training enabled, assign optimizer, scheduler and
             # epoch parameter if available
+            optimizer_state, scheduler_state = "None", "None"
             if restart:
+
                 if loaded_checkpoint.get('optimizer_state_dict') is not None:
                     self.trainer_optimizer.load_state_dict(
                         loaded_checkpoint['optimizer_state_dict'])
                     optimizer_state = "Loaded"
-                else:
-                    optimizer_state = "None"
                 if loaded_checkpoint.get('scheduler_state_dict') is not None:
                     self.trainer_scheduler.load_state_dict(
                         loaded_checkpoint['scheduler_state_dict'])
                     scheduler_state = "Loaded"
-                else:
-                    scheduler_state = "None"
                 if loaded_checkpoint.get('epoch') is not None:
                     trainer_epoch_start = loaded_checkpoint['epoch'] + 1
 
@@ -540,7 +549,8 @@ class Trainer:
                     best_loss = loaded_checkpoint['best_loss']
 
             # Print checkpoint file info
-            if verbose:               
+            if verbose:    
+
                 if restart:
                     message = "Restart"
                 else:
@@ -558,14 +568,6 @@ class Trainer:
                     + f" Scheduler state: {scheduler_state:s}")
                 self.logger.info(message)
 
-        # Skip if max epochs are already reached
-        if trainer_epoch_start > self.trainer_max_epochs:
-            if verbose:
-                self.logger.info(
-                    f"Max Epochs ({self.trainer_max_epochs:d}) already "
-                    + f"reached ({trainer_epoch_start:d}).")
-            return
-
         ################################
         # # # Prepare Model Cutoff # # #
         ################################
@@ -580,6 +582,19 @@ class Trainer:
             dtype=self.dtype)
         self.data_valid.init_neighbor_list(
             cutoff=cutoffs,
+            device=self.device,
+            dtype=self.dtype)
+
+        # Get model ML/MM cutoffs
+        mlmm_cutoffs = self.model_calculator.get_mlmm_cutoff_ranges()
+
+        # Set ML/MM cutoffs for neighbor list calculation
+        self.data_train.init_mlmm_neighbor_list(
+            cutoff=mlmm_cutoffs,
+            device=self.device,
+            dtype=self.dtype)
+        self.data_valid.init_mlmm_neighbor_list(
+            cutoff=mlmm_cutoffs,
             device=self.device,
             dtype=self.dtype)
 
@@ -615,6 +630,9 @@ class Trainer:
                 model_calculator=self.model_calculator,
                 data_loader=self.data_train,
                 properties=properties_scaleable,
+                use_model_prediction=True,
+                model_conversion=self.model_conversion,
+                atomic_energies_guess=True,
                 set_shift_term=True,
                 set_scaling_factor=False,
                 )
@@ -646,7 +664,11 @@ class Trainer:
             training.set_property_scaling_estimation(
                 model_calculator=self.model_calculator,
                 data_loader=self.data_train,
-                properties=self.model_calculator.get_scaleable_properties())
+                properties=self.model_calculator.get_scaleable_properties(),
+                use_model_prediction=True,
+                model_conversion=self.model_conversion,
+                atomic_energies_guess=True,
+                )
 
         #############################################
         # # # Prepare Model Training and Metric # # #
@@ -663,7 +685,11 @@ class Trainer:
         metrics_best['loss'] = best_loss
 
         # Define loss function
-        loss_fn = torch.nn.SmoothL1Loss(reduction='mean')
+        loss_fn = {}
+        for prop in self.trainer_properties:
+            loss_fn[prop] = self.get_loss_fn(
+                self.trainer_properties_metrics[prop],
+                reduction='mean')
 
         # Get scheduler argument list for correct parameter passing
         scheduler_arguments = (
@@ -695,6 +721,14 @@ class Trainer:
                 test_plot_histogram=True,
                 test_plot_residual=True,
                 **kwargs)
+
+        # Skip if max epochs are already reached
+        if trainer_epoch_start > self.trainer_max_epochs:
+            if verbose:
+                self.logger.info(
+                    f"Max Epochs ({self.trainer_max_epochs:d}) already "
+                    + f"reached ({trainer_epoch_start:d}).")
+            return
 
         # Loop over epochs
         for epoch in torch.arange(
@@ -734,21 +768,25 @@ class Trainer:
                     )
 
                 # Predict model properties from data batch
-                prediction = self.model_calculator(batch)
+                batch = self.model_calculator(batch)
 
                 # Check for NaN predictions
                 if self.trainer_debug_mode:
-                    for prop, item in prediction.items():
-                        if torch.any(torch.isnan(item)):
+                    for prop in self.model_properties:
+                        if torch.any(torch.isnan(batch[prop])):
+                            num_nan = torch.sum(torch.isnan(batch[prop]))
                             raise SyntaxError(
                                 f"Property prediction of '{prop:s}' contains "
-                                + f"{torch.sum(torch.isnan(item))} elements "
-                                + "of value 'NaN'!")
+                                + f"{num_nan:d} elements of value 'NaN'!")
 
                 # Compute total and single loss values for training properties
                 metrics_batch = self.compute_metrics(
-                    prediction, batch, loss_fn=loss_fn)
+                    batch, batch['reference'], loss_fn=loss_fn)
                 loss = metrics_batch['loss']
+                
+                # Add custom model loss values if available
+                if 'model_loss' in batch:
+                    loss = loss + batch['model_loss']
 
                 # Check for NaN loss value
                 if torch.isnan(loss):
@@ -757,7 +795,7 @@ class Trainer:
 
                 # Predict parameter gradients by backwards propagation
                 loss.backward()
-                
+
                 # Clip parameter gradients norm and values
                 if self.gradient_clipping_value:
                     torch.nn.utils.clip_grad_value_(
@@ -846,11 +884,11 @@ class Trainer:
             # Perform model validation each interval
             if not (epoch % self.trainer_validation_interval):
 
-                # Change to evaluation mode for calculator
-                self.model_calculator.eval()
-
                 # Reset property metrics
                 metrics_valid = self.reset_metrics()
+
+                # Change to evaluation mode for calculator
+                self.model_calculator.eval()
 
                 # If EMA is active
                 if self.trainer_ema:
@@ -860,17 +898,17 @@ class Trainer:
                     # Load EMA model parameter set
                     self.trainer_ema_model.copy_to(
                         self.model_calculator.parameters())
-    
+
                 # Loop over validation batches
                 for batch in self.data_valid:
 
                     # Predict model properties from data batch
-                    prediction = self.model_calculator(batch)
+                    batch = self.model_calculator(batch)
 
                     # Compute total and single loss values for
                     # validation properties
                     metrics_batch = self.compute_metrics(
-                        prediction, batch,
+                        batch, batch['reference'],
                         loss_fn=loss_fn, loss_only=False)
 
                     # Update average metrics
@@ -942,11 +980,10 @@ class Trainer:
                                     metrics_best[prop],
                                     global_step=epoch)
 
-                    # If EMA is active
-                    if self.trainer_ema:
-                        # Restore last model parameter set
-                        self.trainer_ema_model.restore(
-                            self.model_calculator.parameters())
+                # If EMA is active, restore last model parameter set
+                if self.trainer_ema:
+                    self.trainer_ema_model.restore(
+                        self.model_calculator.parameters())
 
                 # Print validation metrics summary
                 if print_progress and verbose:
@@ -980,33 +1017,6 @@ class Trainer:
                         + f"  Best Loss valid: {metrics_best['loss']:.2E}")
 
         return
-
-    def predict_batch(self, batch):
-        """
-        Predict properties from data batch.
-
-        Parameters
-        ----------
-        batch: dict
-            Data batch dictionary
-
-        Returns
-        -------
-        dict(str, torch.Tensor)
-            Model Calculator prediction of properties
-
-        """
-
-        # Predict properties
-        return self.model_calculator(
-            batch['atoms_number'],
-            batch['atomic_numbers'],
-            batch['positions'],
-            batch['idx_i'],
-            batch['idx_j'],
-            batch['charge'],
-            batch['atoms_seg'],
-            batch['pbc_offset'])
 
     def check_properties(
         self,
@@ -1108,6 +1118,7 @@ class Trainer:
                     trainer_properties_metrics.get('else'))
 
         # Check property weights
+        sum_properties_weights = 0.0
         for prop in trainer_properties:
             if (
                 trainer_properties_weights.get(prop) is None
@@ -1117,8 +1128,68 @@ class Trainer:
             elif trainer_properties_weights.get(prop) is None:
                 trainer_properties_weights[prop] = (
                     trainer_properties_weights.get('else'))
+            sum_properties_weights += trainer_properties_weights[prop]
+
+        # Normalize property weights to factor 100 for better loss value
+        # comparison and display convenience
+        for prop in trainer_properties:
+            trainer_properties_weights[prop] /= sum_properties_weights
+            trainer_properties_weights[prop] *= 100.0
 
         return trainer_properties_metrics, trainer_properties_weights
+
+    def get_loss_fn(
+        self,
+        loss_label: str,
+        reduction: str = 'mean'
+    ) -> 'torch.nn.Loss':
+        """
+        Return loss function callable of the requested label from Torch.
+        
+        Parameter
+        ---------
+        loss_label: str
+            Loss function label. Available are any implemented Torch loss
+            function or special cases:
+                'SmoothL1Loss': getattr(torch.nn, 'SmoothL1Loss')
+                'mae': Mean absolute error (torch.nn.L1Loss)
+                'mse': Mean square error (torch.nn.MSELoss)
+        reduction: str, optional, default 'mean'
+            Reduction keyword of the Torch loss function.
+
+
+        Returns
+        -------
+        torch.nn._Loss
+            Torch callable of a loss function
+
+        """
+
+        # Available loss functions
+        loss_fn_available = {
+            'mae': torch.nn.L1Loss,
+            'mse': torch.nn.MSELoss,
+            }
+
+        # Return loss function of the requested label
+        if utils.is_string(loss_label):
+            loss_label_lower = loss_label.strip().lower()
+            if loss_label_lower in loss_fn_available.keys():
+                return loss_fn_available[loss_label_lower](reduction=reduction)
+            elif hasattr(torch.nn, loss_label):
+                return getattr(torch.nn, loss_label)(reduction=reduction)
+            else:
+                raise SyntaxError(
+                    f"Loss function label '{loss_label:s}' us not valid!\n"
+                    + "Choose either correct 'torch.nn' function name or from "
+                    + "the list:\n"
+                    + str(loss_fn_available.keys()))
+        else:
+            raise ValueError(
+                "Loss function label must be a string and not of type "
+                + f"{type(loss_label):}!")
+
+        return
 
     def check_model_units(
         self,
@@ -1252,7 +1323,7 @@ class Trainer:
         self,
         prediction: Dict[str, Any],
         reference: Dict[str, Any],
-        loss_fn: Optional[object] = None,
+        loss_fn: Optional[Dict[str, Callable]] = None,
         loss_only: Optional[bool] = True,
     ) -> Dict[str, float]:
         """
@@ -1262,10 +1333,11 @@ class Trainer:
         ----------
         prediction: dict
             Model prediction dictionary
-        reference:
+        reference: dict
             Reference data dictionary
-        loss_fn:
-            Loss function if not defined it is set to torch.nn.L1Loss
+        loss_fn: dict
+            Dictioanry of loss function for each training property. If None,
+            it is set to torch.nn.SmoothL1Loss
         loss_only
             Compute only loss function or compute MAE and MSE as well
 
@@ -1276,29 +1348,32 @@ class Trainer:
 
         """
 
-        # Check loss function input
-        if loss_fn is None:
-            loss_fn = torch.nn.L1Loss(reduction="mean")
-
-        # Initialize MAE calculator function if needed
-        if not loss_only:
-            mae_fn = torch.nn.L1Loss(reduction="mean")
-            mse_fn = torch.nn.MSELoss(reduction="mean")
-
         # Initialize metrics dictionary
         metrics = {}
 
         # Add batch size
-        metrics['Ndata'] = reference['atoms_number'].size()[0]
+        metrics['Ndata'] = prediction['atoms_number'].size()[0]
+
+        # Initialize MAE and MSE calculator function if needed
+        if not loss_only:
+            mae_fn = torch.nn.L1Loss(reduction="mean")
+            mse_fn = torch.nn.MSELoss(reduction="mean")
 
         # Iterate over training properties
         for ip, prop in enumerate(self.trainer_properties):
 
+            # Check loss function input
+            if loss_fn is None:
+                loss = torch.nn.SmoothL1Loss(reduction="mean")
+            else:
+                loss = loss_fn[prop]
+
             # Initialize single property metrics dictionary
             metrics[prop] = {}
 
-            # Compute loss value per atom
-            metrics[prop]['loss'] = loss_fn(
+            # Compute loss value system-wise or atom-wise multiplied by
+            # 100 for display convenience
+            metrics[prop]['loss'] = loss(
                 torch.flatten(prediction[prop])
                 * self.model_conversion[prop],
                 torch.flatten(reference[prop]))
@@ -1343,7 +1418,7 @@ class Trainer:
             + f" {'Data Unit':<12s} |"
             + f" {'Conv. fact.':<12s} |"
             + f" {'Loss Metric':<12s} |"
-            + f" {'Loss Weight':<12s}\n")
+            + f" {'Loss Weight (%)':<16s}\n")
         message += "-"*len(message) + "\n"
         for prop, model_unit in self.model_units.items():
             if self.data_units.get(prop) is None:

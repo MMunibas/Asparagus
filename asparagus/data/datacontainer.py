@@ -35,7 +35,7 @@ class DataContainer():
             'settings._alt_property_labels'
         Dictionary of alternative property labeling to replace
         non-valid property labels with the valid one if possible.
-    data_properties: list(str), optional,
+    data_properties: list(str), optional, 
             default ['energy', 'forces', 'dipole']
         Set of properties to store in the DataSet
     data_unit_properties: dictionary, optional,
@@ -49,12 +49,17 @@ class DataContainer():
         string (item) in the source data files.
         If None, the property units as defined in 'data_unit_properties'
         are assumed.
-     ^   This input is only regarded for data source format, where no property
+        This input is only regarded for data source format, where no property
         units are defined such as the Numpy npz files.
     #data_source_property_filter: dictionary, optional, default None
         #Property conditions to avoid/filter out data from data source which
         #fulfill the conditions, e.g., an 'energy' (key) larger than a threshold
         #value (item).
+    data_keep_scaling: bool, optional, default False
+        If True, keep or take over the property and atomic energies scaling
+        parameter either from the database file 'data_file' or, if not defined
+        in 'data_file', from the next available scaling parameter dictionary
+        of the source database files 'data_source' in order of the list order.
     data_num_train: (int, float), optional, default 0.8 (80% of data)
         Number of training data points [absolute (>1) or relative
         (<= 1.0)].
@@ -94,6 +99,7 @@ class DataContainer():
                                         'dipole': 'e*Ang'},
         'data_source_unit_properties':  None,
         #'data_source_property_filter':  None,
+        'data_keep_scaling':            False,
         'data_alt_property_labels':     {},
         'data_num_train':               0.8,
         'data_num_valid':               0.1,
@@ -109,10 +115,11 @@ class DataContainer():
         'data_source':                  [
             utils.is_string, utils.is_string_array_inhomogeneous,
             utils.is_None],
-        'data_properties':              [utils.is_array_like],
+        'data_properties':              [utils.is_string_array],
         'data_unit_properties':         [utils.is_dictionary],
         'data_source_unit_properties':  [utils.is_dictionary, utils.is_None],
         #'data_source_property_filter':  [utils.is_dictionary, utils.is_None],
+        'data_keep_scaling':            [utils.is_bool],
         'data_alt_property_labels':     [utils.is_dictionary],
         'data_num_train':               [utils.is_numeric],
         'data_num_valid':               [utils.is_numeric],
@@ -131,6 +138,7 @@ class DataContainer():
         data_properties: Optional[List[str]] = None,
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
+        data_keep_scaling: Optional[bool] = None,
         data_num_train: Optional[Union[int, float]] = None,
         data_num_valid: Optional[Union[int, float]] = None,
         data_num_test: Optional[Union[int, float]] = None,
@@ -161,7 +169,7 @@ class DataContainer():
 
         # Check 'data_file' input for file format information
         data_file = self.check_data_files(data_file)
-            
+
         # If not to overwrite, get metadata from existing database
         if data_overwrite or config.get('data_overwrite') or data_file is None:
 
@@ -697,6 +705,7 @@ class DataContainer():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, List[str]]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
+        data_keep_scaling: Optional[bool] = None,
         **kwargs,
     ) -> List[str]:
         """
@@ -718,6 +727,10 @@ class DataContainer():
         data_source_unit_properties: dictionary, optional, default None
             Dictionary from properties (keys) to corresponding unit as a 
             string (item) in the source data files.
+        data_keep_scaling: bool, optional, default None
+            If True, keep or take over the property and atomic energies scaling
+            parameter either from the database file 'data_file' or, if not
+            defined in 'data_file', from the  source database file.
 
         Returns
         -------
@@ -740,6 +753,8 @@ class DataContainer():
             data_alt_property_labels = self.data_alt_property_labels
         if data_source_unit_properties is None:
             data_source_unit_properties = self.data_source_unit_properties
+        if data_keep_scaling is None:
+            data_keep_scaling = self.data_keep_scaling
 
         # Load reference data set(s) from defined source data path(s)
         for source in data_source:
@@ -749,6 +764,7 @@ class DataContainer():
                 data_unit_properties=data_unit_properties,
                 data_alt_property_labels=data_alt_property_labels,
                 data_source_unit_properties=data_source_unit_properties,
+                data_keep_scaling=data_keep_scaling,
             )
 
         # Return data source information from metadata
@@ -1003,6 +1019,7 @@ class DataContainer():
         train_batch_size: int,
         valid_batch_size: int,
         test_batch_size: int,
+        reference_properties: Optional[List[str]] = None,
         num_workers: Optional[int] = 1,
         apply_atomic_energies_shift: Optional[bool] = True,
         atomic_energies_shift_list: Optional[List[float]] = None,
@@ -1020,6 +1037,9 @@ class DataContainer():
             Validation dataloader batch size
         test_batch_size: int
             Test dataloader batch size
+        reference_properties: list, optional, default None
+            Reference properties to add to the data batch. If None, the
+            data property list is used.
         num_workers: int, optional, default 1
             Number of data loader workers
         apply_atomic_energies_shift: bool, optional, default True
@@ -1033,6 +1053,10 @@ class DataContainer():
             Model variables data type
 
         """
+
+        # Check reference property list
+        if reference_properties is None:
+            reference_properties = self.data_properties
 
         # Check atomic energies shift list
         metadata = self.get_metadata()
@@ -1051,6 +1075,7 @@ class DataContainer():
         self.train_dataloader = data.DataLoader(
             self.train_dataset,
             train_batch_size,
+            reference_properties,
             True,
             num_workers,
             device,
@@ -1059,6 +1084,7 @@ class DataContainer():
         self.valid_dataloader = data.DataLoader(
             self.valid_dataset,
             valid_batch_size,
+            reference_properties,
             False,
             num_workers,
             device,
@@ -1067,6 +1093,7 @@ class DataContainer():
         self.test_dataloader = data.DataLoader(
             self.test_dataset,
             test_batch_size,
+            reference_properties,
             False,
             num_workers,
             device,
@@ -1192,8 +1219,8 @@ class DataContainer():
             metadata['data_property_scaling'] = property_scaling
         else:
             metadata['data_property_scaling'].update(property_scaling)
-        metadata['data_property_scaling_uptodate'] = True
         metadata['data_property_scaling_label'] = data_label
+        metadata['data_property_scaling_uptodate'] = True
         self.dataset.set_metadata(metadata)
 
         return property_scaling
@@ -1304,8 +1331,8 @@ class DataContainer():
             else:
                 metadata['data_atomic_energies_scaling'].update(
                     atomic_energies_scaling)
-            metadata['data_atomic_energies_scaling_uptodate'] = True
             metadata['data_atomic_energies_scaling_label'] = data_label
+            metadata['data_atomic_energies_scaling_uptodate'] = True
             self.dataset.set_metadata(metadata)
 
         return atomic_energies_scaling

@@ -258,7 +258,7 @@ class MCSampler(sampling.Sampler):
             else:
                 isample = ithread
             if self.Nsamples[isample] == 0:
-                message += f"No samples written to "
+                message = f"No samples written to "
             else:
                 message = (
                     f"Sampling method '{self.sample_tag:s}' complete for "

@@ -1,7 +1,7 @@
 import sys
 import ctypes
 import numpy as np
-from typing import Optional, List, Dict, Tuple, Union, Any
+from typing import Optional, List, Dict, Callable, Any, Tuple, Union
 
 import torch
 
@@ -74,7 +74,8 @@ class PyCharmm_Calculator:
         **kwargs
     ):
 
-        # Assign dtype
+        # Assign model device and dtype
+        self.device = model_calculator.device
         self.dtype = model_calculator.dtype
 
         ################################
@@ -83,53 +84,62 @@ class PyCharmm_Calculator:
         
         # Number of machine learning (ML) atoms
         self.ml_num_atoms = torch.tensor(
-            [len(ml_atom_indices)], dtype=torch.int64)
+            [len(ml_atom_indices)], device=self.device, dtype=torch.int64)
+        self.ml_sysi = torch.zeros(
+            self.ml_num_atoms, device=self.device, dtype=torch.int64)
 
         # ML atom indices
-        self.ml_atom_indices = torch.tensor(ml_atom_indices, dtype=torch.int64)
-        self.tt = np.array(ml_atom_indices, dtype=int)
+        self.ml_atom_indices = torch.tensor(
+            ml_atom_indices, device=self.device, dtype=torch.int64)
+
         # ML atomic numbers
         self.ml_atomic_numbers = torch.tensor(
-            ml_atomic_numbers, dtype=torch.int64)
-        
+            ml_atomic_numbers, device=self.device, dtype=torch.int64)
+
         # ML atom total charge
-        self.ml_charge = torch.tensor(ml_charge, dtype=self.dtype)
+        self.ml_charge = torch.tensor(
+            ml_charge, device=self.device, dtype=self.dtype)
 
         # ML fluctuating charges
         self.ml_fluctuating_charges = ml_fluctuating_charges
 
+        # Assign ML-ML model cutoff
+        self.ml_cutoff = model_calculator.model_cutoff
+        self.ml_cutoff2 = self.ml_cutoff**2
+
         # ML and MM atom charges
         self.mlmm_atomic_charges = torch.tensor(
-            mlmm_atomic_charges, dtype=self.dtype)
+            mlmm_atomic_charges, device=self.device, dtype=self.dtype)
 
         # ML and MM number of atoms
         self.mlmm_num_atoms = len(mlmm_atomic_charges)
-        
-        # ML and MM atom indices
-        self.mlmm_atom_indices = torch.zeros(
-            self.mlmm_num_atoms, dtype=torch.int64)
-        self.mlmm_atom_indices[self.ml_atom_indices] = self.ml_atomic_numbers
-        
+
         # ML atoms - atom indices pointing from MLMM position to ML position
         # 0, 1, 2 ..., ml_num_atoms: ML atom 1, 2, 3 ... ml_num_atoms + 1
         # ml_num_atoms + 1: MM atoms
         ml_idxp = np.full(self.mlmm_num_atoms, -1)
         for ia, ai in enumerate(ml_atom_indices):
             ml_idxp[ai] = ia
-        self.ml_idxp = torch.tensor(ml_idxp, dtype=torch.int64)
+        self.ml_idxp = torch.tensor(
+            ml_idxp, device=self.device, dtype=torch.int64)
         
         # Running number list
-        self.mlmm_idxa = torch.arange(self.mlmm_num_atoms, dtype=torch.int64)
+        self.mlmm_idxa = torch.arange(
+            self.mlmm_num_atoms, device=self.device, dtype=torch.int64)
 
         # Non-bonding interaction range
-        self.mlmm_cutoff = torch.tensor(mlmm_cutoff, dtype=self.dtype)
-        self.mlmm_cuton = torch.tensor(mlmm_cuton, dtype=self.dtype)
+        self.mlmm_cutoff = torch.tensor(
+            mlmm_cutoff, device=self.device, dtype=self.dtype)
+        self.mlmm_cuton = torch.tensor(
+            mlmm_cuton, device=self.device, dtype=self.dtype)
         
         # Non-bonding electrostatic scaling factor
         if mlmm_lambda is None:
-            self.mlmm_lambda = torch.tensor(1.0, dtype=self.dtype)
+            self.mlmm_lambda = torch.tensor(
+                1.0, device=self.device, dtype=self.dtype)
         else:
-            self.mlmm_lambda = torch.tensor(mlmm_lambda, dtype=self.dtype)
+            self.mlmm_lambda = torch.tensor(
+                mlmm_lambda, device=self.device, dtype=self.dtype)
 
         ################################
         # # # Set Model Calculator # # #
@@ -182,16 +192,16 @@ class PyCharmm_Calculator:
                     + "\nMake sure parameters are loaded otherwise "
                     + "model predictions are random.")
 
-        #############################
-        # # # Set ML/MM Options # # #
-        #############################
-
         # Set model to evaluation mode
         if self.model_ensemble:
             for calc in self.model_calculator_list:
                 calc.eval()
         else:
             self.model_calculator.eval()
+
+        #############################
+        # # # Set ML/MM Options # # #
+        #############################
 
         # Get property unit conversions from model units to CHARMM units
         self.model_unit_properties = (
@@ -214,25 +224,21 @@ class PyCharmm_Calculator:
         # Initialize the non-bonded interaction calculator
         if self.ml_fluctuating_charges:
 
-            # Convert 1/(2*4*pi*epsilon) from e**2/eV/Ang to CHARMM units
-            kehalf_ase = 7.199822675975274
-            conversion, _ = utils.check_units(
-                self.model_unit_properties.get('energy'))
-            self.kehalf = torch.tensor(
-                [kehalf_ase*1.**2/conversion/1.],
-                dtype=self.dtype)
-
-            self.electrostatics_calc = Electrostatic_shift(
+            self.electrostatics_calc = MLMM_electrostatics(
                 self.mlmm_cutoff,
                 self.mlmm_cuton,
-                self.ml_idxp,
-                self.mlmm_atomic_charges,
-                kehalf=self.kehalf,
+                self.device,
+                self.dtype,
+                unit_properties=self.model_unit_properties,
+                lambda_value=self.mlmm_lambda,
+                atomic_dipoles=self.model_calculator.model_atomic_dipoles,
                 )
 
         else:
 
             self.electrostatics_calc = None
+
+        return
 
     def calculate_charmm(
         self,
@@ -287,58 +293,63 @@ class PyCharmm_Calculator:
         Nmlmmp: int
             Number of ML/MM atom pairs in the system
         idxi: list(int)
-            List of ML atom indices for ML potential
+            List of ML atom pair indices for ML potential
         idxj: list(int)
-            List of ML atom indices for ML potential
+            List of ML atom pair indices for ML potential
         idxjp: list(int)
-            List of image to primary ML atom index pointer
+            List of image to primary ML atom pair index pointer
         idxu: list(int)
-            List of ML atom indices for ML-MM embedding potential
+            List of ML atom pair indices for ML-MM embedding potential
         idxv: list(int)
-            List of MM atom indices for ML-MM embedding potential
+            List of MM atom pair indices for ML-MM embedding potential
         idxup: list(int)
-            List of image to primary ML atom index pointer
+            List of image to primary ML atom pair index pointer
         idxvp: list(int)
-            List of image to primary MM atom index pointer
+            List of image to primary MM atom pair index pointer
 
         Return
         ------
         float
             ML potential plus ML-MM embedding potential
+
         """
 
-        # Assign all positions
+        # Assign number of atoms
         if Ntrans:
-            mlmm_R = torch.transpose(
-                torch.tensor(
-                    [x[:Natim], y[:Natim], z[:Natim]], dtype=self.dtype
-                ),
-                0, 1)
-            mlmm_idxp = idxp[:Natim]
+            Nmlmm = Natim
         else:
-            mlmm_R = torch.transpose(
-                torch.tensor(
-                    [x[:Natom], y[:Natom], z[:Natom]], dtype=self.dtype
-                ),
-                0, 1)
-            mlmm_idxp = idxp[:Natom]
-        mlmm_R.requires_grad_(True)
+            Nmlmm = Natom
 
-        # Assign indices
-        # ML-ML pair indices
-        ml_idxi = torch.tensor(idxi[:Nmlp], dtype=torch.int64)
-        ml_idxj = torch.tensor(idxj[:Nmlp], dtype=torch.int64)
-        ml_idxjp = torch.tensor(idxjp[:Nmlp], dtype=torch.int64)
-        ml_sysi = torch.zeros(self.ml_num_atoms, dtype=torch.int64)
-        # ML-MM pair indices and pointer
-        mlmm_idxu = torch.tensor(
-            idxu[:Nmlmmp], dtype=torch.int64)
-        mlmm_idxv = torch.tensor(
-            idxv[:Nmlmmp], dtype=torch.int64)
-        mlmm_idxup = torch.tensor(
-            idxup[:Nmlmmp], dtype=torch.int64)
-        mlmm_idxvp = torch.tensor(
-            idxvp[:Nmlmmp], dtype=torch.int64)
+        # Assign primary and primary to image atom index pointer
+        mlmm_idxp = torch.tensor(idxp[:Nmlmm], dtype=torch.int64)
+        
+        # Assign all positions
+        mlmm_R = torch.transpose(
+            torch.tensor(
+                [x[:Nmlmm], y[:Nmlmm], z[:Nmlmm]],
+                device=self.device,
+                dtype=self.dtype
+            ),
+            0, 1)
+
+        # Assign ML-ML pair indices
+        ml_idxi = torch.tensor(
+            idxi[:Nmlp], device=self.device, dtype=torch.int64)
+        ml_idxj = torch.tensor(
+            idxj[:Nmlp], device=self.device, dtype=torch.int64)
+        ml_idxjp = torch.tensor(
+            idxjp[:Nmlp], device=self.device, dtype=torch.int64)
+
+        # Update ML-ML pair indices by cutoff distance
+        selection = (
+            torch.sum((mlmm_R[ml_idxi] - mlmm_R[ml_idxj])**2, dim=1)
+            <= self.ml_cutoff2)
+        ml_idxi = ml_idxi[selection]
+        ml_idxj = ml_idxj[selection]
+        ml_idxjp = ml_idxjp[selection]
+
+        # Set gradient properties
+        mlmm_R.requires_grad_(True)
 
         # Create batch for evaluating the model
         atoms_batch = {}
@@ -348,46 +359,27 @@ class PyCharmm_Calculator:
         atoms_batch['charge'] = self.ml_charge
         atoms_batch['idx_i'] = ml_idxi
         atoms_batch['idx_j'] = ml_idxj
-        atoms_batch['sys_i'] = ml_sysi
+        atoms_batch['sys_i'] = self.ml_sysi
         
-        # PBC options
-        atoms_batch['pbc_offset_ij'] = None
-        atoms_batch['pbc_offset_uv'] = None
-        atoms_batch['pbc_atoms'] = self.ml_atom_indices
-        atoms_batch['pbc_idx'] = self.ml_idxp
-        atoms_batch['pbc_idx_j'] = ml_idxjp
-
+        # Add ML/MM and PBC supercluster variables
+        atoms_batch['ml_idx'] = self.ml_atom_indices
+        atoms_batch['ml_idx_p'] = self.ml_idxp
+        atoms_batch['ml_idx_jp'] = ml_idxjp
+        
         # Compute model properties
-        results = {}
-        if self.model_ensemble:
-
-            # TODO Test
-            for ic, calc in enumerate(self.model_calculator_list):
-                results[ic] = calc(atoms_batch)
-            for prop in self.implemented_properties:
-                prop_std = f"std_{prop:s}"
-                results[prop_std], self.results[prop] = torch.std_mean(
-                    torch.cat(
-                        [
-                            results[ic][prop]
-                            for ic in range(self.model_calculator_num)
-                        ],
-                        dim=0),
-                    dim=0)
-
-        else:
-
-            results = self.model_calculator(atoms_batch)
+        atoms_batch = self.model_calculator(
+            atoms_batch,
+            create_graph=self.ml_fluctuating_charges)
 
         # Unit conversion
         self.results = {}
         for prop in self.implemented_properties:
             self.results[prop] = (
-                results[prop]*self.model2charmm_unit_conversion[prop])
+                atoms_batch[prop]*self.model2charmm_unit_conversion[prop])
 
-        # Apply dtype conversion
-        ml_Epot = self.results['energy'].detach().numpy()
-        ml_F = self.results['forces'].detach().numpy().ctypes.data_as(
+        # Apply dtype conversion of force components
+        ml_Epot = self.results['energy'].cpu().detach().numpy()
+        ml_F = self.results['forces'].cpu().detach().numpy().ctypes.data_as(
             ctypes.POINTER(ctypes.c_double))
 
         # Add forces to CHARMM derivative arrays
@@ -398,28 +390,53 @@ class PyCharmm_Calculator:
             dz[ai] -= ml_F[ii+2]
 
         # Calculate electrostatic energy and force contribution
-        if self.electrostatics_calc is not None:
+        if self.electrostatics_calc is None:
+
+            self.mlmm_Eele = 0.0
+
+        else:
             
-            mlmm_Eele, mlmm_gradient = self.electrostatics_calc.run(
+            # Assign ML-MM pair indices and pointer
+            mlmm_idxu = torch.tensor(
+                idxu[:Nmlmmp], device=self.device, dtype=torch.int64)
+            mlmm_idxv = torch.tensor(
+                idxv[:Nmlmmp], device=self.device, dtype=torch.int64)
+            mlmm_idxup = torch.tensor(
+                idxup[:Nmlmmp], device=self.device, dtype=torch.int64)
+            mlmm_idxvp = torch.tensor(
+                idxvp[:Nmlmmp], device=self.device, dtype=torch.int64)
+            
+            # Update batch for evaluating the model
+            atoms_batch['mlmm_atomic_charges'] = self.mlmm_atomic_charges
+            atoms_batch['mlmm_idxu'] = mlmm_idxu
+            atoms_batch['mlmm_idxv'] = mlmm_idxv
+            atoms_batch['mlmm_idxup'] = mlmm_idxup
+            atoms_batch['mlmm_idxvp'] = mlmm_idxvp
+
+            # Compute MLMM electrostatics
+            mlmm_Eelec = self.electrostatics_calc(atoms_batch)['mlmm_energy']
+
+            # Compute MLMM electrostatics forces
+            mlmm_gradient_elec = torch.autograd.grad(
+                torch.sum(mlmm_Eelec),
                 mlmm_R,
-                self.results['atomic_charges'],
-                mlmm_idxu,
-                mlmm_idxv,
-                mlmm_idxup,
-                mlmm_idxvp)
+                retain_graph=False)[0]
 
             # Add electrostatic interaction potential to ML energy
-            self.mlmm_Eele = (
-                mlmm_Eele*self.mlmm_lambda
+            self.mlmm_Eelec = (
+                mlmm_Eelec*self.mlmm_lambda
                 * self.model2charmm_unit_conversion['energy']
-                ).detach().numpy()
-            ml_Epot += self.mlmm_Eele
+                ).cpu().detach().numpy()
+            
+            # Only add electrostatic when using older CHARMM versions where
+            # MLMM electrostatic is not added to the ELEC energy contribution
+            # ml_Epot += self.mlmm_Eelec
 
-            # Apply dtype conversion
+            # Apply dtype conversion of force components
             mlmm_F = (
-                -mlmm_gradient*self.mlmm_lambda
+                -mlmm_gradient_elec*self.mlmm_lambda
                 * self.model2charmm_unit_conversion['forces']
-                ).detach().numpy().ctypes.data_as(
+                ).cpu().detach().numpy().ctypes.data_as(
                     ctypes.POINTER(ctypes.c_double)
                     )
 
@@ -433,196 +450,515 @@ class PyCharmm_Calculator:
         return ml_Epot
 
     def mlmm_elec(self):
-        return self.mlmm_Eele
+        return self.mlmm_Eelec
 
 
-class Electrostatic_shift:
+class MLMM_electrostatics(torch.nn.Module):
     """
-    Coulomb potential calculator between fluctuating ML atomic charges and
-    static MM atomic charges.
+    Torch implementation of a ML point charge and, eventually, atomic dipole 
+    to MM point charge electrostatic model.
 
     Parameters
     ----------
-    mlmm_cutoff: torch.Tensor
+    cutoff: torch.Tensor
         Interaction cutoff distance for ML/MM electrostatic interactions
-    mlmm_cuton: torch.Tensor
+    cuton: torch.Tensor
         Lower atom pair distance to start interaction switch-off for ML/MM
         electrostatic interactions
-    ml_idxp: torch.Tensor
-        ML atoms ti atom indices pointing from MLMM position to ML position.
-    mlmm_atomic_charges: torch.Tensor
-        List of all atomic charges of the system loaded to CHARMM.
-    kehalf: torch.Tensor
-        Coulomb factor with respective unit
-    switch_fn: str, optional, default 'Poly6_range'
+    device: str
+        Device type for model variable allocation
+    dtype: dtype object
+        Model variables data type
+    unit_properties: dict, optional, default None
+        Dictionary with the units of the model properties to initialize correct
+        conversion factors.
+    lambda_value: torch.Tensor
+        Scaling factor for the ML/MM interaction energy
+    switch_fn: (str, callable), optional, default 'Poly6_range'
         Type of switch off function
-    
+    truncation: str, optional, default 'force'
+        Truncation method of the Coulomb potential at the cutoff range:
+            None, 'None': 
+                No Coulomb potential shift applied
+            'potential':
+                Apply shifted Coulomb potential method
+                    V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
+            'force', 'forces':
+                Apply shifted Coulomb force method
+                    V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
+                        - (dV_Coulomb/dr)|r_cutoff  * (r - r_cutoff)
+    atomic_dipoles: bool, optional, default False
+        Flag if atomic dipoles are predicted and to include in the
+        electrostatic interaction potential computation
+    **kwargs
+        Additional keyword arguments.
+
     """
 
     def __init__(
         self,
-        mlmm_cutoff: torch.Tensor,
-        mlmm_cuton: torch.Tensor,
-        ml_idxp: torch.Tensor,
-        mlmm_atomic_charges: torch.Tensor,
-        kehalf: torch.Tensor,
-        switch_fn='Poly6_range',
+        cutoff: torch.Tensor,
+        cuton: torch.Tensor,
+        device: str,
+        dtype: 'dtype',
+        unit_properties: Dict[str, str],
+        lambda_value: torch.Tensor,
+        switch_fn: Union[str, object] = 'Poly6_range',
+        truncation: str = 'potential',
+        atomic_dipoles: bool = False,
+        **kwargs
     ):
 
-        self.mlmm_cutoff = mlmm_cutoff
-        self.mlmm_cutoff2 = mlmm_cutoff**2
-        self.mlmm_cuton = mlmm_cuton
-        self.ml_idxp = ml_idxp
-        self.mlmm_atomic_charges = mlmm_atomic_charges
+        super(MLMM_electrostatics, self).__init__()
 
-        # Initialize the class for cutoff
-        self.switch_fn = layer.get_cutoff_fn(switch_fn)(
-            self.mlmm_cutoff, self.mlmm_cuton)
-        self.kehalf = kehalf
+        # Assign variables
+        self.cutoff = cutoff
+        self.cutoff2 = cutoff**2
+        self.cuton = cuton
+        self.lambda_value = lambda_value
 
-    def calculate_mlmm_interatomic_distances(
-        self,
-        R: torch.Tensor,
-        idxu: torch.Tensor,
-        idxv: torch.Tensor,
-        idxup: torch.Tensor,
-        idxvp: torch.Tensor,
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+        # Assign module variable parameters from configuration
+        self.dtype = dtype
+        self.device = device
+
+        # Assign switch function
+        switch_class = layer.get_cutoff_fn(switch_fn)
+        self.switch_fn = switch_class(
+            self.cutoff, self.cuton, device=self.device, dtype=self.dtype)
+
+        # Set property units for parameter scaling
+        self.set_unit_properties(unit_properties)
+       
+        # Assign truncation method
+        if truncation is None or truncation.lower() == 'none':
+            self.potential_fn = MLMM_electrostatics_NoShift(
+                self.cutoff,
+                self.ke,
+                self.switch_fn,
+                atomic_dipoles)
+        elif truncation.lower() == 'potential':
+            self.potential_fn = MLMM_electrostatics_ShiftedPotential(
+                self.cutoff,
+                self.ke,
+                self.switch_fn,
+                atomic_dipoles)
+        elif truncation.lower() in ['force', 'forces']:
+            self.potential_fn = MLMM_electrostatics_ShiftedForce(
+                self.cutoff,
+                self.ke,
+                self.switch_fn,
+                atomic_dipoles)
+        else:
+            raise SyntaxError(
+                "Truncation method of the Coulomb potential "
+                + f"'{truncation:}' is unknown!\n"
+                + "Available are 'None', 'potential', 'force'.")
+
+        return
+
+    def __str__(self):
+        return "Shielded Point Charge and Atomic Dipole Electrostatics"
+
+    def get_info(self) -> Dict[str, Any]:
         """
-        Calculate ML-MM atom distances.
+        Return class information
+        """
+
+        return {}
+
+    def set_unit_properties(
+        self,
+        unit_properties: Dict[str, str],
+    ):
+        """
+        Set unit conversion factors for compatibility between requested
+        property units and applied property units (for physical constants)
+        of the module.
+        
+        Parameters
+        ----------
+        unit_properties: dict
+            Dictionary with the units of the model properties to initialize 
+            correct conversion factors.
+        
+        """
+
+        # Get conversion factors
+        if unit_properties is None:
+            unit_energy = settings._default_units.get('energy')
+            unit_positions = settings._default_units.get('positions')
+            unit_charge = settings._default_units.get('charge')
+            factor_energy, _ = utils.check_units(unit_energy)
+            factor_positions, _ = utils.check_units(unit_positions)
+            factor_charge, _ = utils.check_units(unit_charge)
+        else:
+            factor_energy, _ = utils.check_units(
+                unit_properties.get('energy'))
+            factor_positions, _ = utils.check_units(
+                unit_properties.get('positions'))
+            factor_charge, _ = utils.check_units(
+                unit_properties.get('charge'))
+    
+        # Convert 1/(4*pi*epsilon) from e**2/eV/Ang to model units
+        ke_ase = 14.399645351950548
+        ke = torch.tensor(
+            [ke_ase*factor_charge**2/factor_energy/factor_positions],
+            device=self.device, dtype=self.dtype)
+        self.register_buffer('ke', ke)
+
+        return
+
+    def forward(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Compute shielded electrostatic interaction between atom center point 
+        charges and dipoles.
 
         Parameters
         ----------
-        R: torch.tensor
-            ML and MM atom positions
-        idxu: torch.tensor
-            List of ML atom indices for ML-MM embedding potential
-        idxv: torch.tensor
-            List of MM atom indices for ML-MM embedding potential
-        idxup: torch.tensor
-            List of image to primary ML atom index pointer
-        idxvp: torch.tensor
-            List of image to primary MM atom index pointer
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
 
-        Return
-        ------
-        torch.tensor
-            ML-MM atom pair distances
-        torch.tensor
-            ML atom pair indices
-        torch.tensor
-            MM atom pair indices
-
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Dictionary added by module results
+        
         """
 
-        # Gather positions
-        Ru = R[idxu]
-        Rv = R[idxv]
-        
-        # Interacting atom pair distances within cutoff
-        sum_distances = torch.sum((Ru - Rv)**2, dim=1)
-        selection = sum_distances < self.mlmm_cutoff2
-        Duv = torch.sqrt(sum_distances[selection])
-        
-        # Reduce the indexes to consider only interacting pairs (selection)
-        # and point image atom indices to primary atom indices (idx_p)
-        idxur = idxup[selection]
-        idxvr = idxvp[selection]
-        
-        return Duv, idxur, idxvr
+        # Assign variables
+        positions = batch['positions']
+        ml_idxu = batch['mlmm_idxu']
+        mm_idxv = batch['mlmm_idxv']
+        ml_idxup = batch['mlmm_idxup']
+        mm_idxvp = batch['mlmm_idxvp']
+        ml_idxtp = batch['mlmm_idxvp']
 
-    def electrostatic_energy_per_atom_to_point_charge(
+        # Compute ML-MM atom pair vectors and distances within cutoff
+        mlmm_vectors = positions[ml_idxu] - positions[mm_idxv]
+        mlmm_distances2 = torch.sum(mlmm_vectors**2, dim=1)
+        in_cutoff = mlmm_distances2 < self.cutoff2
+        batch['mlmm_vectors'] = mlmm_vectors[in_cutoff]
+        batch['mlmm_distances'] = torch.sqrt(mlmm_distances2[in_cutoff])
+
+        # Select indexes to consider only interacting pairs (selection)
+        # and point image atom indices from periodic cells to the respective 
+        # primary atom indices (idx?p[idx?])
+        ml_idxu = ml_idxup[in_cutoff]
+        batch['mlmm_idxv'] = mm_idxvp[in_cutoff]
+
+        # Point from CHARMM topology ML atom indices (somewhere between 0 and
+        # N_MLMM) to model calculator atom indices (between 0 and N_ML)
+        batch['mlmm_idxu'] = batch['ml_idx_p'][ml_idxu]
+
+        # Compute damped ML-MM Coulomb potential
+        Eelec_pair = self.potential_fn(batch)
+
+        # Sum up electrostatic atom pair contribution
+        Eelec_sys = torch.sum(Eelec_pair)
+
+        # Assign total electrostatic energy contributions
+        batch['mlmm_energy'] = Eelec_sys
+
+        return batch
+
+
+class MLMM_electrostatics_NoShift(torch.nn.Module):
+    """
+    Torch implementation of a damped point charge and, eventually, atomic
+    dipole electrostatic pair interaction without applying any cutoff method
+
+    Parameters
+    ----------
+    cutoff: float
+        Coulomb potential cutoff range between atom pairs
+    ke: float
+        Coulomb potential factor
+    switch_fn: callable
+        Switch off function to turn of electrostatics for pair distances
+        between cuton and cutoff radius
+    atomic_dipoles: bool, optional, default False
+        Flag if atomic dipoles are predicted and to include in the
+        electrostatic interaction potential computation
+
+    """
+
+    def __init__(
         self,
-        Duv: torch.Tensor,
-        Qau: torch.Tensor,
-        Qav: torch.Tensor,
+        cutoff: float,
+        ke: float,
+        switch_fn: Callable,
+        atomic_dipoles: bool,
+    ):
+
+        super(MLMM_electrostatics_NoShift, self).__init__()
+
+        # Assign parameters
+        self.cutoff = cutoff
+        self.ke = ke
+        self.switch_fn = switch_fn
+        self.atomic_dipoles = atomic_dipoles
+
+        return
+
+    def forward(
+        self,
+        batch: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
         """
-        Calculate electrostatic interaction between ML atom charge and MM point
-        charge based on shifted Coulomb potential scheme
-        
+        Damped & shifted forces Coulomb interaction
+
         Parameters
         ----------
-        Duv: torch.tensor
-            ML-MM atom pair distances
-        Qau: torch.tensor
-            List of ML atomic charges
-        Qav: torch.tensor
-            List of MM atomic charges
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
 
-        Return
-        ------
-        torch.tensor
-            ML-MM atom pair electrostatic Coulomb interaction
-        
+        Returns
+        -------
+        torch.Tensor
+            Damped and force shifted electrostatic atom pair interaction
+
         """
 
-        # Cutoff weighted reciprocal distance
-        switchoff = self.switch_fn(Duv)
+        # Compute reciprocal distances and cutoff shifts
+        distances = batch['mlmm_distances']
+        chi = 1.0/distances
 
-        # Shifted Coulomb energy
-        qq = 2.0*self.kehalf*Qau*Qav
-        Eele = qq/Duv - qq/self.mlmm_cutoff*(2.0 - Duv/self.mlmm_cutoff)
+        # Gather atomic charge pairs
+        atomic_charges_i = batch['mlmm_atomic_charges'][batch['mlmm_idxu']]
+        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idxv']]
 
-        return torch.sum(switchoff*Eele)
+        # Compute damped charge-charge electrostatics
+        Eelec = atomic_charges_i*atomic_charges_j*chi
 
-    def run(
+        # Compute damped charge-dipole and dipole-dipole electrostatics
+        if self.atomic_dipoles:
+
+            # Compute powers of damped reciprocal distances
+            chi2 = chi**2
+
+            # Adjust atom pair vectors
+            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+
+            # Gather atomic dipole pairs
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idxu']]
+
+            # Compute dot products of atom pair vector and atomic dipole
+            dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+
+            # Compute damped charge-dipole electrostatics
+            Eelec = Eelec + atomic_charges_j*dot_ji*chi2
+
+        # Sum electrostatic contributions
+        Eelec = self.ke*Eelec
+
+        # Apply switch off function
+        Eelec = Eelec*self.switch_fn(distances)
+
+        return Eelec
+
+
+class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
+    """
+    Torch implementation of a damped point charge and, eventually, atomic
+    dipole electrostatic pair interaction applying the shifted potential cutoff
+    method
+
+    Parameters
+    ----------
+    cutoff: float
+        Coulomb potential cutoff range between atom pairs
+    ke: float
+        Coulomb potential factor
+    switch_fn: callable
+        Switch off function to turn of electrostatics for pair distances
+        between cuton and cutoff radius
+    atomic_dipoles: bool, optional, default False
+        Flag if atomic dipoles are predicted and to include in the
+        electrostatic interaction potential computation
+
+    """
+
+    def __init__(
         self,
-        mlmm_R: torch.Tensor,
-        ml_Qa: torch.Tensor,
-        mlmm_idxu: torch.Tensor,
-        mlmm_idxv: torch.Tensor,
-        mlmm_idxup: torch.Tensor,
-        mlmm_idxvp: torch.Tensor,
-    ) -> (torch.Tensor, torch.Tensor):
+        cutoff: float,
+        ke: float,
+        switch_fn: Callable,
+        atomic_dipoles: bool,
+        **kwargs
+    ):
+
+        super(MLMM_electrostatics_ShiftedPotential, self).__init__()
+
+        # Assign parameters
+        self.cutoff = cutoff
+        self.ke = ke
+        self.switch_fn = switch_fn
+        self.atomic_dipoles = atomic_dipoles
+
+        return
+
+    def forward(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
         """
-        Calculates the electrostatic interaction between ML atoms in the 
-        primary cell with all MM atoms in the primary or imaginary non-bonded
-        lists.
-        
+        Damped & shifted forces Coulomb interaction
+
         Parameters
         ----------
-        mlmm_R: torch.tensor
-            ML and MM atom positions
-        ml_Qa: torch.tensor
-            ML atomic charges
-        mlmm_idxu: torch.tensor
-            List of ML atom indices for ML-MM embedding potential
-        mlmm_idxv: torch.tensor
-            List of MM atom indices for ML-MM embedding potential
-        mlmm_idxvp: torch.tensor
-            List of image to primary ML atom index pointer
-        mlmm_idxvp: torch.tensor
-            List of image to primary MM atom index pointer
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
 
-        Return
-        ------
-        torch.tensor
-            Total ML-MM electrostatic Coulomb interaction
-        torch.tensor
-            ML and MM atom electrostatic Coulomb forces
-        
+        Returns
+        -------
+        torch.Tensor
+            Damped and force shifted electrostatic atom pair interaction
+
         """
-        
-        # Calculate ML-MM atom distances
-        mlmm_Duv, mlmm_idxur, mlmm_idxvr = (
-            self.calculate_mlmm_interatomic_distances(
-                mlmm_R, mlmm_idxu, mlmm_idxv, mlmm_idxup, mlmm_idxvp)
-            )
 
-        # Point from PyCHARMM ML atom indices to model calculator atom indices
-        ml_idxur = self.ml_idxp[mlmm_idxur]
-        
-        # Get ML and MM charges
-        ml_Qau = ml_Qa[ml_idxur]
-        ml_Qav = self.mlmm_atomic_charges[mlmm_idxvr]
+        # Compute damped reciprocal distances and cutoff shifts
+        distances = batch['mlmm_distances']
+        chi = 1.0/distances
+        chi_shift = 1.0/self.cutoff
 
-        # Calculate electrostatic energy and gradients
-        Eele = self.electrostatic_energy_per_atom_to_point_charge(
-            mlmm_Duv, ml_Qau, ml_Qav)
-        Eele_gradient = torch.autograd.grad(
-                torch.sum(Eele),
-                mlmm_R,
-                retain_graph=True)[0]
+        # Gather atomic charge pairs
+        atomic_charges_i = batch['atomic_charges'][batch['mlmm_idxu']]
+        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idxv']]
 
-        return Eele, Eele_gradient
+        # Compute damped charge-charge electrostatics
+        Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
+
+        # Compute damped charge-dipole and dipole-dipole electrostatics
+        if self.atomic_dipoles:
+
+            # Compute powers of damped reciprocal distances
+            chi2 = chi**2
+            chi2_shift = chi_shift**2
+
+            # Adjust atom pair vectors
+            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+
+            # Gather atomic dipole pairs
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idxu']]
+
+            # Compute dot products of atom pair vector and atomic dipole
+            dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+
+            # Compute damped charge-dipole electrostatics
+            Eelec = Eelec + atomic_charges_j*dot_ji*(chi2 - chi2_shift)
+
+        # Sum electrostatic contributions
+        Eelec = self.ke*Eelec
+
+        # Apply switch off function
+        Eelec = Eelec*self.switch_fn(distances)
+
+        return Eelec
+
+
+class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
+    """
+    Torch implementation of a damped point charge and, eventually, atomic
+    dipole electrostatic pair interaction applying the shifted force cutoff
+    method
+
+    Parameters
+    ----------
+    cutoff: float
+        Coulomb potential cutoff range between atom pairs
+    kehalf: float
+        Coulomb potential factor
+    switch_fn: callable
+        Switch off function to turn of electrostatics for pair distances
+        between cuton and cutoff radius
+    atomic_dipoles: bool, optional, default False
+        Flag if atomic dipoles are predicted and to include in the
+        electrostatic interaction potential computation
+
+    """
+
+    def __init__(
+        self,
+        cutoff: float,
+        ke: float,
+        switch_fn: Callable,
+        atomic_dipoles: bool,
+    ):
+
+        super(MLMM_electrostatics_ShiftedForce, self).__init__()
+
+        # Assign parameters
+        self.cutoff = cutoff
+        self.cutoff2 = cutoff**2
+        self.cutoff3 = cutoff**3
+        self.ke = ke
+        self.switch_fn = switch_fn
+        self.atomic_dipoles = atomic_dipoles
+
+        return
+
+    def forward(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Damped & shifted forces Coulomb interaction
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
+
+        Returns
+        -------
+        torch.Tensor
+            Damped and force shifted electrostatic atom pair interaction
+
+        """
+
+        # Compute damped reciprocal distances and cutoff shifts
+        distances = batch['mlmm_distances']
+        chi = 1.0/distances
+        chi_shift = 2.0/self.cutoff - distances/self.cutoff2
+
+        # Gather atomic charge pairs
+        atomic_charges_i = batch['mlmm_atomic_charges'][batch['mlmm_idxu']]
+        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idxv']]
+
+        # Compute damped charge-charge electrostatics
+        Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
+
+        # Compute damped charge-dipole and dipole-dipole electrostatics
+        if self.atomic_dipoles:
+
+            # Compute powers of damped reciprocal distances
+            chi2 = chi**2
+            chi2_shift = (
+                3.0/self.cutoff2 - 2.0*distances/self.cutoff3)
+
+            # Compute powers of damped reciprocal distances
+            chi2 = chi**2
+            chi2_shift = chi_shift**2
+
+            # Adjust atom pair vectors
+            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+
+            # Gather atomic dipole pairs
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idxu']]
+
+            # Compute dot products of atom pair vector and atomic dipole
+            dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+
+            # Compute damped charge-dipole electrostatics
+            Eelec = Eelec + atomic_charges_j*dot_ji*(chi2 - chi2_shift)
+
+        # Sum electrostatic contributions
+        Eelec = self.ke*Eelec
+
+        # Apply switch off function
+        Eelec = Eelec*self.switch_fn(distances)
+
+        return Eelec

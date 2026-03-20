@@ -1024,7 +1024,7 @@ class Sampler:
         message += (
             f"calculation for sample {isample:d} of '{source:s}' ({index:d})")
         with self.lock:
-            with open(self.sample_log_file, 'a') as flog:
+            with open(self.sample_log_file.format(isample), 'a') as flog:
                 flog.write(message)
 
         return system, converged

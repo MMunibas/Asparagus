@@ -15,7 +15,7 @@ from asparagus import utils
 __all__ = ['DataBase_hdf5']
 
 # Current npz database version
-VERSION = 1
+VERSION = 2
 
 # Structural property labels and dtypes
 structure_properties_dtype = {
@@ -25,6 +25,7 @@ structure_properties_dtype = {
     'charge':           np.float32,
     'cell':             np.float32,
     'pbc':              np.bool_,
+    'fragment_numbers': np.int32,
 }
 
 # Structural property labels and array shape
@@ -35,15 +36,19 @@ structure_properties_shape = {
     'charge':           (-1,),
     'cell':             (-1),
     'pbc':              (1, 3,),
+    'fragment_numbers': (-1,),
 }
 reference_properties_shape = {
     # 'energy':           (-1,),
     # 'atomic_energies':  (-1,),
     'forces':           (-1, 3,),
+    'mm_forces':        (-1, 3,),
     # 'hessian':          (-1,),
     # 'atomic_charges':   (-1,),
     # 'dipole':           (3),
     # 'atomic_dipoles':   (-1,),
+    # 'quadrupole':       (-1, 9,),
+    # 'atomic_quadrupole':(-1, 9,),
     'polarizability':   (3, 3,),
     }
 
@@ -312,13 +317,13 @@ class DataBase_hdf5(data.DataBase):
             raise SyntaxError(
                 "At least one input 'ref_data' or 'properties' should "
                 + "contain reference data!")
-        
+
         elif ref_data is None:
-            
+
             row_id = self._write(properties, row_id)
-            
+
         else:
-        
+
             # Add or update database values
             key_id = f"{row_id:d}"
             if self.data['systems'].get(key_id) is None:

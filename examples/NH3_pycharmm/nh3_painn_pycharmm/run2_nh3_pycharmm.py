@@ -68,7 +68,6 @@ if setup == 1:
 
     # Manipulate coordinates
     pos = coor.get_positions().to_numpy(dtype=np.float32)
-    pos[:, 0] -= 10.0 # Shift ammonia to the cell border to test pbc
     pandas_pos = pandas.DataFrame(
         {'x': pos[:, 0], 'y': pos[:, 1], 'z': pos[:, 2]}
         )
@@ -122,7 +121,6 @@ elif setup == 2:
 
     # Manipulate coordinates
     pos = coor.get_positions().to_numpy(dtype=np.float32)
-    #pos[-4:, 0] -= 10.0 # Shift ammonia to the cell border to test pbc
     pandas_pos = pandas.DataFrame(
         {'x': pos[:, 0], 'y': pos[:, 1], 'z': pos[:, 2]}
         )
@@ -187,7 +185,7 @@ energy.show()
 #-----------------------------------------------------------
 
 # Load Asparagus model
-ml_model = Asparagus(config='model_nh3/nh3_painn.json')
+ml_model = Asparagus(config='model_nh3/config.json')
 
 # Get atomic number from ASE atoms object
 ml_Z = ase_ammonia.get_atomic_numbers()
@@ -252,7 +250,7 @@ energy.show()
 # Step 5: Heating - CHARMM, PhysNet
 #-----------------------------------------------------------
 
-if True:
+if False:
     
     timestep = 0.00025   # 0.25 fs
     nsteps = 10.*1./timestep # 10 ps
@@ -283,7 +281,7 @@ if True:
         'iuncrd': dcd_file.file_unit,
         'nprint': 100, # Frequency to write to output
         'iprfrq': 500, # Frequency to calculate averages
-        'isvfrq': 1000, # Frequency to save restart file
+        'isvfrq': 100, # Frequency to save restart file
         'ntrfrq': 1000,
         'ihtfrq': 200,
         'ieqfrq': 1000,

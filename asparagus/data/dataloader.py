@@ -21,6 +21,8 @@ class DataLoader(torch.utils.data.DataLoader):
         DataSet or DataSubSet instance of reference data
     batch_size: int
         Number of atomic systems per batch
+    reference_properties: list
+        Reference properties to add to the data batch
     data_shuffle: bool
         Shuffle batch compilation after each epoch
     num_workers: int
@@ -46,6 +48,7 @@ class DataLoader(torch.utils.data.DataLoader):
         self,
         dataset: Union[data.DataSet, data.DataSubSet],
         batch_size: int,
+        reference_properties: List[str],
         data_shuffle: bool,
         num_workers: int,
         device: str,
@@ -63,14 +66,11 @@ class DataLoader(torch.utils.data.DataLoader):
         if data_collate_fn is None:
             data_collate_fn = self.data_collate_fn
 
-        # Assign reference dataset as class parameter for additions by the
-        # neighbor list functions
+        # Assign class variables
         self.dataset = dataset
         self.batch_size = batch_size
+        self.reference_properties = reference_properties
 
-        #if device == 'cpu':
-            #self.data_num_workers = 0
-        #else:
         if num_workers is None:
             self.num_workers = 0
         else:
@@ -89,10 +89,9 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Initialize neighbor list function class parameter
         self.neighbor_list = None
+        self.mlmm_neighbor_list = None
 
         # Assign reference data conversion parameter
-        #self.device = utils.check_device_option(device, config)
-        #self.dtype = utils.check_dtype_option(dtype, config)
         self.device = device
         self.dtype = dtype
 
@@ -127,10 +126,28 @@ class DataLoader(torch.utils.data.DataLoader):
 
         return
 
+    def set_reference_properties(
+        self,
+        reference_properties: List[str],
+    ):
+        """
+        Update reference properties list.
+        
+        Parameters
+        ----------
+        reference_properties: list
+            Reference properties to add to the data batch
+
+        """
+        
+        # Assign new reference properties list
+        self.reference_properties = reference_properties
+        
+        return
+
     def init_neighbor_list(
         self,
         cutoff: Optional[Union[float, List[float]]] = np.inf,
-        store: Optional[bool] = False,
         device: Optional[str] = None,
         dtype: Optional[object] = None,
     ):
@@ -141,8 +158,6 @@ class DataLoader(torch.utils.data.DataLoader):
         ----------
         cutoff: float, optional, default infinity
             Neighbor list cutoff range equal to max interaction range
-        store: bool, optional, default False
-            Pre-compute neighbor list and store in the reference dataset
 
         """
 
@@ -154,6 +169,34 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Initialize neighbor list creator
         self.neighbor_list = module.TorchNeighborListRangeSeparated(
+            cutoff, device, dtype)
+
+        return
+
+    def init_mlmm_neighbor_list(
+        self,
+        cutoff: Optional[Union[float, List[float]]] = np.inf,
+        device: Optional[str] = None,
+        dtype: Optional[object] = None,
+    ):
+        """
+        Initialize MLM/M neighbor list function
+
+        Parameters
+        ----------
+        cutoff: float, optional, default infinity
+            Neighbor list cutoff range equal to max interaction range
+
+        """
+
+        # Check input parameter
+        if device is None:
+            device = self.device
+        if dtype is None:
+            dtype = self.dtype
+
+        # Initialize neighbor list creator
+        self.mlmm_neighbor_list = module.TorchNeighborListRangeSeparatedMLMM(
             cutoff, device, dtype)
 
         return
@@ -174,14 +217,15 @@ class DataLoader(torch.utils.data.DataLoader):
         Returns
         -------
         dict
-            Collated data batch with additional properties
-            Properties:
-                atoms_number: (Natoms,) torch.Tensor
+            Collated data batch with essential properties, optional structure
+            and reference properties.
+            Essential Properties:
+                atoms_number: (Nsystem,) torch.Tensor
                 atomic_numbers: (Natoms,) torch.Tensor
                 positions: (Natoms, 3) torch.Tensor
-                forces: (Natoms, 3) torch.Tensor
-                energy: (Natoms,) torch.Tensor
-                charge: (Natoms,) torch.Tensor
+                charge: (Nsystem,) torch.Tensor
+                cell: (Nsystem, 3) torch.Tensor
+                pbc: (Nsystem, 3,) torch.Tensor
                 idx_i: (Npairs,) torch.Tensor
                 idx_j: (Npairs,) torch.Tensor
                 pbc_offset_ij: (Npairs, 3) torch.Tensor
@@ -189,6 +233,13 @@ class DataLoader(torch.utils.data.DataLoader):
                 idx_v: (Npairs,) torch.Tensor
                 pbc_offset_uv: (Npairs, 3) torch.Tensor
                 sys_i: (Natoms,) torch.Tensor
+            Optional structure properties:
+                fragment_numbers: (Natoms,) torch.Tensor
+            Reference properties, e.g.:
+                energy: (Nsystem,) torch.Tensor
+                forces: (Natoms, 3) torch.Tensor
+                dipole: (Nsystem,) torch.Tensor
+
 
         """
 
@@ -209,12 +260,6 @@ class DataLoader(torch.utils.data.DataLoader):
             repeats=coll_batch['atoms_number'], dim=0).to(
                 device=self.device, dtype=torch.int64)
 
-        # System fragment index
-        if batch[0].get('fragments') is not None:
-            coll_batch['fragments'] = torch.cat(
-                [b['fragments'] for b in batch], 0).to(
-                    device=self.device, dtype=torch.int64)
-
         # Atomic numbers properties
         coll_batch['atomic_numbers'] = torch.cat(
             [b['atomic_numbers'] for b in batch], 0).to(
@@ -223,6 +268,11 @@ class DataLoader(torch.utils.data.DataLoader):
         # Atom positions
         coll_batch['positions'] = torch.cat(
             [b['positions'] for b in batch], 0).to(
+                device=self.device, dtype=self.dtype)
+
+        # System charge
+        coll_batch['charge'] = torch.cat(
+            [b['charge'] for b in batch], 0).to(
                 device=self.device, dtype=self.dtype)
 
         # Periodic boundary conditions
@@ -237,89 +287,71 @@ class DataLoader(torch.utils.data.DataLoader):
                 device=self.device, dtype=self.dtype
                 ).reshape(Nsys, -1)
 
-        # Compute the cumulative segment size number
-        atomic_numbers_cumsum = torch.cat(
-            [
-                torch.zeros(
-                    (1,), device=self.device, dtype=coll_batch['sys_i'].dtype),
-                torch.cumsum(coll_batch["atoms_number"][:-1], dim=0)
-            ],
-            dim=0).to(
-                device=self.device, dtype=torch.int64)
+        # System atomic fragment indices
+        # Only add to batch, if multiple fragments are defined
+        if 'fragment_numbers' in batch[0]:
+            fragment_numbers = torch.cat(
+                [b['fragment_numbers'] for b in batch], 0).to(
+                    device=self.device, dtype=torch.int64)
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                coll_batch['fragment_numbers'] = fragment_numbers
 
-        # Iterate over batch properties
-        skip_props = [
-            'atoms_number', 'atomic_numbers', 'positions', 'pbc', 'cell',
-            'atom_types', 'fragments']
-        for prop_i in batch[0]:
-
-            # Skip previous parameter and None
-            if prop_i in skip_props or batch[0].get(prop_i) is None:
-
-                continue
-
-            # Special property: energy
-            elif prop_i == 'energy':
-                
-                if self.atomic_energies_shift is None:
-                    
-                    coll_batch[prop_i] = torch.tensor(
-                        [b[prop_i] for b in batch],
-                        device=self.device, dtype=self.dtype)
-                    
-
-                else:
-
-                    shifted_energy = [
-                        b[prop_i]
-                        - torch.sum(
-                            self.atomic_energies_shift[b['atomic_numbers']])
-                        for b in batch]
-                    coll_batch[prop_i] = torch.tensor(
-                        shifted_energy,
-                        device=self.device, dtype=self.dtype)
-            
-            # Special property: atomic energies
-            elif prop_i == 'atomic_energies':
-                
-                if self.atomic_energies_shift is None:
-                    
-                    coll_batch[prop_i] = torch.cat(
-                        [b[prop_i] for b in batch], 0).to(
-                            device=self.device, dtype=self.dtype)
-
-                else:
-                    
-                    shifted_atomic_energies = [
-                        b[prop_i]
-                        - torch.sum(
-                            self.atomic_energies_shift[b['atomic_numbers']])
-                        for b in batch]
-                    coll_batch[prop_i] = torch.cat(
-                        shifted_atomic_energies, 0).to(
-                            device=self.device, dtype=self.dtype)
-            
-            # Properties (float data)
-            else:
-
-                # Concatenate tensor data
-                if batch[0][prop_i].size():
-                    coll_batch[prop_i] = torch.cat(
-                        [b[prop_i] for b in batch], 0).to(
-                            device=self.device, dtype=self.dtype)
-
-                # Concatenate numeric data
-                else:
-                    coll_batch[prop_i] = torch.tensor(
-                        [b[prop_i] for b in batch],
-                        device=self.device, dtype=self.dtype)
+            # Compute ML/MM pair indices and position offsets
+            if self.mlmm_neighbor_list is None:
+                self.init_mlmm_neighbor_list()
+            coll_batch = self.mlmm_neighbor_list(coll_batch)
 
         # Compute pair indices and position offsets
         if self.neighbor_list is None:
             self.init_neighbor_list()
-        coll_batch = self.neighbor_list(
-            coll_batch,
-            atomic_numbers_cumsum=atomic_numbers_cumsum)
+        coll_batch = self.neighbor_list(coll_batch)
+
+        # Collect reference properties
+        coll_batch['reference'] = {}
+        for prop in self.reference_properties:
+
+            # Apply energy shift for property 'energy' and 'atomic_energies'
+            # if defined
+            if self.atomic_energies_shift is not None and prop == 'energy':
+
+                coll_batch['reference'][prop] = torch.tensor(
+                    [
+                        b[prop]
+                        - torch.sum(
+                            self.atomic_energies_shift[b['atomic_numbers']]
+                        )
+                        for b in batch
+                    ],
+                    device=self.device,
+                    dtype=self.dtype
+                )
+        
+            elif (
+                self.atomic_energies_shift is not None
+                and prop == 'atomic_energies'
+            ):
+
+                coll_batch['reference'][prop] = torch.cat(
+                    [
+                        b[prop]
+                        - self.atomic_energies_shift[b['atomic_numbers']]
+                        for b in batch
+                    ],
+                    0).to(device=self.device, dtype=self.dtype)
+
+            else:
+
+                # Concatenate tensor data
+                if batch[0][prop].size():
+                    coll_batch['reference'][prop] = torch.cat(
+                        [b[prop] for b in batch], 0).to(
+                            device=self.device, dtype=self.dtype)
+
+                # Concatenate numeric data
+                else:
+                    coll_batch['reference'][prop] = torch.tensor(
+                        [b[prop] for b in batch],
+                        device=self.device, dtype=self.dtype)
 
         return coll_batch
 

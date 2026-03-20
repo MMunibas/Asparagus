@@ -75,7 +75,7 @@ class Tester:
         'test_datasets':                ['test'],
         'test_properties':              None,
         'test_batch_size':              128,
-        'test_num_batch_workers':       1,
+        'test_num_batch_workers':       0,
         'test_directory':               '.',
         }
 
@@ -89,6 +89,10 @@ class Tester:
         'test_num_batch_workers':       [utils.is_integer],
         'test_directory':               [utils.is_string],
         }
+
+    # Model properties available for all fragment atoms, which will be 
+    # additionally evaluated separately
+    _fragment_properties = ['forces']
 
     def __init__(
         self,
@@ -151,6 +155,19 @@ class Tester:
         self.data_properties = self.data_container.data_properties
         self.data_units = self.data_container.data_unit_properties
 
+        ##########################
+        # # # Prepare Tester # # #
+        ##########################
+
+        # Check test properties if defined
+        self.test_properties = self.check_test_properties(
+            self.test_properties,
+            self.data_properties)
+
+        # Check test directory
+        if not os.path.exists(self.test_directory):
+            os.makedirs(self.test_directory)
+
         #########################################
         # # # Prepare Reference Data Loader # # #
         #########################################
@@ -160,6 +177,7 @@ class Tester:
             self.test_batch_size,
             self.test_batch_size,
             self.test_batch_size,
+            reference_properties=self.test_properties,
             num_workers=self.test_num_batch_workers,
             device=self.device,
             dtype=self.dtype)
@@ -174,19 +192,6 @@ class Tester:
         self.test_data = {
             label: self.data_container.get_dataloader(label)
             for label in self.test_datasets}
-
-        ##########################
-        # # # Prepare Tester # # #
-        ##########################
-
-        # Check test properties if defined
-        self.test_properties = self.check_test_properties(
-            self.test_properties,
-            self.data_properties)
-
-        # Check test directory
-        if not os.path.exists(self.test_directory):
-            os.makedirs(self.test_directory)
 
         return
 
@@ -248,9 +253,9 @@ class Tester:
         test_plot_format: Optional[str] = 'png',
         test_plot_dpi: Optional[int] = 300,
         test_save_csv: Optional[bool] = False,
-        test_csv_file: Optional[str] = 'model_prediction.csv',
+        test_csv_file: Optional[str] = 'results.csv',
         test_save_npz: Optional[bool] = False,
-        test_npz_file: Optional[str] = 'model_prediction.npz',
+        test_npz_file: Optional[str] = 'results.npz',
         test_scale_per_atom: Optional[Union[str, List[str]]] = ['energy'],
         verbose: Optional[bool] = True,
         **kwargs,
@@ -286,15 +291,19 @@ class Tester:
         test_plot_dpi: int, optional, default 300
             Plot figure dpi.
         test_save_csv: bool, optional, default False
-            Save all model prediction results in a csv file.
-        test_csv_file: str, optional, default 'model_prediction.csv'
-            Name tag of the csv file. The respective data set label will be
-            added as prefix to the tag ("{label:s}_{test_csv_file:s}").
+            Save all model prediction results and respective reference values
+            in a csv file.
+        test_csv_file: str, optional, default 'results.csv'
+            Name tag of the csv file. The respective data set label and 
+            property will be added as prefix to the tag:
+            "{label:s}_{property:s}_{test_csv_file:s}"
         test_save_npz: bool, optional, default False
-            Save all model prediction results in a binary npz file.
-        test_npz_file: str, optional, default 'model_prediction.npz'
-            Name tag of the npz file. The respective data set label will be
-            added as prefix to the tag ("{label:s}_{test_npz_file:s}").
+            Save all model prediction results and respective reference values
+            in a binary npz file.
+        test_npz_file: str, optional, default 'results.npz'
+            Name tag of the npz file. The respective data set label and 
+            property will be added as prefix to the tag:
+            "{label:s}_{property:s}_{test_csv_file:s}"
         test_scale_per_atom: (str list(str), optional, default ['energy']
             List of properties where the results will be scaled by the number
             of atoms in the particular system.
@@ -328,6 +337,18 @@ class Tester:
                 test_properties,
                 self.data_properties)
 
+        # Check the model for additional required reference properties
+        additional_properties = []
+        if hasattr(model_calculator, '_required_input_properties'):
+            for prop in model_calculator._required_input_properties:
+                if prop in self.data_properties:
+                    additional_properties.append(prop)
+
+        # Update test properties
+        for dataloader in self.test_data.values():
+            dataloader.set_reference_properties(
+                test_properties + additional_properties)
+
         # Check test properties model to reference data conversion
         test_conversion = {}
         for prop in test_properties:
@@ -347,84 +368,131 @@ class Tester:
                 "Test results output directory input 'test_directory' is not "
                 + "a string of a valid file path.")
 
-        # Compare model properties with test properties and store properties
-        # to evaluate
-        eval_properties = []
-        for prop in test_properties:
-            if prop in model_properties:
-                eval_properties.append(prop)
-            else:
-                self.logger.warning(
-                    f"Requested property '{prop}' in " +
-                    "'test_properties' is not predicted by the " +
-                    "model calculator and will be ignored!")
-
         ##############################
         # # # Compute Properties # # #
         ##############################
+
+        # Get reference atomic energy shifts
+        metadata = self.data_container.get_metadata()
+        if 'data_atomic_energies_scaling' in metadata:
+            data_atomic_energies_scaling_str = metadata.get(
+                'data_atomic_energies_scaling')
+            data_atomic_energies_scaling = {}
+            for key, item in data_atomic_energies_scaling_str.items():
+                data_atomic_energies_scaling[int(key)] = item
+            max_atomic_number = max([
+                int(atomic_number)
+                for atomic_number in data_atomic_energies_scaling.keys()])
+            atomic_energies_shift = np.zeros(
+                max_atomic_number + 1, dtype=float)
+            for atomic_number in range(max_atomic_number + 1):
+                if atomic_number in data_atomic_energies_scaling:
+                    atomic_energies_shift[atomic_number] = (
+                        data_atomic_energies_scaling[atomic_number][0])
+        else:
+            atomic_energies_shift = None
 
         # Loop over all requested data set
         for label, datasubset in self.test_data.items():
 
             # Get model cutoffs
             cutoffs = model_calculator.get_cutoff_ranges()
-            
-            # Set maximum model cutoff for neighbor list calculation
-            datasubset.init_neighbor_list(
-                cutoff=cutoffs,
-                device=self.device,
-                dtype=self.dtype)
 
-            # Prepare dictionary for property values and number of atoms per
-            # system
-            test_prediction = {prop: [] for prop in eval_properties}
+            # Set maximum model cutoff for neighbor list calculation
+            if datasubset.neighbor_list is None:
+                datasubset.init_neighbor_list(
+                    cutoff=cutoffs,
+                    device=self.device,
+                    dtype=self.dtype)
+            else:
+                datasubset.neighbor_list.set_cutoffs(cutoffs)
+
+            # Get model ML/MM cutoffs
+            mlmm_cutoffs = model_calculator.get_mlmm_cutoff_ranges()
+
+            # Set maximum model cutoff for neighbor list calculation
+            if datasubset.mlmm_neighbor_list is None:
+                datasubset.init_mlmm_neighbor_list(
+                    cutoff=mlmm_cutoffs,
+                    device=self.device,
+                    dtype=self.dtype)
+            else:
+                datasubset.mlmm_neighbor_list.set_cutoffs(mlmm_cutoffs)
+
+            # Prepare dictionary for property values, number of atoms per
+            # system, and reference energy shifts
+            test_prediction = {prop: [] for prop in test_properties}
             if model_ensemble:
                 test_prediction.update(
                     {
-                        imodel: {prop: [] for prop in eval_properties}
+                        imodel: {prop: [] for prop in test_properties}
                         for imodel in range(model_ensemble_num)
                     })
-            test_reference = {prop: [] for prop in eval_properties}
+            test_reference = {prop: [] for prop in test_properties}
             test_prediction['atoms_number'] = []
+            test_shifts = {prop: [] for prop in ['energy', 'atomic_energies']}
+
+            # Check for number of fragments in the dataset systems
+            fragments_available = np.all([
+                'fragment_numbers' in batch
+                for batch in datasubset
+                ])
+            if fragments_available:
+                test_fragments = []
+                for batch in datasubset:
+                    fragments = torch.unique(batch['fragment_numbers'])
+                    for fragment in fragments:
+                        if fragment not in test_fragments:
+                            test_fragments.append(
+                                fragment.detach().cpu().numpy())
+                    test_prediction['fragment_numbers'] = []
+            else:
+                test_fragments = None
 
             # Reset property metrics
             metrics_test = self.reset_metrics(
-                eval_properties, model_ensemble, model_ensemble_num)
+                test_properties,
+                model_ensemble,
+                model_ensemble_num,
+                test_fragments=test_fragments)
 
             # Loop over data batches
             for batch in datasubset:
 
                 # Predict model properties from data batch
-                prediction = model_calculator(
+                batch = model_calculator(
                     batch,
                     verbose_results=True)
 
                 # Compute metrics for test properties
                 metrics_batch = self.compute_metrics(
-                    prediction,
                     batch,
-                    eval_properties,
+                    batch['reference'],
+                    test_properties,
                     test_conversion,
                     model_ensemble,
-                    model_ensemble_num)
+                    model_ensemble_num,
+                    test_fragments=test_fragments)
 
                 # Update average metrics
                 self.update_metrics(
                     metrics_test,
                     metrics_batch,
-                    eval_properties,
+                    test_properties,
                     model_ensemble,
-                    model_ensemble_num)
+                    model_ensemble_num,
+                    test_fragments=test_fragments)
 
                 # Store prediction and reference data system resolved
                 Nsys = len(batch['atoms_number'])
                 Natoms = len(batch['atomic_numbers'])
                 Npairs = len(batch['idx_i'])
-                for prop in eval_properties:
+                for prop in test_properties:
                     
                     # Detach prediction and reference data
-                    data_prediction = prediction[prop].detach().cpu().numpy()
-                    data_reference = batch[prop].detach().cpu().numpy()
+                    data_prediction = batch[prop].detach().cpu().numpy()
+                    data_reference = (
+                        batch['reference'][prop].detach().cpu().numpy())
 
                     # Apply unit conversion of model prediction
                     data_prediction *= test_conversion[prop]
@@ -466,7 +534,7 @@ class Tester:
                             
                             # Detach prediction and reference data
                             data_prediction = (
-                                prediction[imodel][prop].detach().cpu().numpy()
+                                batch[imodel][prop].detach().cpu().numpy()
                                 )
 
                             # Apply unit conversion of model prediction
@@ -499,30 +567,90 @@ class Tester:
                 test_prediction['atoms_number'] += list(
                     batch['atoms_number'].cpu().numpy())
 
+                # Store fragment numbers
+                if 'fragment_numbers' in test_prediction:
+                    test_prediction['fragment_numbers'] += list(
+                        batch['fragment_numbers'].cpu().numpy())
+
+                # Compute energy and atomic energies shifts
+                test_shifts_energy = np.zeros(Nsys, dtype=float)
+                test_shifts_atomic_energies = np.zeros(Natoms, dtype=float)
+                if atomic_energies_shift is None:
+                    test_shifts['energy'] += list(test_shifts_energy)
+                    test_shifts['atomic_energies'] += list(
+                        test_shifts_atomic_energies)
+                else:
+                    atomic_numbers = batch['atomic_numbers'].cpu().numpy()
+                    sys_i = batch['sys_i'].cpu().numpy()
+                    test_shifts_atomic_energies = (
+                        atomic_energies_shift[atomic_numbers])
+                    np.add.at(
+                        test_shifts_energy,
+                        sys_i,
+                        test_shifts_atomic_energies)
+                    test_shifts['energy'] += list(test_shifts_energy)
+                    test_shifts['atomic_energies'] += list(
+                        test_shifts_atomic_energies)
+
             # Print metrics
             if verbose:
                 self.print_metric(
                     metrics_test,
-                    eval_properties,
+                    test_properties,
                     label,
                     model_ensemble,
-                    model_ensemble_num)
+                    model_ensemble_num,
+                    test_fragments=test_fragments)
 
             ###########################
             # # # Save Properties # # #
             ###########################
 
-            # Check if both .csv and .npz files are saved else raise a warning
-            if test_save_npz and test_save_csv:
-                raise UserWarning(
-                    "You are saving both a .csv and a .npz file."
-                    + "This is not recommended!")
-
             # Save test prediction to files
             if test_save_csv:
-                self.save_csv(test_prediction, test_directory, test_csv_file)
+                self.save_csv(
+                    test_prediction,
+                    test_reference,
+                    test_shifts,
+                    label,
+                    test_directory,
+                    test_csv_file)
+                if model_ensemble:
+                    for imodel in range(model_ensemble_num):
+                        test_directory_model = os.path.join(
+                            test_directory, f"{imodel:d}")
+                        if not os.path.exists(test_directory_model):
+                            os.makedirs(test_directory_model)
+                        self.save_csv(
+                            test_prediction[imodel],
+                            test_reference,
+                            test_shifts,
+                            label,
+                            test_directory_model,
+                            test_csv_file,
+                            imodel=imodel)
             if test_save_npz:
-                self.save_npz(test_prediction, test_directory, test_npz_file)
+                self.save_npz(
+                    test_prediction,
+                    test_reference,
+                    test_shifts,
+                    label,
+                    test_directory,
+                    test_npz_file)
+                if model_ensemble:
+                    for imodel in range(model_ensemble_num):
+                        test_directory_model = os.path.join(
+                            test_directory, f"{imodel:d}")
+                        if not os.path.exists(test_directory_model):
+                            os.makedirs(test_directory_model)
+                        self.save_npz(
+                            test_prediction[imodel],
+                            test_reference,
+                            test_shifts,
+                            label,
+                            test_directory_model,
+                            test_npz_file,
+                            imodel=imodel)
 
             ###########################
             # # # Plot Properties # # #
@@ -531,19 +659,19 @@ class Tester:
             # Check input for scaling per atom and prepare atom number scaling
             if utils.is_string(test_scale_per_atom):
                 test_scale_per_atom = [test_scale_per_atom]
-            test_property_scaling = {}
-            for prop in eval_properties:
+            test_property_atoms_scaling = {}
+            for prop in test_properties:
                 if prop in test_scale_per_atom:
-                    test_property_scaling[prop] = (
+                    test_property_atoms_scaling[prop] = (
                         1./np.array(
                             test_prediction['atoms_number'], dtype=float)
                         )
                 else:
-                    test_property_scaling[prop] = None
+                    test_property_atoms_scaling[prop] = None
 
             # Plot correlation between model and reference properties
             if test_plot_correlation:
-                for prop in eval_properties:
+                for prop in test_properties:
                     self.plot_correlation(
                         label,
                         prop,
@@ -551,7 +679,7 @@ class Tester:
                         self.plain_data(test_reference[prop]),
                         self.data_units[prop],
                         metrics_test[prop],
-                        test_property_scaling[prop],
+                        test_property_atoms_scaling[prop],
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
@@ -568,14 +696,47 @@ class Tester:
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
-                                test_property_scaling[prop],
+                                test_property_atoms_scaling[prop],
                                 test_directory_model,
                                 test_plot_format,
                                 test_plot_dpi)
+                    if (
+                        test_fragments is not None
+                        and len(test_fragments) > 1
+                        and prop in self._fragment_properties
+                    ):
+                        for fragment in test_fragments:
+                            fragment_prop = f'{prop:s}_{fragment:d}'
+                            fragment_selection = (
+                                fragment == np.array(
+                                    test_prediction['fragment_numbers'])
+                                )
+                            self.plot_correlation(
+                                label,
+                                fragment_prop,
+                                self.plain_data([
+                                    prediction
+                                    for ii, prediction in enumerate(
+                                        test_prediction[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.plain_data([
+                                    reference
+                                    for ii, reference in enumerate(
+                                        test_reference[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.data_units[prop],
+                                metrics_test[fragment_prop],
+                                test_property_atoms_scaling[prop],
+                                test_directory,
+                                test_plot_format,
+                                test_plot_dpi)
+                            
 
             # Plot histogram of the prediction error
             if test_plot_histogram:
-                for prop in eval_properties:
+                for prop in test_properties:
                     self.plot_histogram(
                         label,
                         prop,
@@ -602,10 +763,41 @@ class Tester:
                                 test_directory_model,
                                 test_plot_format,
                                 test_plot_dpi)
+                    if (
+                        test_fragments is not None
+                        and len(test_fragments) > 1
+                        and prop in self._fragment_properties
+                    ):
+                        for fragment in test_fragments:
+                            fragment_prop = f'{prop:s}_{fragment:d}'
+                            fragment_selection = (
+                                fragment == np.array(
+                                    test_prediction['fragment_numbers'])
+                                )
+                            self.plot_histogram(
+                                label,
+                                fragment_prop,
+                                self.plain_data([
+                                    prediction
+                                    for ii, prediction in enumerate(
+                                        test_prediction[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.plain_data([
+                                    reference
+                                    for ii, reference in enumerate(
+                                        test_reference[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.data_units[prop],
+                                metrics_test[fragment_prop],
+                                test_directory,
+                                test_plot_format,
+                                test_plot_dpi)
 
             # Plot histogram of the prediction error
             if test_plot_residual:
-                for prop in eval_properties:
+                for prop in test_properties:
                     self.plot_residual(
                         label,
                         prop,
@@ -613,7 +805,7 @@ class Tester:
                         self.plain_data(test_reference[prop]),
                         self.data_units[prop],
                         metrics_test[prop],
-                        test_property_scaling[prop],
+                        test_property_atoms_scaling[prop],
                         test_directory,
                         test_plot_format,
                         test_plot_dpi)
@@ -630,8 +822,40 @@ class Tester:
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
-                                test_property_scaling[prop],
+                                test_property_atoms_scaling[prop],
                                 test_directory_model,
+                                test_plot_format,
+                                test_plot_dpi)
+                    if (
+                        test_fragments is not None
+                        and len(test_fragments) > 1
+                        and prop in self._fragment_properties
+                    ):
+                        for fragment in test_fragments:
+                            fragment_prop = f'{prop:s}_{fragment:d}'
+                            fragment_selection = (
+                                fragment == np.array(
+                                    test_prediction['fragment_numbers'])
+                                )
+                            self.plot_residual(
+                                label,
+                                fragment_prop,
+                                self.plain_data([
+                                    prediction
+                                    for ii, prediction in enumerate(
+                                        test_prediction[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.plain_data([
+                                    reference
+                                    for ii, reference in enumerate(
+                                        test_reference[prop])
+                                    if fragment_selection[ii]
+                                    ]),
+                                self.data_units[prop],
+                                metrics_test[fragment_prop],
+                                test_property_atoms_scaling[prop],
+                                test_directory,
                                 test_plot_format,
                                 test_plot_dpi)
 
@@ -660,84 +884,182 @@ class Tester:
 
     def save_npz(
         self,
-        vals: Dict,
+        prediction: Dict[str, np.ndarray],
+        reference: Dict[str, np.ndarray],
+        shifts: Dict[str, np.ndarray],
+        label: str,
         test_directory: str,
-        npz_name: str,
+        npz_file: str,
+        imodel: Optional[int] = None,
     ):
         """
         Save results of the test set to a binary npz file.
 
         Parameters
         ----------
-        vals: dict
-            Dictionary of the test properties to save.
-        test_directory:
+        prediction: dict
+            Dictionary of the property predictions to save.
+        prediction: dict
+            Dictionary of the reference property values to save.
+        shifts: dict
+            Dictionary of the reference property shifts.
+        label: str
+            Dataset label for the npz file prefix.
+        test_directory: str
             Directory to save the npz file.
-        npz_name:
-            Name of the npz file.
+        npz_file: str
+            Name tag of the npz file.
+        imodel: int, optional, default None
+            Model index for the respective model in the model ensemble.
 
         """
 
-        path_to_save = os.path.join(test_directory, npz_name)
-        self.logger.info(
-            "Saving results of the test set to file "
-            + f"'{path_to_save:s}'!")
-        np.savez(path_to_save, **vals)
+        # Check for .npz file extension
+        if 'npz' != npz_file.split('.')[-1]:
+            npz_file += '.npz'
+
+        # Iterate over properties
+        for prop, pred in prediction.items():
+            
+            # Check property in reference data, if not skip
+            if not prop in reference:
+                continue
+            
+            # Prepare npz file name
+            npz_file_prop = os.path.join(
+                test_directory, f"{label:s}_{prop:s}_{npz_file:s}")
+
+            # Prepare data
+            if prop in shifts:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1),
+                    np.array(shifts[prop]).reshape(-1))
+                )
+                columns_np=[
+                    "prediction", "reference", "shift"]
+            else:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1))
+                )
+                columns_np=[
+                    "prediction", "reference"]
+            
+            # Store data in npz format generated via the pandas data frame
+            if self.is_imported("pandas"):
+                results = pd.DataFrame(
+                    results_np,
+                    columns=columns_np
+                    )
+                np.savez(
+                    npz_file_prop,
+                    **{
+                        column: results[column].values
+                        for column in results.columns}
+                    )
+            else:
+                self.logger.warning(
+                    "Module 'pandas' is not available. "
+                    + "Test properties are not written to a npz file!")
+
+            # Print info
+            if imodel is None:
+                addition = ""
+            else:
+                addition = f" of model {imodel:d}"
+            self.logger.info(
+                f"Prediction results{addition:s} and reference data for the "
+                + f"dataset '{label:s}' and property '{prop:s}' are saved in:"
+                + f"\n'{npz_file_prop:s}'.")
 
         return
 
     def save_csv(
         self,
-        vals: Dict,
+        prediction: Dict[str, np.ndarray],
+        reference: Dict[str, np.ndarray],
+        shifts: Dict[str, np.ndarray],
+        label: str,
         test_directory: str,
-        csv_name: str
+        csv_file: str,
+        imodel: Optional[int] = None,
     ):
         """
-        Save results of the test set to a csv file.
+        Save results of the data set to a csv file.
 
         Parameters
         ----------
-        vals : dict
-            Dictionary of the test properties to save.
+        prediction: dict
+            Dictionary of the property predictions to save.
+        prediction: dict
+            Dictionary of the reference property values to save.
+        shifts: dict
+            Dictionary of the reference property shifts.
+        label: str
+            Dataset label for the csv file prefix.
         test_directory: str
             Directory to save the csv file.
-        csv_name:
-            Name of the csv file.
+        csv_file: str
+            Name tag of the csv file.
+        imodel: int, optional, default None
+            Model index for the respective model in the model ensemble.
 
         """
 
         # Check for .csv file extension
-        if '.csv' == csv_name[-4:]:
-            csv_name += '.csv'
-        path_to_save = os.path.join(test_directory, csv_name)
-        self.logger.info(
-            f"Saving results of the test set to file '{path_to_save:s}'!")
+        if 'csv' != csv_file.split('.')[-1]:
+            csv_file += '.csv'
 
-        # Check that all the keys have the same length
+        # Iterate over properties
+        for prop, pred in prediction.items():
+            
+            # Check property in reference data, if not skip
+            if not prop in reference:
+                continue
+            
+            # Prepare csv file name
+            csv_file_prop = os.path.join(
+                test_directory, f"{label:s}_{prop:s}_{csv_file:s}")
 
-        # First get the lenghts of each of the properties in the dictionary
-        lengths = [len(item) for key, item in vals.items()]
-        max_length = np.max(lengths)
-
-        # Pad the lenghts with nan
-        vals_padded = {}
-        for key, item in vals.items():
-            if len(item) < max_length:
-                vals_padded[key] = np.pad(
-                    vals[key],
-                    (0, max_length - len(vals[key])),
-                    'constant',
-                    constant_values=np.nan)
+            # Prepare data
+            if prop in shifts:
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1),
+                    np.array(shifts[prop]).reshape(-1))
+                )
+                columns_np=[
+                    f"{prop:s} prediction", " reference", " shift"]
             else:
-                vals_padded[key] = item
+                results_np = np.column_stack((
+                    np.array(pred).reshape(-1),
+                    np.array(reference[prop]).reshape(-1))
+                )
+                columns_np=[
+                    f"{prop:s} prediction", " reference"]
+            
+            # Store data in csv format generated via the pandas data frame
+            if self.is_imported("pandas"):
+                results = pd.DataFrame(
+                    results_np,
+                    columns=columns_np
+                    )
+                results.to_csv(csv_file_prop, index=False)
+            else:
+                self.logger.warning(
+                    "Module 'pandas' is not available. "
+                    + "Test properties are not written to a csv file!")
 
-        if self.is_imported("pandas"):
-            df = pd.DataFrame(vals_padded)
-            df.to_csv(path_to_save, index=False)
-        else:
-            self.logger.warning(
-                "Module 'pandas' is not available. "
-                + "Test properties are not written to a csv file!")
+            # Print info
+            if imodel is None:
+                addition = ""
+            else:
+                addition = f" of model {imodel:d}"
+            self.logger.info(
+                f"Prediction results{addition:s} and reference data for the "
+                + f"dataset '{label:s}' and property '{prop:s}' are saved in:"
+                + f"\n'{csv_file_prop:s}'.")
 
         return
 
@@ -746,6 +1068,7 @@ class Tester:
         test_properties: List[str],
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ) -> Dict[str, float]:
         """
         Reset the metrics dictionary.
@@ -758,6 +1081,12 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If None or just one, properties metrics are not separately 
+            evaluated for each fragment.
+            If two or more indices, possible properties are evaluated for each
+            fragment also individually.
 
         Returns
         -------
@@ -772,15 +1101,34 @@ class Tester:
         # Add data counter
         metrics['Ndata'] = 0
 
-        # Add training property metrics
+        # Add property metrics
         for prop in test_properties:
+            
             metrics[prop] = {
                 'mae': 0.0,
                 'mse': 0.0}
+            
+            # For model ensemble, reset individual model metrics
             if model_ensemble:
                 metrics[prop]['std'] = 0.0
                 for imodel in range(model_ensemble_num):
                     metrics[prop][imodel] = {
+                        'mae': 0.0,
+                        'mse': 0.0}
+            
+            # If multiple fragments are available, reset metrics for each
+            # fragment system but just for suited properties
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+
+                # Iterate over fragment indices
+                for fragment in test_fragments:
+                    
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    metrics[fragment_prop] = {
                         'mae': 0.0,
                         'mse': 0.0}
 
@@ -794,6 +1142,7 @@ class Tester:
         test_conversion: Dict[str, float],
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ) -> Dict[str, float]:
         """
         Compute the metrics mean absolute error (MAE) and mean squared error
@@ -813,6 +1162,12 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If None or just one, properties metrics are not separately 
+            evaluated for each fragment.
+            If two or more indices, possible properties are evaluated for each
+            fragment also individually.
 
         Returns
         -------
@@ -865,6 +1220,37 @@ class Tester:
                         * test_conversion[prop],
                         torch.flatten(reference[prop]))
 
+            # If multiple fragments are available, compute metrics for each
+            # fragment system but just for suited properties
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+                
+                # Iterate over fragment indices
+                for fragment in test_fragments:
+                    
+                    # Fragment property tag
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+
+                    # Initialize single property metrics dictionary
+                    metrics[fragment_prop] = {}
+
+                    # Fragment selection
+                    fragment_selection = (
+                        fragment == prediction['fragment_numbers'])
+
+                    # Compute MAE and MSE
+                    metrics[fragment_prop]['mae'] = mae_fn(
+                        torch.flatten(prediction[prop][fragment_selection])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop][fragment_selection]))
+                    metrics[fragment_prop]['mse'] = mse_fn(
+                        torch.flatten(prediction[prop][fragment_selection])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop][fragment_selection]))
+
         return metrics
 
     def update_metrics(
@@ -874,6 +1260,7 @@ class Tester:
         test_properties: List[str],
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ) -> Dict[str, float]:
         """
         Update the metrics dictionary.
@@ -890,6 +1277,12 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If None or just one, properties metrics are not separately 
+            evaluated for each fragment.
+            If two or more indices, possible properties are evaluated for each
+            fragment also individually.
 
         Returns
         -------
@@ -907,11 +1300,13 @@ class Tester:
         # Update metrics
         metrics['Ndata'] = metrics['Ndata'] + metrics_update['Ndata']
         for prop in test_properties:
+            
             for metric in ['mae', 'mse']:
                 metrics[prop][metric] = (
                     fdata*metrics[prop][metric]
                     + fdata_update*metrics_update[prop][metric].detach().item()
                     )
+            
             if model_ensemble:
                 metrics[prop]['std'] = (
                     fdata*metrics[prop]['std']
@@ -926,6 +1321,20 @@ class Tester:
                                )[prop][imodel][metric].detach().item()
                             )
 
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+                for fragment in test_fragments:
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    for metric in ['mae', 'mse']:
+                        metrics[fragment_prop][metric] = (
+                            fdata*metrics[fragment_prop][metric]
+                            + fdata_update*metrics_update[
+                                fragment_prop][metric].detach().item()
+                            )
+
         return metrics
 
     def print_metric(
@@ -935,6 +1344,7 @@ class Tester:
         test_label: str,
         model_ensemble: bool,
         model_ensemble_num: int,
+        test_fragments: List[int] = None,
     ):
         """
         Print the values of MAE and RMSE for the test set.
@@ -951,6 +1361,10 @@ class Tester:
             Model calculator or model ensemble flag
         model_ensemble_num: int
             Model ensemble calculator number
+        test_fragments: list(int)
+            List of occuring fragment indices in the dataset systems.
+            If two or more indices, properties are shown for each
+            fragment if possible.
 
         """
 
@@ -992,6 +1406,19 @@ class Tester:
                     message += f"{np.sqrt(metrics[prop][imodel]['mse']):3.2e}"
                     message += f" {self.data_units[prop]:s}\n"
 
+            # For multiple fragments and possible property
+            if (
+                test_fragments is not None
+                and len(test_fragments) > 1
+                and prop in self._fragment_properties
+            ):
+                for fragment in test_fragments:
+                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    message += f"     {f'Fragment {fragment:d}':<16s}  "
+                    message += f"{metrics[fragment_prop]['mae']:3.2e},  "
+                    message += f"{np.sqrt(metrics[fragment_prop]['mse']):3.2e}"
+                    message += f" {self.data_units[prop]:s}\n"
+
         # Print metrics
         self.logger.info(message)
 
@@ -1015,7 +1442,7 @@ class Tester:
         data_reference: List[float],
         unit_property: str,
         data_metrics: Dict[str, float],
-        test_scaling: List[float],
+        test_atoms_scaling: List[float],
         test_directory: str,
         test_plot_format: str,
         test_plot_dpi: int,
@@ -1042,7 +1469,7 @@ class Tester:
             Unit of the property
         data_metrics: dict
             Dictionary of the metrics
-        test_scaling: list(float)
+        test_atoms_scaling: list(float)
             List of the scaling factors
         test_directory: str
             Directory to save the plot
@@ -1092,10 +1519,10 @@ class Tester:
                 f"\nStd = {data_metrics['std']:3.2e} {unit_property:s}")
 
         # Scale data if requested
-        if test_scaling is not None:
-            data_prediction = data_prediction*test_scaling
-            data_reference = data_reference*test_scaling
-            scale_label = "per atom "
+        if test_atoms_scaling is not None:
+            data_prediction = data_prediction*test_atoms_scaling
+            data_reference = data_reference*test_atoms_scaling
+            scale_label = "/atom"
         else:
             scale_label = ""
 
@@ -1129,11 +1556,11 @@ class Tester:
 
         # Axis labels
         axs1.set_xlabel(
-            f"Reference {label_property:s} {scale_label:s}({unit_property:s})",
+            f"Reference {label_property:s} ({unit_property:s}{scale_label:s})",
             fontweight='bold')
         axs1.get_xaxis().set_label_coords(0.5, -0.12)
         axs1.set_ylabel(
-            f"Model {label_property:s} {scale_label:s}({unit_property:s})",
+            f"Model {label_property:s} ({unit_property:s}{scale_label:s})",
             fontweight='bold')
         axs1.get_yaxis().set_label_coords(-0.18, 0.5)
 
@@ -1382,9 +1809,7 @@ class Tester:
             color='black',
             marker='None', linestyle='--')
         data_deviation = data_reference - data_prediction
-        data_devmin = np.nanmin(data_deviation)
-        data_devmax = np.nanmax(data_deviation)
-        data_devdif = data_devmax - data_devmin
+        data_devmaxabs = np.nanmax(np.abs(data_deviation))
         axs1.plot(
             data_reference,
             data_deviation,
@@ -1396,7 +1821,7 @@ class Tester:
         axs1.set_xlim(
             data_min - data_dif*0.05, data_max + data_dif*0.05)
         axs1.set_ylim(
-            data_devmin - data_devdif*0.05, data_devmax + data_devdif*0.05)
+            -data_devmaxabs*1.05, +data_devmaxabs*1.05)
 
         # Figure title
         title = f"Residual plot\n{label_property:s} ({label_dataset:s})"

@@ -16,7 +16,9 @@ from .check_dtype import(
     is_numeric, is_integer, is_dictionary,
     is_array_like, is_numeric_array, is_integer_array, is_string_array,
     is_string_array_inhomogeneous, is_bool_array, is_boolean_array,
-    is_None_array, is_object, is_callable, is_ase_atoms, is_ase_atoms_array,
+    is_None_array, is_torch_tensor, 
+    is_object, is_callable,
+    is_ase_atoms, is_ase_atoms_array,
     is_grad_enabled, in_cuda, is_attached
 )
 
@@ -37,7 +39,8 @@ from .output import(
 )
 
 from .functions import(
-    segment_sum, gather_nd, detach_tensor, flatten_array_like, scatter_sum
+    encode_str2int, decode_int2str, segment_sum, gather_nd, detach_tensor, 
+    flatten_array_like, scatter_sum
 )
 
 from .data_ase import(

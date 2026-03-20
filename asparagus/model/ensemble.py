@@ -156,11 +156,11 @@ class EnsembleModel(torch.nn.Module):
             self.model_calculator_list[0].model_properties.copy())
         self.model_unit_properties = (
             self.model_calculator_list[0].model_unit_properties.copy())
-        for prop in self.model_calculator_list[0].model_properties:
-            prop_std = f"std_{prop:s}"
-            self.model_properties.append(prop_std)
-            self.model_unit_properties[prop_std] = (
-                self.model_calculator_list[0].model_unit_properties[prop])
+        # for prop in self.model_calculator_list[0].model_properties:
+        #     prop_std = f"std_{prop:s}"
+        #     self.model_properties.append(prop_std)
+        #     self.model_unit_properties[prop_std] = (
+        #         self.model_calculator_list[0].model_unit_properties[prop])
 
         # Model cutoff ranges
         if hasattr(self.model_calculator_list[0], 'model_cutoff'):
@@ -340,7 +340,6 @@ class EnsembleModel(torch.nn.Module):
         return self.model_calculator_list[0].get_cutoff_ranges()
 
     # @torch.compile # Not supporting backwards propagation with torch.float64
-    # @torch.jit.export  # No effect, as 'forward' already is
     def forward(
         self,
         batch: Dict[str, torch.Tensor],
@@ -372,12 +371,12 @@ class EnsembleModel(torch.nn.Module):
             Extra keys are:
                 'pbc_offset': torch.Tensor(n_pairs)
                     Periodic boundary atom pair vector offset
-                'pbc_atoms': torch.Tensor(n_atoms)
+                'ml_idx': torch.Tensor(n_atoms)
                     Primary atom indices for the supercluster approach
-                'pbc_idx': torch.Tensor(n_pairs)
+                'ml_idx_p': torch.Tensor(n_pairs)
                     Image atom to primary atom index pointer for the atom
                     pair indices in a supercluster
-                'pbc_idx_j': torch.Tensor(n_pairs)
+                'ml_idx_jp': torch.Tensor(n_pairs)
                     Atom j pair index pointer from image atom to respective
                     primary atom index in a supercluster
         no_derivation: bool, optional, default False
@@ -402,26 +401,25 @@ class EnsembleModel(torch.nn.Module):
 
         # Iterate over ensemble models
         for ic, model_calculator in enumerate(self.model_calculator_list):
-            model_results[ic] = model_calculator(
+            batch[ic] = model_calculator(
                 batch,
                 no_derivation=no_derivation,
                 verbose_results=verbose_results)
 
         # Accumulate model results
-        for prop in model_results[0]:
+        for prop in self.model_properties:
             prop_std = f"std_{prop:s}"
-            ensemble_results[prop_std], ensemble_results[prop] = (
+            batch[prop_std], batch[prop] = (
                 torch.std_mean(
                     torch.stack(
-                        [results[prop] for results in model_results.values()]),
+                        [
+                            batch[ic][prop]
+                            for ic in range(self.model_ensemble_num)
+                        ]),
                     dim=0)
                 )
 
-        # Update model ensemble results with single results, if requested
-        if verbose_results:
-            ensemble_results.update(model_results)
-
-        return ensemble_results
+        return batch
 
     def calculate(
         self,
@@ -572,6 +570,7 @@ class EnsembleModel(torch.nn.Module):
         dataloader = data.DataLoader(
             dataset,
             batch_size,
+            [],
             False,
             num_workers,
             self.device,
@@ -590,38 +589,40 @@ class EnsembleModel(torch.nn.Module):
                 **kwargs)
 
             # Append prediction to result dictionary
-            for prop, item in prediction.items():
-                if verbose_results and utils.is_dictionary(item):
+            for prop in self.model_properties:
+                if verbose_results and utils.is_dictionary(prediction[prop]):
                     if results.get(prop) is None:
                         results[prop] = {}
-                    for sub_prop, sub_item in item.items():
+                    for sub_prop, sub_result in prediction[prop].items():
                         if results[prop].get(sub_prop) is None:
-                            results[prop][sub_prop] = [sub_item.cpu().detach()]
+                            results[prop][sub_prop] = [
+                                sub_result.cpu().detach()]
                         else:
                             results[prop][sub_prop].append(
-                                sub_item.cpu().detach())
+                                sub_result.cpu().detach())
                 elif results.get(prop) is None:
-                    results[prop] = [item.cpu().detach()]
+                    results[prop] = [prediction[prop].cpu().detach()]
                 else:
-                    results[prop].append(item.cpu().detach())
+                    results[prop].append(prediction[prop].cpu().detach())
 
         # Concatenate results
-        for prop, item in results.items():
-            if verbose_results and utils.is_dictionary(item):
-                for sub_prop, sub_item in item.items():
-                    if ib and sub_item[0].shape:
-                        results[prop][sub_prop] = torch.cat(sub_item)
+        for prop in self.model_properties:
+            if verbose_results and utils.is_dictionary(prediction[prop]):
+                for sub_prop, sub_result in prediction[prop].items():
+                    if ib and sub_result[0].shape:
+                        results[prop][sub_prop] = torch.cat(sub_result)
                     elif ib:
                         results[prop][sub_prop] = torch.cat(
-                            [item_i.reshape(1) for item_i in sub_item], dim=0)
+                            [result.reshape(1) for result in sub_result],
+                            dim=0)
                     else:
-                        results[prop][sub_prop] = sub_item[0]
-            elif ib and item[0].shape:
-                results[prop] = torch.cat(item)
+                        results[prop][sub_prop] = sub_result[0]
+            elif ib and prediction[prop][0].shape:
+                results[prop] = torch.cat(prediction[prop])
             elif ib:
                 results[prop] = torch.cat(
-                    [item_i.reshape(1) for item_i in item], dim=0)
+                    [result.reshape(1) for result in prediction[prop]], dim=0)
             else:
-                results[prop] = item[0]
+                results[prop] = prediction[prop][0]
 
         return results

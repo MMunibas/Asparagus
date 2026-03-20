@@ -14,7 +14,7 @@
 - Requirements:
   - Python <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.8
   - PyTorch <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 1.10
-  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.21
+  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " == 3.22.1 ( 3.23.0, 3.24.0 is broken when using ORCA calculator)
   - Torch-ema <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 0.3
   - TensorBoardX <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 2.4
   - numpy, scipy, pandas, ...
@@ -43,7 +43,7 @@ Install via pip:
 ``` 
 python -m pip install .
 ```
-Alternatively, but deprecated, install via setup.py:
+Alternatively, but deprecated and will probably fail, install via setup.py:
 ``` 
 python setup.py install
 ```
@@ -75,10 +75,16 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 - [x] Electronic structure calculations:
    - [x] ASE calculator
    - [x] Custom Calculators (via shell run or slurm batch files)
-- Trainer class:
+- [ ] Model potentials:
+   - [x] PhysNet
+   - [x] PaiNN
+   - [ ] AMP
+   - [ ] MACE
+- [x] Trainer class:
   - [x] Training of model ensemble 
-- Tester class: 
-  - [x] Model and Moddel Ensemble automatic evaluation 
+- [x] Tester class: 
+  - [x] Model and Moddel Ensemble automatic evaluation
+  - [x] Model automatic evaluation for data with different multiple fragments (e.g. in ML/MM)
 - Active learning
    - [x] Adaptive Sampling (first iteration)
    - [x] Uncertainty calculations
@@ -92,6 +98,7 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 - Production: 
   - [x] ASE calculator
   - [x] PyCharmm interface
+  - [x] OpenMM interface
   - [ ] Gaussian interface
 - Documentation:
   - [ ] Improve documentation
