@@ -20,7 +20,7 @@ if __name__ == "__main__":
 #===============================================================================
 
     atoms = Atoms(atomtypes, coordinates)
-    model = Asparagus(config='.json') #Your .json file, make sure it contains in the model properties "hessian"
+    model = Asparagus(config='pyrolidinethanol_pbe.json')
     calc = model.get_ase_calculator()
 
     if 'dipder' not in calc.implemented_properties:
@@ -61,6 +61,9 @@ if __name__ == "__main__":
     mu = np.dot(charges, atoms.get_positions()) / 0.5291772105638411
     #print(f"DEBUG Dipole (mu): \n{mu}")
 
+
+
+
     # --- DIPOLE DERIVATIVE (APT) ---
     dipder_raw = calc.results.get('dipder')
 
@@ -68,7 +71,7 @@ if __name__ == "__main__":
         print("CRITICAL ERROR: 'dipder' is still returning None from the calculator!")
         sys.exit(1)
 
-    print(f"DEBUG Raw Dipder Shape: {dipder_raw.shape}")
+    3print(f"DEBUG Raw Dipder Shape: {dipder_raw.shape}")
 
     # Gaussian expects a flattened (3*N, 3) matrix.
     # Rows: coordinate derivatives (x1, y1, z1, x2, y2, z2...)
