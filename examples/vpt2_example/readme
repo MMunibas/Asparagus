@@ -18,7 +18,7 @@ submit
 submit
 YES
 
-After optimization, replace the coordinates in asp_vpt2.com with the Cartesian coordinates of your optimized structure.
+After optimization, replace the coordinates in asp_vpt2.com with the Cartesian coordinates of your optimized structure and add "hessian" into .json file of your model to "model_properties" section
 Then submit the VPT2 calculation using gview:
 gview asp_vpt2.com
 ctrl + g

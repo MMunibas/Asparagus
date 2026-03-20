@@ -104,8 +104,10 @@ class ASE_Calculator(ase_calc.Calculator):
         # Get unit conversion dictionary
         self.model_conversion = self.check_model_units(
             self.model_calculator.model_unit_properties)
-
+        
         # Initialize atoms object batch
+        
+        self.charge = charge
         if atoms is None:
             self.atoms_batch = {}
         else:
@@ -315,6 +317,29 @@ class ASE_Calculator(ase_calc.Calculator):
             pred = (
                 prediction[prop].cpu().detach().numpy()
                 *self.model_conversion[prop])
+            conversion = self.model_conversion.get(prop, 1.0)
+            prediction = (
+                atoms_batch[prop].cpu().detach().numpy()
+                * conversion)
+
+            # ==================================================================
+            # NEW: Intercept 'dipder' before standard shape checks
+            # Shape is (3 components, N_total_atoms, 3 coordinates)
+            # ==================================================================
+            if prop == 'dipder':
+                if multi_sys:
+                    sys_i_np = atoms_batch['sys_i'].cpu().detach().numpy()
+                    # Slice along the Natoms axis (index 1) for each system
+                    results[prop] = [
+                        prediction[:, sys_i_np == i_sys, :]
+                        for i_sys in range(Nsys)
+                    ]
+                else:
+                    # Single system, assign directly
+                    results[prop] = prediction
+                    
+                continue
+            # ==================================================================
 
             # Resolve prediction system-wise
             if multi_sys:
@@ -331,6 +356,16 @@ class ASE_Calculator(ase_calc.Calculator):
                     pred = [
                         pred[
                             atoms_batch['sys_i'][atoms_batch['idx_i']] == i_sys
+                elif prediction.shape[0] == Nsys:
+                    prediction = [pred_i for pred_i in prediction]
+                elif prediction.shape[0] == Natoms:
+                    prediction = [
+                        prediction[atoms_batch['sys_i'].cpu().numpy() == i_sys]
+                        for i_sys in range(Nsys)]
+                elif prediction.shape[0] == Npairs:
+                    prediction = [
+                        prediction[
+                            atoms_batch['sys_i'][atoms_batch['idx_i']].cpu().numpy() == i_sys
                         ] for i_sys in range(Nsys)]
 
             # Assign to results

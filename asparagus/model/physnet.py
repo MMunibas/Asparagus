@@ -718,6 +718,38 @@ class Model_PhysNet(model.BaseModel):
                 positions_dipole = positions
             else:
                 positions_dipole = positions[pbc_atoms]
+            batch = self.compute_dipole(batch)
+        # ======================================================================
+        # NEW: Compute dipole derivatives (Atomic Polar Tensor)
+        # ======================================================================
+        if self.model_dipole and not no_derivation:
+            dipole = batch.get('dipole')
+            pos = batch.get('positions')
+            sys_i = batch.get('sys_i')
+
+            if dipole is not None and pos is not None and pos.requires_grad:
+                # Initialize tensor: (3 components, total atoms in batch, 3 coords)
+                dipder = torch.zeros((3, pos.size(0), 3), device=pos.device)
+                
+                for i in range(3):
+                    dipole_component = dipole[:, i]
+                    grad_outputs = torch.ones_like(dipole_component)
+                    
+                    g = torch.autograd.grad(
+                        outputs=dipole_component,
+                        inputs=pos,
+                        grad_outputs=grad_outputs,
+                        retain_graph=True,
+                        create_graph=create_graph,
+                        allow_unused=True
+                    )[0]
+                    
+                    if g is not None:
+                        dipder[i] = g
+                
+                batch['dipder'] = dipder
+        # ===========================================================
+        return batch
 
             # In case of non-zero system charges, shift origin to center of
             # mass
