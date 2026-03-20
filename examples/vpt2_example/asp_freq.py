@@ -20,7 +20,7 @@ if __name__ == "__main__":
 #===============================================================================
 
     atoms = Atoms(atomtypes, coordinates)
-    model = Asparagus(config='pyrolidinethanol_pbe.json')
+    model = Asparagus(config='.json') #replace with your .json file and do not forget to add "hessian" to the "model_properties"
     calc = model.get_ase_calculator()
 
     if 'dipder' not in calc.implemented_properties:
@@ -40,11 +40,11 @@ if __name__ == "__main__":
 
     # Energy conversion to hartree
     energy = calc.results['energy'] / 27.211386024367243
-    print(energy)
+    #print(energy)
     # Gradient conversion to hartree/bohr
     gradient = -calc.results['forces']
     gradient = (gradient * 0.5291772105638411) / 27.211386024367243
-    print(gradient)
+    #print(gradient)
     # Hessian conversion
     hessian_raw = calc.results['hessian'].reshape(3*natoms, 3*natoms)
     hessiantmp = []
