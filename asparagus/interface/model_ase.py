@@ -325,36 +325,97 @@ class ASE_Calculator(ase_calc.Calculator):
         # Iterate over model properties
         for prop in self.implemented_properties:
 
-            # Convert property prediction
-            prediction = (
+            # Convert property prediction and check shape
+            prediction = self.check_prediction(
                 atoms_batch[prop].cpu().detach().numpy()
-                *self.model_conversion[prop])
-
-            # Check prediction shape system-wise
-            if multi_sys:
-
-                if not prediction.shape:
-                    pass
-                elif prediction.shape[0] == Nsys:
-                    prediction = [pred_i for pred_i in prediction]
-                elif prediction.shape[0] == Natoms:
-                    prediction = [
-                        prediction[atoms_batch['sys_i'] == i_sys]
-                        for i_sys in range(Nsys)]
-                elif prediction.shape[0] == Npairs:
-                    prediction = [
-                        prediction[
-                            atoms_batch['sys_i'][atoms_batch['idx_i']] == i_sys
-                        ] for i_sys in range(Nsys)]
-
-            else:
-                
-                if not prediction.shape:
-                    pass
-                elif prediction.shape[0] == 1:
-                    prediction = prediction[0]
+                * self.model_conversion[prop],
+                multi_sys,
+                Nsys,
+                Natoms,
+                Npairs,
+            )
 
             # Assign to results
             results[prop] = prediction
 
+        # For model ensemble, include standard deviations of the properties
+        if self.model_ensemble:
+            
+            # Iterate over model properties standard deviation
+            for prop in self.implemented_properties:
+                
+                # Check for availability
+                prop_std = f"std_{prop:s}"
+                if prop_std in atoms_batch:
+                    
+                    # Convert property prediction and check shape
+                    prediction = self.check_prediction(
+                        atoms_batch[prop_std].cpu().detach().numpy()
+                        * self.model_conversion[prop],
+                        multi_sys,
+                        Nsys,
+                        Natoms,
+                        Npairs,
+                    )
+
+                    # Assign to results
+                    results[prop_std] = prediction
+
         return results
+
+    def check_prediction(
+        self,
+        prediction: np.ndarray,
+        multi_sys: bool,
+        Nsys: int,
+        Natoms: int,
+        Npairs: int,
+    ) -> List[np.ndarray]:
+        """
+        Check prediction shape to assign properties to the right systems.
+        
+        Parameter
+        ---------
+        prediction: np.ndarray
+            Prediction array with different shapes
+        multi_sys: bool
+            If True, predictions are from different sized systems
+        Nsys: int
+            Total number of systems
+        Natoms: int
+            Total number of atoms in all systems
+        Npairs: int,
+            Total number of atom pairs (within cutoff) of all systems
+
+        Returns
+        -------
+        list(np.ndarray)
+            Model results
+
+        """
+
+        # Check prediction shape system-wise
+        if multi_sys:
+
+            if not prediction.shape:
+                pass
+            elif prediction.shape[0] == Nsys:
+                prediction = [pred_i for pred_i in prediction]
+            elif prediction.shape[0] == Natoms:
+                prediction = [
+                    prediction[atoms_batch['sys_i'] == i_sys]
+                    for i_sys in range(Nsys)]
+            elif prediction.shape[0] == Npairs:
+                prediction = [
+                    prediction[
+                        atoms_batch['sys_i'][atoms_batch['idx_i']] == i_sys
+                    ] for i_sys in range(Nsys)]
+
+        else:
+            
+            if not prediction.shape:
+                pass
+            elif prediction.shape[0] == 1:
+                prediction = prediction[0]
+
+        return prediction

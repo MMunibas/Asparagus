@@ -566,8 +566,12 @@ class MetaSampler(sampling.Sampler):
         # Initialize Hookean constraint
         hookean_constraint = []
         for hk in hookean:
+            # ASE checks hk[1] for beeing an integer or list. Will fail for,
+            # e.g., numpy integer data types!
+            if utils.is_integer(hk[1]):
+                hk_1 = int(hk[1])
             hookean_constraint.append(
-                Hookean(hk[0], hk[1], hk[2], rt=hk[3]))
+                Hookean(hk[0], hk_1, hk[2], rt=hk[3]))
         
         # Set constraints to system
         system.set_constraint(

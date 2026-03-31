@@ -12,3 +12,7 @@ from .asparagus import (
     Asparagus
 )
 
+from .data import (
+    DataContainer
+)
+

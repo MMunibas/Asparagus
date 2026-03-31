@@ -404,7 +404,7 @@ class EnsembleModel(torch.nn.Module):
             batch[ic] = model_calculator(
                 batch,
                 no_derivation=no_derivation,
-                verbose_results=verbose_results)
+                verbose_results=verbose_results).copy()
 
         # Accumulate model results
         for prop in self.model_properties:
