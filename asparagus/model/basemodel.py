@@ -1301,15 +1301,21 @@ class BaseModel(torch.nn.Module):
         else:
             positions_dipole = batch['positions']
 
-        # In case of non-zero system charges, shift origin to center of
-        # mass
+        # In case of non-zero system charges (and even for neutral systems),
+        # shift origin to center of mass
         if 'positions_com' in batch:
+
+            # Take stored center of mass positions when available
             positions_com = batch['positions_com']
+
         else:
+
+            # Get atom masses and sum up to system masses
             atomic_masses = self.atomic_masses[batch['atomic_numbers']]
             system_mass = torch.zeros_like(batch['charge']).scatter_add_(
                 0, batch['sys_i'], atomic_masses)
 
+            # Compute systems center of masses
             system_com = torch.zeros(
                 (batch['atoms_number'].size(0), 3),
                 device=self.device, dtype=self.dtype)
@@ -1320,7 +1326,12 @@ class BaseModel(torch.nn.Module):
                     ).reshape(-1, 3)
                 / system_mass.unsqueeze(-1)
                 )
+
+            # Shift positions origin into center of mass
             positions_com = positions_dipole - system_com[batch['sys_i']]
+
+            # Store centered atom positions for potential subsequent use
+            batch['positions_com'] = positions_com
 
         # Compute molecular dipole moment from atomic charges
         batch['dipole'] = torch.zeros_like(system_com).scatter_add_(
@@ -1361,53 +1372,46 @@ class BaseModel(torch.nn.Module):
         else:
             positions_quadrupole = batch['positions']
 
-        # Shift origin to center of geometry
-        system_cog = torch.zeros(
-            (batch['atoms_number'].size(0), 3),
-            device=self.device, dtype=self.dtype)
-        system_cog = (
-            system_cog.scatter_add_(
-                0,
-                batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-                positions_quadrupole
-                ).reshape(-1, 3)
-            / batch['atoms_number'].unsqueeze(-1)
-            )
-        positions_cog = positions_quadrupole - system_cog[batch['sys_i']]
+        # In case of non-zero system charges (and even for neutral systems),
+        # shift origin to center of mass
+        if 'positions_com' in batch:
 
-#         # In case of non-zero system charges, shift origin to center of
-#         # mass
-#         if 'positions_com' in batch:
-#             positions_com = batch['positions_com']
-#         else:
-#             atomic_masses = self.atomic_masses[batch['atomic_numbers']]
-#             system_mass = torch.zeros_like(batch['charge']).scatter_add_(
-#                 0, batch['sys_i'], atomic_masses)
-#         
-#             system_com = torch.zeros(
-#                 (batch['atoms_number'].size(0), 3),
-#                 device=self.device, dtype=self.dtype)
-#             system_com = (
-#                 system_com.scatter_add_(
-#                     0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-#                     atomic_masses.unsqueeze(-1)*positions_quadrupole
-#                     ).reshape(-1, 3)
-#                 / system_mass.unsqueeze(-1)
-#                 )
-#             positions_com = positions_quadrupole - system_com[batch['sys_i']]
+            # Take stored center of mass positions when available
+            positions_com = batch['positions_com']
 
-        # Compute detraced outer product
-        outer_product = positions_cog.unsqueeze(-1)*positions_cog.unsqueeze(-2)
-        # outer_product = positions_com.unsqueeze(-1)*positions_com.unsqueeze(-2)
-        # outer_product = (
-        #     positions_quadrupole.unsqueeze(-1)
-        #     * positions_quadrupole.unsqueeze(-2))
-        detraced_outer_product = (
-            3.0*outer_product
+        else:
+
+            # Get atom masses and sum up to system masses
+            atomic_masses = self.atomic_masses[batch['atomic_numbers']]
+            system_mass = torch.zeros_like(batch['charge']).scatter_add_(
+                0, batch['sys_i'], atomic_masses)
+
+            # Compute systems center of masses
+            system_com = torch.zeros(
+                (batch['atoms_number'].size(0), 3),
+                device=self.device, dtype=self.dtype)
+            system_com = (
+                system_com.scatter_add_(
+                    0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                    atomic_masses.unsqueeze(-1)*positions_quadrupole
+                    ).reshape(-1, 3)
+                / system_mass.unsqueeze(-1)
+                )
+
+            # Shift positions origin into center of mass
+            positions_com = positions_quadrupole - system_com[batch['sys_i']]
+
+            # Store centered atom positions for potential subsequent use
+            batch['positions_com'] = positions_com
+
+        # Compute traceless outer product from center of mass positions
+        outer_product = positions_com.unsqueeze(-1)*positions_com.unsqueeze(-2)
+        traceless_outer_product = (
+            outer_product
             - torch.diag_embed(
                 torch.tile(
                     outer_product.diagonal(
-                        dim1=-2, dim2=-1).sum(
+                        dim1=-2, dim2=-1).mean(
                             dim=-1, keepdim=True),
                     (1, 3)
                 )
@@ -1422,17 +1426,8 @@ class BaseModel(torch.nn.Module):
                 0,
                 batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
                 batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
-                * detraced_outer_product
+                * traceless_outer_product
             )
-
-        # print(batch['quadrupole'][0])
-        # print(batch['atomic_charges'][:3])
-        # print(detraced_outer_product[:3])
-        # print(
-        #     (batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
-        #     * detraced_outer_product)[:3])
-        # print(batch['reference']['quadrupole'][:9].reshape(3,3))
-        # exit()
 
         # Refine molecular quadrupole moment with atomic quadrupole moments
         if self.model_atomic_quadrupoles:
