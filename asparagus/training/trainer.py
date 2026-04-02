@@ -1321,10 +1321,12 @@ class Trainer:
 
     def compute_metrics(
         self,
-        prediction: Dict[str, Any],
-        reference: Dict[str, Any],
+        prediction: Dict[str, torch.Tensor],
+        reference: Dict[str, torch.Tensor],
         loss_fn: Optional[Dict[str, Callable]] = None,
         loss_only: Optional[bool] = True,
+        ml_fragment: Optional[int] = 0,
+        mm_fragment: Optional[int] = 1,
     ) -> Dict[str, float]:
         """
         Compute metrics. This function evaluates the loss function.
@@ -1356,27 +1358,76 @@ class Trainer:
 
         # Initialize MAE and MSE calculator function if needed
         if not loss_only:
-            mae_fn = torch.nn.L1Loss(reduction="mean")
-            mse_fn = torch.nn.MSELoss(reduction="mean")
+            mae_fn = torch.nn.L1Loss(reduction='mean')
+            mse_fn = torch.nn.MSELoss(reduction='mean')
 
         # Iterate over training properties
         for ip, prop in enumerate(self.trainer_properties):
 
             # Check loss function input
             if loss_fn is None:
-                loss = torch.nn.SmoothL1Loss(reduction="mean")
+                loss = torch.nn.SmoothL1Loss(reduction='mean')
             else:
                 loss = loss_fn[prop]
 
             # Initialize single property metrics dictionary
             metrics[prop] = {}
 
-            # Compute loss value system-wise or atom-wise multiplied by
-            # 100 for display convenience
-            metrics[prop]['loss'] = loss(
-                torch.flatten(prediction[prop])
-                * self.model_conversion[prop],
-                torch.flatten(reference[prop]))
+            # Compute loss value system-wise or atom-wise
+            # Special case for forces in ML/MM systems: equal weighting of the
+            # ML atom forces loss and the MM atom forces loss due to 
+            # reduction='mean'
+            if prop == 'forces' and 'fragment_numbers' in prediction:
+                ml_selection = (prediction['fragment_numbers'] == ml_fragment)
+                mm_selection = (prediction['fragment_numbers'] == mm_fragment)
+                metrics[prop]['loss'] = (
+                    loss(
+                        (
+                            self.model_conversion[prop]
+                            * torch.flatten(prediction[prop][ml_selection])
+                        ),
+                        torch.flatten(reference[prop][ml_selection])
+                    )
+                    + loss(
+                        (
+                            self.model_conversion[prop]
+                            * torch.flatten(prediction[prop][mm_selection])
+                        ),
+                        torch.flatten(reference[prop][mm_selection])
+                    )
+                )
+            # Special case for dipole and quadrupole: include loss value for
+            # both molecular mutlipoles including atomic mutlipoles and 
+            # molecular mutlipoles just from atomic charges (monopoles) to
+            # focus on atomic charges for molecular multipole predictions and
+            # emphasize atomic multipoles just as a correction term.
+            elif prop in ['dipole', 'quadrupole']:
+                prop_from_charges = prop + '_from_charges'
+                if prop_from_charges in prediction:
+                    metrics[prop]['loss'] = 0.5*(
+                        loss(
+                            (
+                                self.model_conversion[prop]
+                                * torch.flatten(prediction[prop_from_charges])
+                            ),
+                            torch.flatten(reference[prop])
+                        )
+                        + loss(
+                            (
+                                self.model_conversion[prop]
+                                * torch.flatten(prediction[prop])
+                            ),
+                            torch.flatten(reference[prop])
+                        )
+                    )
+            else:
+                metrics[prop]['loss'] = loss(
+                    (
+                        self.model_conversion[prop]
+                        * torch.flatten(prediction[prop])
+                    ),
+                    torch.flatten(reference[prop])
+                )
 
             # Check for NaN loss value
             if torch.isnan(metrics[prop]['loss']):

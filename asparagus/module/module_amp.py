@@ -374,9 +374,9 @@ class Input_AMP(torch.nn.Module):
             
             # Compute long-range ML atom pair vectors outer product
             vectors_uv_normalized = vectors_uv/distances_uv.unsqueeze(-1)
-            outer_product_uv = (
-                vectors_uv_normalized.unsqueeze(-1)
-                * vectors_uv_normalized.unsqueeze(-2))
+            # outer_product_uv = (
+            #     vectors_uv_normalized.unsqueeze(-1)
+            #     * vectors_uv_normalized.unsqueeze(-2))
 
             # ML/MM approach - Point ML atom pair indices from full ML/MM
             # system to the ML system indices 
@@ -397,7 +397,7 @@ class Input_AMP(torch.nn.Module):
             batch['idx_v'] = batch['idx_j']
             vectors_uv = vectors
             distances_uv = distances
-            outer_product_uv = outer_product
+            # outer_product_uv = outer_product
 
         # Assign ML atom result data
         batch['features'] = features
@@ -410,7 +410,7 @@ class Input_AMP(torch.nn.Module):
         batch['rbfs'] = rbfs
         batch['distances_uv'] = distances_uv
         batch['vectors_uv'] = vectors_uv
-        batch['outer_product_uv'] = outer_product_uv
+        # batch['outer_product_uv'] = outer_product_uv
 
         # Assign ML-MM input data for ML charge polarization
         mlmm_idx_i = batch['mlmm_idx_i']
@@ -485,9 +485,9 @@ class Input_AMP(torch.nn.Module):
             # Compute long-range ML-MM atom pair vectors outer product
             mlmm_vectors_uv_normalized = (
                 mlmm_vectors_uv/mlmm_distances_uv.unsqueeze(-1))
-            mlmm_outer_product_uv = (
-                mlmm_vectors_uv_normalized.unsqueeze(-1)
-                * mlmm_vectors_uv_normalized.unsqueeze(-2))
+            # mlmm_outer_product_uv = (
+            #     mlmm_vectors_uv_normalized.unsqueeze(-1)
+            #     * mlmm_vectors_uv_normalized.unsqueeze(-2))
             
             # ML/MM approach - Point ML/MM atom pair indices u (ML atom) from
             # full ML/MM system to the ML system indices and store as 
@@ -508,7 +508,7 @@ class Input_AMP(torch.nn.Module):
             batch['mlmm_idx_v'] = batch['mlmm_idx_j']
             mlmm_vectors_uv = mlmm_vectors
             mlmm_distances_uv = mlmm_distances
-            mlmm_outer_product_uv = mlmm_outer_product
+            # mlmm_outer_product_uv = mlmm_outer_product
 
         # Assign ML-MM atom pair result data
         batch['mlmm_distances'] = mlmm_distances
@@ -520,7 +520,7 @@ class Input_AMP(torch.nn.Module):
         batch['mlmm_rbfs'] = mlmm_rbfs
         batch['mlmm_distances_uv'] = mlmm_distances_uv
         batch['mlmm_vectors_uv'] = mlmm_vectors_uv
-        batch['mlmm_outer_product_uv'] = mlmm_outer_product_uv
+        # batch['mlmm_outer_product_uv'] = mlmm_outer_product_uv
 
         return batch
 

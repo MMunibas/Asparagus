@@ -1334,9 +1334,13 @@ class BaseModel(torch.nn.Module):
             batch['positions_com'] = positions_com
 
         # Compute molecular dipole moment from atomic charges
-        batch['dipole'] = torch.zeros_like(system_com).scatter_add_(
-            0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-            batch['atomic_charges'].unsqueeze(-1)*positions_com)
+        batch['dipole'] = torch.zeros(
+            (batch['atoms_number'].size(0), 3),
+            device=self.device,
+            dtype=self.dtype).scatter_add_(
+                0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                batch['atomic_charges'].unsqueeze(-1)*positions_com)
+        batch['dipole_from_charges'] = batch['dipole'].clone()
 
         # Refine molecular dipole moment with atomic dipole moments
         if self.model_atomic_dipoles:
@@ -1428,6 +1432,7 @@ class BaseModel(torch.nn.Module):
                 batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
                 * traceless_outer_product
             )
+        batch['quadrupole_from_charges'] = batch['quadrupole'].clone()
 
         # Refine molecular quadrupole moment with atomic quadrupole moments
         if self.model_atomic_quadrupoles:

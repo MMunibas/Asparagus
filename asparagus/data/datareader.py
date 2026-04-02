@@ -1563,7 +1563,15 @@ class DataReader():
                 + f" {source_prop:<14s} |"
                 + f" {source_unit_property:<14s} |"
                 + f" {unit_conversion[data_prop]:11.9e}\n"
-                )
+            )
+
+        # If quadrupole is available, add the remark, that the quadrupole is
+        # converted to its traceless version
+        if 'quadrupole' in assigned_properties:
+            message += (
+                "*Molecular quadrupole moment is converted to its traceless "
+                + "form."
+            )
 
         # Print property information
         self.logger.info(message)
@@ -1630,6 +1638,10 @@ class DataReader():
                         + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
+
+        # Detrace molecular quadrupole if available
+        if 'quadrupole' in atoms_properties:
+            atoms_properties = self.detrace_quadrupole(atoms_properties)
 
         return atoms_properties
 
@@ -1715,6 +1727,10 @@ class DataReader():
                         * item[idx][:source['atoms_number'][idx]])
                 elif prop in load_properties:
                     atoms_properties[prop] = conversion[prop]*item[idx]
+                
+            # Detrace molecular quadrupole if available
+            if 'quadrupole' in atoms_properties:
+                atoms_properties = self.detrace_quadrupole(atoms_properties)
 
             # Add atoms system data
             all_atoms_properties.append(atoms_properties)
@@ -1806,6 +1822,11 @@ class DataReader():
                         + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
+
+        # Detrace molecular quadrupole if available
+        if 'quadrupole' in atoms_properties:
+            atoms_properties['quadrupole'] = self.detrace_quadrupole(
+                atoms_properties['quadrupole'])
 
         return atoms_properties
 
@@ -1905,6 +1926,10 @@ class DataReader():
                         + "in atoms info dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*infos[prop])
+
+        # Detrace molecular quadrupole if available
+        if 'quadrupole' in atoms_properties:
+            atoms_properties = self.detrace_quadrupole(atoms_properties)
 
         return atoms_properties
 
@@ -2043,4 +2068,25 @@ class DataReader():
                     source_metadata['data_atomic_energies_scaling'][atom]]
 
         return source_metadata
+
+    def detrace_quadrupole(
+        self,
+        quadrupole: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Load data from asparagus dataset format.
+
+        Parameters
+        ----------
+        quadrupole: np.ndarray
+            Molecular quadrupole moment
+
+        Returns
+        -------
+        np.ndarray
+            Traceless molecular quadrupole moment
+
+        """
+        return quadrupole - np.diag(np.diag(quadrupole).mean().repeat(3))
+
 

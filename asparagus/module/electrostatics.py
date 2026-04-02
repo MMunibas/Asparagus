@@ -104,6 +104,7 @@ class Damped_electrostatics(torch.nn.Module):
                 self.cutoff,
                 self.cutoff_short_range,
                 self.kehalf,
+                self.offset2,
                 self.switch_fn,
                 atomic_dipoles,
                 atomic_quadrupoles)
@@ -112,6 +113,7 @@ class Damped_electrostatics(torch.nn.Module):
                 self.cutoff,
                 self.cutoff_short_range,
                 self.kehalf,
+                self.offset2,
                 self.switch_fn,
                 atomic_dipoles,
                 atomic_quadrupoles)
@@ -120,6 +122,7 @@ class Damped_electrostatics(torch.nn.Module):
                 self.cutoff,
                 self.cutoff_short_range,
                 self.kehalf,
+                self.offset2,
                 self.switch_fn,
                 atomic_dipoles,
                 atomic_quadrupoles)
@@ -178,8 +181,15 @@ class Damped_electrostatics(torch.nn.Module):
         kehalf = torch.tensor(
             kehalf_ase*factor_charge**2/factor_energy/factor_positions,
             device=self.device, dtype=self.dtype)
-        self.register_buffer(
-            'kehalf', kehalf)
+        self.register_buffer('kehalf', kehalf)
+
+        # Convert damping offset from Ang**2 to model unit
+        offset2_ase = 1.0**2
+        offset2 = torch.tensor(
+            offset2_ase*factor_positions**2,
+            device=self.device, dtype=self.dtype)
+        # self.register_buffer('offset2', offset2)
+        self.offset2 = offset2
 
         return
 
@@ -240,6 +250,9 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
         Damping range electrostatic cutoff distance
     kehalf: float
         Half of the Coulomb potential factor
+    offset2: float
+        Damping squared damping distance offset that the atom pair distance
+        will converge when going to zero.
     switch_fn: (str, callable), optional, default None
         Switch function for the short range cutoff.
     atomic_dipoles: bool, optional, default False
@@ -258,6 +271,7 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
         cutoff: float,
         cutoff_short_range: float,
         kehalf: float,
+        offset2: float,
         switch_fn: Callable,
         atomic_dipoles: bool,
         atomic_quadrupoles: bool,
@@ -270,6 +284,7 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
         self.cutoff = cutoff
         self.cutoff_short_range = cutoff_short_range
         self.kehalf = kehalf
+        self.offset2 = offset2
         self.switch_fn = switch_fn
         self.atomic_dipoles = atomic_dipoles
         self.atomic_quadrupoles = atomic_quadrupoles
@@ -304,7 +319,7 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
 
         # Compute damped reciprocal distances and cutoff shifts
         distances = batch['distances_uv']
-        distances_damped = torch.sqrt(distances**2 + 1.0)
+        distances_damped = torch.sqrt(distances**2 + self.offset2)
         switch_damped = self.switch_fn(distances)
         switch_ordinary = 1.0 - switch_damped
         chi = (switch_damped/distances_damped + switch_ordinary/distances)
@@ -356,13 +371,15 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
             # atomic_quadrupoles_u = batch['atomic_quadrupoles'][batch['idx_u']]
             atomic_quadrupoles_v = batch['atomic_quadrupoles'][batch['idx_v']]
 
-            # Normalize traceless outer product
-            # Here, traceless outer procuct already divided by 3.
+            # Compute traceless outer product
+            outer_product = (
+                batch['vectors_uv'].unsqueeze(-1)
+                * batch['vectors_uv'].unsqueeze(-2))
             traceless_outer_product = (
-                batch['outer_product_uv']
+                outer_product
                 - torch.diag_embed(
                     torch.tile(
-                        batch['outer_product_uv'].diagonal(
+                        outer_product.diagonal(
                             dim1=-2, dim2=-1).mean(
                                 dim=-1, keepdim=True),
                         (1, 3)
@@ -412,6 +429,9 @@ class Damped_electrostatics_ShiftedPotential(torch.nn.Module):
         Damping range electrostatic cutoff distance.
     kehalf: float
         Half of the Coulomb potential factor
+    offset2: float
+        Damping squared damping distance offset that the atom pair distance
+        will converge when going to zero.
     switch_fn: (str, callable), optional, default None
         Switch function for the short range cutoff.
     atomic_dipoles: bool, optional, default False
@@ -430,6 +450,7 @@ class Damped_electrostatics_ShiftedPotential(torch.nn.Module):
         cutoff: float,
         cutoff_short_range: float,
         kehalf: float,
+        offset2: float,
         switch_fn: Callable,
         atomic_dipoles: bool,
         atomic_quadrupoles: bool,
@@ -442,6 +463,7 @@ class Damped_electrostatics_ShiftedPotential(torch.nn.Module):
         self.cutoff = cutoff
         self.cutoff_short_range = cutoff_short_range
         self.kehalf = kehalf
+        self.offset2 = offset2
         self.switch_fn = switch_fn
         self.atomic_dipoles = atomic_dipoles
         self.atomic_quadrupoles = atomic_quadrupoles
@@ -476,7 +498,7 @@ class Damped_electrostatics_ShiftedPotential(torch.nn.Module):
 
         # Compute damped reciprocal distances and cutoff shifts
         distances = batch['distances_uv']
-        distances_damped = torch.sqrt(distances**2 + 1.0)
+        distances_damped = torch.sqrt(distances**2 + self.offset2)
         switch_damped = self.switch_fn(distances)
         switch_ordinary = 1.0 - switch_damped
         chi = (switch_damped/distances_damped + switch_ordinary/distances)
@@ -523,17 +545,18 @@ class Damped_electrostatics_ShiftedPotential(torch.nn.Module):
             
             # Here, only the charge-quadrupole interaction is included!
 
-            # Gather atomic quadrupole pairs
-            # atomic_quadrupoles_u = batch['atomic_quadrupoles'][batch['idx_u']]
+            # Gather atomic quadrupole of atom pair v
             atomic_quadrupoles_v = batch['atomic_quadrupoles'][batch['idx_v']]
 
-            # Normalize traceless outer product
-            # Here, traceless outer procuct already divided by 3.
+            # Compute traceless outer product
+            outer_product = (
+                batch['vectors_uv'].unsqueeze(-1)
+                * batch['vectors_uv'].unsqueeze(-2))
             traceless_outer_product = (
-                batch['outer_product_uv']
+                outer_product
                 - torch.diag_embed(
                     torch.tile(
-                        batch['outer_product_uv'].diagonal(
+                        outer_product.diagonal(
                             dim1=-2, dim2=-1).mean(
                                 dim=-1, keepdim=True),
                         (1, 3)
@@ -583,6 +606,9 @@ class Damped_electrostatics_ShiftedForce(torch.nn.Module):
         Damping range electrostatic cutoff distance.
     kehalf: float
         Half of the Coulomb potential factor
+    offset2: float
+        Damping squared damping distance offset that the atom pair distance
+        will converge when going to zero.
     switch_fn: (str, callable), optional, default None
         Switch function for the short range cutoff.
     atomic_dipoles: bool, optional, default False
@@ -601,6 +627,7 @@ class Damped_electrostatics_ShiftedForce(torch.nn.Module):
         cutoff: float,
         cutoff_short_range: float,
         kehalf: float,
+        offset2: float,
         switch_fn: Callable,
         atomic_dipoles: bool,
         atomic_quadrupoles: bool,
@@ -613,6 +640,7 @@ class Damped_electrostatics_ShiftedForce(torch.nn.Module):
         self.cutoff = cutoff
         self.cutoff_short_range = cutoff_short_range
         self.kehalf = kehalf
+        self.offset2 = offset2
         self.switch_fn = switch_fn
         self.atomic_dipoles = atomic_dipoles
         self.atomic_quadrupoles = atomic_quadrupoles
@@ -647,7 +675,7 @@ class Damped_electrostatics_ShiftedForce(torch.nn.Module):
 
         # Compute damped reciprocal distances and cutoff shifts
         distances = batch['distances_uv']
-        distances_damped = torch.sqrt(distances**2 + 1.0)
+        distances_damped = torch.sqrt(distances**2 + self.offset2)
         switch_damped = self.switch_fn(distances)
         switch_ordinary = 1.0 - switch_damped
         chi = (switch_damped/distances_damped + switch_ordinary/distances)
@@ -703,13 +731,15 @@ class Damped_electrostatics_ShiftedForce(torch.nn.Module):
             # atomic_quadrupoles_u = batch['atomic_quadrupoles'][batch['idx_u']]
             atomic_quadrupoles_v = batch['atomic_quadrupoles'][batch['idx_v']]
 
-            # Normalize traceless outer product
-            # Here, traceless outer procuct already divided by 3.
+            # Compute traceless outer product
+            outer_product = (
+                batch['vectors_uv'].unsqueeze(-1)
+                * batch['vectors_uv'].unsqueeze(-2))
             traceless_outer_product = (
-                batch['outer_product_uv']
+                outer_product
                 - torch.diag_embed(
                     torch.tile(
-                        batch['outer_product_uv'].diagonal(
+                        outer_product.diagonal(
                             dim1=-2, dim2=-1).mean(
                                 dim=-1, keepdim=True),
                         (1, 3)
@@ -1012,23 +1042,22 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
 
         # Compute ML/MM dipole-charge electrostatics
         if self.atomic_dipoles:
-
+        
             # Compute powers of reciprocal distances
             chi2 = chi**2
-
+        
             # Normalize atom pair vectors
             chi_vectors = batch['mlmm_vectors_uv']/mlmm_distances.unsqueeze(-1)
-
+        
             # Gather ML atomic dipoles
             ml_atomic_dipoles_u = batch['atomic_dipoles'][batch['mlmm_idx_u']]
-
+        
             # Compute dot products of atom pair vector and atomic dipole
             dot_vu = torch.sum(chi_vectors*ml_atomic_dipoles_u, dim=1)
-
+        
             # Compute ML/MM dipole-charge electrostatics
             # Usually 1/r**3 but here one 1/r is already included in the
             # normalization of the atom pair connection vector.
-            # TODO check sign
             Eelec = Eelec - mm_atomic_charges_v*dot_vu*chi2
 
         # Compute ML/MM quadrupole-charge electrostatics
@@ -1041,13 +1070,15 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
             ml_atomic_quadrupoles_u = (
                 batch['atomic_quadrupoles'][batch['mlmm_idx_u']])
 
-            # Normalize traceless outer product
-            # Here, traceless outer procuct already divided by 3.
+            # Traceless outer product
+            outer_product = (
+                batch['mlmm_vectors_uv'].unsqueeze(-1)
+                * batch['mlmm_vectors_uv'].unsqueeze(-2))
             traceless_outer_product = (
-                batch['mlmm_outer_product_uv']
+                outer_product
                 - torch.diag_embed(
                     torch.tile(
-                        batch['mlmm_outer_product_uv'].diagonal(
+                        outer_product.diagonal(
                             dim1=-2, dim2=-1).mean(
                                 dim=-1, keepdim=True),
                         (1, 3)
