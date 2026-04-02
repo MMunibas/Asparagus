@@ -1570,7 +1570,7 @@ class DataReader():
         if 'quadrupole' in assigned_properties:
             message += (
                 "*Molecular quadrupole moment is converted to its traceless "
-                + "form."
+                + "form.\n"
             )
 
         # Print property information
@@ -2074,7 +2074,7 @@ class DataReader():
         quadrupole: np.ndarray,
     ) -> np.ndarray:
         """
-        Load data from asparagus dataset format.
+        Convert any molecular quadrupole to its traceless form.
 
         Parameters
         ----------
