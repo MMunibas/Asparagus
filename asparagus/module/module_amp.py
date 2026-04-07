@@ -998,7 +998,7 @@ class Graph_AMP(torch.nn.Module):
                         rbfs_features
                     ),
                     dim=-1)
-    
+
             # Ignore if not
             else:
 
@@ -1227,15 +1227,17 @@ class Graph_AMP(torch.nn.Module):
             atomic_dipoles_vectors_i = torch.sum(
                 atomic_dipoles_i*batch['vectors_normalized'].unsqueeze(1),
                 dim=-1,
-                keepdim=True)
+                keepdim=False)
             atomic_dipoles_vectors_j = torch.sum(
                 atomic_dipoles_j*batch['vectors_normalized'].unsqueeze(1),
                 dim=-1,
-                keepdim=True)
+                keepdim=False)
 
             # Compute atomic dipole-dipole interaction
             atomic_dipoles_dipoles_ij = torch.sum(
-                atomic_dipoles_i*atomic_dipoles_j, dim=-1, keepdim=True)
+                atomic_dipoles_i*atomic_dipoles_j,
+                dim=-1,
+                keepdim=False)
 
         # Get anisotropic atomic quadrupole properties if predicted
         if self.graph_atomic_quadrupoles:
@@ -1266,7 +1268,7 @@ class Graph_AMP(torch.nn.Module):
                         * batch['traceless_outer_product'].unsqueeze(1),
                         dim=-1),
                     dim=-1,
-                    keepdim=True,
+                    keepdim=False,
                 )
             )
             atomic_quadrupoles_outer_product_j = (
@@ -1276,7 +1278,7 @@ class Graph_AMP(torch.nn.Module):
                         * batch['traceless_outer_product'].unsqueeze(1),
                         dim=-1),
                     dim=-1,
-                    keepdim=True,
+                    keepdim=False,
                 )
             )
 
@@ -1284,12 +1286,12 @@ class Graph_AMP(torch.nn.Module):
             atomic_quadrupoles_dipoles_ij = torch.sum(
                 atomic_quadrupoles_vectors_i*atomic_dipoles_j,
                 dim=-1,
-                keepdim=True,
+                keepdim=False,
             )
             atomic_quadrupoles_dipoles_ji = torch.sum(
                 atomic_quadrupoles_vectors_j*atomic_dipoles_i,
                 dim=-1,
-                keepdim=True,
+                keepdim=False,
             )
 
             # Compute atomic quadrupole-quadrupole interaction
@@ -1299,7 +1301,7 @@ class Graph_AMP(torch.nn.Module):
                         atomic_quadrupoles_i*atomic_quadrupoles_j,
                         dim=-1),
                     dim=-1,
-                    keepdim=True,
+                    keepdim=False,
                 )
             )
 
@@ -1307,7 +1309,7 @@ class Graph_AMP(torch.nn.Module):
             atomic_quadrupoles_vectors_ij = torch.sum(
                 atomic_quadrupoles_vectors_i*atomic_quadrupoles_vectors_j,
                 dim=-1,
-                keepdim=True)
+                keepdim=False)
 
         # Combine anisotropic features
         if self.graph_atomic_quadrupoles:
@@ -1324,7 +1326,7 @@ class Graph_AMP(torch.nn.Module):
                     atomic_quadrupoles_vectors_ij,
                 ),
                 dim=-1,
-            ).reshape(batch['idx_i'].size(0), -1)
+            )#.reshape(batch['idx_i'].size(0), -1)
         elif self.graph_atomic_dipoles:
             features_anisotropic = torch.cat(
                 (
@@ -1333,7 +1335,7 @@ class Graph_AMP(torch.nn.Module):
                     atomic_dipoles_dipoles_ij,
                 ),
                 dim=-1,
-            ).reshape(batch['idx_i'].size(0), -1)
+            )#.reshape(batch['idx_i'].size(0), -1)
 
         return features_anisotropic
 

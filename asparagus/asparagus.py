@@ -550,7 +550,7 @@ class Asparagus():
             return self.loaded_model_calculator
 
     @model_calculator.setter
-    def data_container(
+    def model_calculator(
         self,
         model_calculator: Union[model.BaseModel, model.EnsembleModel],
     ):
