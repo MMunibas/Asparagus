@@ -1397,8 +1397,8 @@ class Trainer:
                     )
                 )
             # Special case for dipole and quadrupole: include loss value for
-            # both molecular mutlipoles including atomic mutlipoles and 
-            # molecular mutlipoles just from atomic charges (monopoles) to
+            # both molecular multipoles including atomic multipoles and 
+            # molecular multipoles just from atomic charges (monopoles) to
             # focus on atomic charges for molecular multipole predictions and
             # emphasize atomic multipoles just as a correction term.
             elif prop in ['dipole', 'quadrupole']:

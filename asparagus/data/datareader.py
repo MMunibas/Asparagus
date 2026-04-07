@@ -2071,22 +2071,27 @@ class DataReader():
 
     def detrace_quadrupole(
         self,
-        quadrupole: np.ndarray,
-    ) -> np.ndarray:
+        atoms_properties: Dict[str, Any],
+    ) -> Dict[str, Any]:
         """
         Convert any molecular quadrupole to its traceless form.
 
         Parameters
         ----------
-        quadrupole: np.ndarray
-            Molecular quadrupole moment
+        atoms_properties: dict(str, any)
+            System property dictionary
 
         Returns
         -------
-        np.ndarray
-            Traceless molecular quadrupole moment
+        dict(str, any)
+            System property dictionary with traceless molecular quadrupole
+            moment
 
         """
-        return quadrupole - np.diag(np.diag(quadrupole).mean().repeat(3))
+        atoms_properties['quadrupole'] = (
+            atoms_properties['quadrupole']
+            - np.diag(np.diag(atoms_properties['quadrupole']).mean().repeat(3))
+        )
+        return atoms_properties
 
 

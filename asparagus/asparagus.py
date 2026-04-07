@@ -70,9 +70,10 @@ class Asparagus():
         ###########################
 
         # DataContainer of reference data
-        self.data_container = None
+        self.loaded_data_container = None
+
         # Model calculator
-        self.model_calculator = None
+        self.loaded_model_calculator = None
 
         return
 
@@ -95,6 +96,17 @@ class Asparagus():
         """
         config = settings.get_config(self.config)
         return config.get(args)
+
+    @property
+    def config(self):
+        return self.config_file
+
+    @config.setter
+    def config(
+        self,
+        config_file: str,
+    ):
+        self.config_file = config_file
 
     def set_data_container(
         self,
@@ -147,7 +159,7 @@ class Asparagus():
         if data_container is not None:
 
             # Assign data container
-            self.data_container = data_container
+            self.loaded_data_container = data_container
 
             # Add data container info to configuration dictionary
             if hasattr(data_container, "get_info"):
@@ -162,7 +174,7 @@ class Asparagus():
                 **kwargs)
 
             # Assign data container
-            self.data_container = data_container
+            self.loaded_data_container = data_container
 
         return
 
@@ -250,6 +262,20 @@ class Asparagus():
             **kwargs)
 
         return data_container
+
+    @property
+    def data_container(self):
+        if self.loaded_data_container is None:
+            return self.get_data_container()
+        else:
+            return self.loaded_data_container
+
+    @data_container.setter
+    def data_container(
+        self,
+        data_container: data.DataContainer
+    ):
+        self.loaded_data_container = data_container
 
     def set_model_calculator(
         self,
@@ -339,7 +365,7 @@ class Asparagus():
             )
 
         # Assign model calculator
-        self.model_calculator = model_calculator
+        self.loaded_model_calculator = model_calculator
 
         return
 
@@ -516,11 +542,28 @@ class Asparagus():
 
         return model_calculator
 
+    @property
+    def model_calculator(self):
+        if self.loaded_model_calculator is None:
+            return self.get_model_calculator()
+        else:
+            return self.loaded_model_calculator
+
+    @model_calculator.setter
+    def data_container(
+        self,
+        model_calculator: Union[model.BaseModel, model.EnsembleModel],
+    ):
+        self.loaded_model_calculator = model_calculator
+
     def get_trainer(
         self,
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
+        data_container: Optional[data.DataContainer] = None,
+        model_calculator:
+            Optional[Union[model.BaseModel, model.EnsembleModel]] = None,
         **kwargs,
     ) -> training.Trainer:
         """
@@ -533,6 +576,11 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
+        data_container: data.DataContainer, optional, default None
+            Reference data container object providing training, validation and
+            test data for the model training.
+        model_calculator: torch.nn.Module, optional, default None
+            Model or ensemble model calculator for property predictions.
 
         Returns:
         --------
@@ -566,7 +614,7 @@ class Asparagus():
         # # # Assign Reference Data # # #
         #################################
 
-        if self.data_container is None:
+        if data_container is None:
             data_container = self.get_data_container(
                 config=config,
                 **kwargs)
@@ -577,7 +625,7 @@ class Asparagus():
         # # # Assign Model Calculator # # #
         ###################################
 
-        if self.model_calculator is None:
+        if model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,
                 **kwargs)
@@ -905,6 +953,10 @@ class Asparagus():
 
         return ase_calculator
 
+    @property
+    def ase_calculator(self):
+        return self.get_ase_calculator()
+
     def get_pycharmm_calculator(
         self,
         config: Optional[
@@ -954,6 +1006,10 @@ class Asparagus():
             **kwargs)
 
         return pycharmm_calculator
+
+    @property
+    def pycharmm_calculator(self):
+        return self.get_pycharmm_calculator()
 
     def get_openmm_potential(
         self,
@@ -1011,6 +1067,16 @@ class Asparagus():
             'asparagus',
             model_calculator=model_calculator)
 
+    def get_openmm_calculator(
+        self,
+        **kwargs
+    ) -> Callable:
+        return self.get_openmm_potential(**kwargs)
+
     @property
-    def config(self):
-        return self.config_file
+    def openmm_potential(self):
+        return self.get_openmm_potential()
+    
+    @property
+    def openmm_calculator(self):
+        return self.get_openmm_potential()
