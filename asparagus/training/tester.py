@@ -498,14 +498,11 @@ class Tester:
                     data_prediction *= test_conversion[prop]
 
                     # If data are atom resolved
-                    print(prop, data_prediction.shape)
                     if not data_prediction.shape:
                         data_prediction = [data_prediction]
                         data_reference = list(data_reference)
                     elif data_prediction.shape[0] == Natoms:
                         sys_i = batch['sys_i'].cpu().numpy()
-                        print('sys_i', sys_i, Nsys)
-                        print(prop, data_reference)
                         data_prediction = [
                             list(data_prediction[sys_i == isys])
                             for isys in range(Nsys)]
@@ -526,7 +523,7 @@ class Tester:
                     else:
                         data_prediction = list(data_prediction)
                         data_reference = list(data_reference)
-                    exit()
+
                     # Assign prediction and reference data
                     test_prediction[prop] += data_prediction
                     test_reference[prop] += data_reference
