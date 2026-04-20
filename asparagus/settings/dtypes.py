@@ -33,11 +33,36 @@ _dtypes_args = {
 #  Python data type library
 # ======================================
 
-_dtype_library = {
+_dtype_library_dump = {
     'float': float,
+    'half': np.float16,
+    'single': np.float32,
+    'double': np.float64,
+    'float16': np.float16,
+    'float32': np.float32,
+    'float64': np.float64,
     'np.float16': np.float16,
     'np.float32': np.float32,
     'np.float64': np.float64,
+    'torch.float16': torch.float16,
+    'torch.half': torch.float16,
+    'torch.float32': torch.float32,
+    'torch.float': torch.float32,
+    'torch.float64': torch.float64,
+    'torch.double': torch.float64,
+    }
+
+_dtype_library_read = {
+    'half': torch.float16,
+    'single': torch.float32,
+    'double': torch.float64,
+    'float': torch.float64,
+    'float16': torch.float16,
+    'float32': torch.float32,
+    'float64': torch.float64,
+    'np.float16': torch.float16,
+    'np.float32': torch.float32,
+    'np.float64': torch.float64,
     'torch.float16': torch.float16,
     'torch.half': torch.float16,
     'torch.float32': torch.float32,

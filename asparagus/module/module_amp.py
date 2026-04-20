@@ -804,30 +804,6 @@ class Graph_AMP(torch.nn.Module):
             )
         )
 
-        self.ml_coefficients = torch.nn.Sequential(
-            layer.DenseLayer(
-                (
-                    (n_features_anisotropic + 1)*(self.n_atombasis//4)
-                    + 2*self.n_atombasis
-                ),
-                self.n_atombasis,
-                self.activation_fn,
-                True,
-                self.device,
-                self.dtype,
-            ),
-            layer.DenseLayer(
-                self.n_atombasis,
-                self.graph_max_multipole_order + 1,
-                None,
-                False,
-                self.device,
-                self.dtype,
-                weight_init=torch.nn.init.xavier_normal_,
-                kwargs_weight_init={'gain': 1.E-2},
-            ),
-        )
-
         return
 
     def __str__(self):
@@ -856,7 +832,7 @@ class Graph_AMP(torch.nn.Module):
         
         Parameter
         ---------
-        batch: dict(str, torch.Tensor)
+        batch: dict(str, torch.Tensor | dict(str, torch.Tensor))
             Dictionary of data tensors. Required and optional keys are:
             features: torch.tensor(N_atoms, n_atombasis)
                 Atomic feature vectors
@@ -890,23 +866,10 @@ class Graph_AMP(torch.nn.Module):
         # Assign input data
         atomic_numbers = batch['atomic_numbers']
         features = batch['features']
-        distances = batch['distances']
-        vectors = batch['vectors']
-        vectors_normalized = batch['vectors_normalized']
-        traceless_outer_product = batch['traceless_outer_product']
-        outer_product = batch['outer_product']
         cutoffs = batch['cutoffs']
         rbfs = batch['rbfs']
         idx_i = batch['idx_i']
         idx_j = batch['idx_j']
-        
-        mlmm_distances = batch['mlmm_distances']
-        mlmm_vectors = batch['mlmm_vectors']
-        mlmm_vectors_normalized = batch['mlmm_vectors_normalized']
-        mlmm_traceless_outer_product = batch['mlmm_traceless_outer_product']
-        mlmm_outer_product = batch['mlmm_outer_product']
-        mlmm_idx_i = batch['mlmm_idx_i']
-        mlmm_idx_j = batch['mlmm_idx_j']
 
         # Initialize electrostatic atomic multipoles and case dependent
         # auxiliaries
@@ -982,7 +945,10 @@ class Graph_AMP(torch.nn.Module):
                 self.graph_max_multipole_order
                 and ii == (self.graph_n_blocks - 1) 
             ):
-                batch = self.get_ml_polarization(batch)
+                batch = self.get_ml_polarization(
+                    batch,
+                    batch['mlmm_atomic_charges'],
+                )
 
             # If anisotropic atom properties are predicted
             # (at least atomic dipoles)
@@ -1045,7 +1011,7 @@ class Graph_AMP(torch.nn.Module):
     def get_multipoles(
         self,
         batch: Dict[str, torch.Tensor],
-        coefficients: torch.Tensor,
+        coefficients: List[torch.Tensor],
     ) -> Dict[str, torch.Tensor]:
         """
         Predict ML atoms multipoles.
@@ -1054,7 +1020,7 @@ class Graph_AMP(torch.nn.Module):
         ---------
         batch: dict(str, torch.Tensor)
             Dictionary of data tensors
-        coefficients: torch.Tensor
+        coefficients: list(torch.Tensor)
             Feature coefficients for multipole prediction
 
         Returns
@@ -1093,6 +1059,7 @@ class Graph_AMP(torch.nn.Module):
     def get_ml_polarization(
         self,
         batch: Dict[str, torch.Tensor],
+        atomic_charges: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
         Predict ML atoms polarization by MM atoms.
@@ -1101,6 +1068,10 @@ class Graph_AMP(torch.nn.Module):
         ---------
         batch: dict(str, torch.Tensor)
             Dictionary of data tensors
+        atomic_charges: torch.Tensor
+            List of reference ML and MM atomic charges also listed in
+            batch['reference']['atomic_charges'] but as batch is declared
+            as a dictionary of tensors, torch script returns an error that way.
 
         Returns
         -------
@@ -1111,16 +1082,20 @@ class Graph_AMP(torch.nn.Module):
 
         # Grep ML electrostatic atomic multipoles
         ml_atomic_dipoles = batch['atomic_dipoles'][batch['mlmm_idx_i'], 0:1]
-        if self.graph_atomic_quadrupoles:
-            ml_atomic_quadrupoles = (
-                batch['atomic_quadrupoles'][batch['mlmm_idx_i'], 0:1])
 
         # Compute auxiliary variables
         dipoles_vectors = torch.sum(
             ml_atomic_dipoles*batch['mlmm_vectors_normalized'].unsqueeze(1),
             dim=-1,
             keepdim=True)
+
+        # Combine auxiliaries to a MM atom structural feature variable
         if self.graph_atomic_quadrupoles:
+            
+            # Grep ML electrostatic atomic multipoles
+            ml_atomic_quadrupoles = (
+                batch['atomic_quadrupoles'][batch['mlmm_idx_i'], 0:1])
+
             quadrupoles_outer_product = torch.sum(
                 torch.sum(
                     (
@@ -1130,15 +1105,17 @@ class Graph_AMP(torch.nn.Module):
                     dim=-1),
                 dim=-1).unsqueeze(-1)
 
-        # Combine auxiliaries to a MM atom stuructural feature variable
-        if self.graph_atomic_quadrupoles:
-            mlmm_features = torch.cat(
-                (dipoles_vectors, quadrupoles_outer_product),
-                dim=-1).squeeze(1)
+            # Combine auxiliaries to a MM atom structural feature variable
             mlmm_rbfs_features = torch.cat(
-                (mlmm_features, batch['mlmm_rbfs']),
+                (
+                    dipoles_vectors.squeeze(1),
+                    quadrupoles_outer_product.squeeze(1),
+                    batch['mlmm_rbfs']
+                ),
                 dim=-1)
+
         else:
+
             mlmm_rbfs_features = torch.cat(
                 (
                     dipoles_vectors.squeeze(-1),
@@ -1150,8 +1127,7 @@ class Graph_AMP(torch.nn.Module):
         mm_b_coefficients = self.mm_b_coefficient_block(mlmm_rbfs_features)
 
         # Compute MM electric field coefficients
-        mm_atomic_charges_j = (
-            batch['reference']['atomic_charges'][batch['mlmm_idx_j']])
+        mm_atomic_charges_j = atomic_charges[batch['mlmm_idx_j']]
         mm_electric_field = (
             mm_atomic_charges_j/batch['mlmm_distances']**2).unsqueeze(-1)
         mm_coefficients = (
@@ -1215,32 +1191,12 @@ class Graph_AMP(torch.nn.Module):
 
         """
 
-        # Get anisotropic atomic dipole properties if predicted
-        if self.graph_atomic_dipoles:
-            
+        # Get anisotropic atomic dipole and quadrupole properties if predicted
+        if self.graph_atomic_dipoles and self.graph_atomic_quadrupoles:
+
             # Grep atomic dipoles for ML atom pairs
             atomic_dipoles_i = batch['atomic_dipoles'][batch['idx_i']]
             atomic_dipoles_j = batch['atomic_dipoles'][batch['idx_j']]
-
-            # Compute scalar products of atomic dipoles and atom pair
-            # connection vectors
-            atomic_dipoles_vectors_i = torch.sum(
-                atomic_dipoles_i*batch['vectors_normalized'].unsqueeze(1),
-                dim=-1,
-                keepdim=False)
-            atomic_dipoles_vectors_j = torch.sum(
-                atomic_dipoles_j*batch['vectors_normalized'].unsqueeze(1),
-                dim=-1,
-                keepdim=False)
-
-            # Compute atomic dipole-dipole interaction
-            atomic_dipoles_dipoles_ij = torch.sum(
-                atomic_dipoles_i*atomic_dipoles_j,
-                dim=-1,
-                keepdim=False)
-
-        # Get anisotropic atomic quadrupole properties if predicted
-        if self.graph_atomic_quadrupoles:
 
             # Grep atomic quadrupoles for ML atom pairs
             atomic_quadrupoles_i = (
@@ -1248,71 +1204,35 @@ class Graph_AMP(torch.nn.Module):
             atomic_quadrupoles_j = (
                 batch['atomic_quadrupoles'][batch['idx_j']])
 
-            # Compute matrix products of atomic quadrupoles and atom pair
-            # connection vectors
-            atomic_quadrupoles_vectors_i = torch.sum(
-                atomic_quadrupoles_i
-                * batch['vectors_normalized'].unsqueeze(1).unsqueeze(2),
-                dim=-1)
-            atomic_quadrupoles_vectors_j = torch.sum(
-                atomic_quadrupoles_j
-                * batch['vectors_normalized'].unsqueeze(1).unsqueeze(2),
-                dim=-1)
-
-            # Copute matrix products of atomic quadrupoles and atom pair
-            # detraced outer product
-            atomic_quadrupoles_outer_product_i = (
-                torch.sum(
-                    torch.sum(
-                        atomic_quadrupoles_i
-                        * batch['traceless_outer_product'].unsqueeze(1),
-                        dim=-1),
-                    dim=-1,
-                    keepdim=False,
-                )
-            )
-            atomic_quadrupoles_outer_product_j = (
-                torch.sum(
-                    torch.sum(
-                        atomic_quadrupoles_j
-                        * batch['traceless_outer_product'].unsqueeze(1),
-                        dim=-1),
-                    dim=-1,
-                    keepdim=False,
-                )
+            # Get anisotropic atomic dipole features
+            (
+                atomic_dipoles_vectors_i,
+                atomic_dipoles_vectors_j,
+                atomic_dipoles_dipoles_ij
+            ) = self.get_anisotropic_dipole_features(
+                atomic_dipoles_i,
+                atomic_dipoles_j,
+                batch['vectors_normalized']
             )
 
-            # Compute atomic quadrupole-dipole interaction
-            atomic_quadrupoles_dipoles_ij = torch.sum(
-                atomic_quadrupoles_vectors_i*atomic_dipoles_j,
-                dim=-1,
-                keepdim=False,
-            )
-            atomic_quadrupoles_dipoles_ji = torch.sum(
-                atomic_quadrupoles_vectors_j*atomic_dipoles_i,
-                dim=-1,
-                keepdim=False,
-            )
-
-            # Compute atomic quadrupole-quadrupole interaction
-            atomic_quadrupoles_quadrupoles_ij = (
-                torch.sum(
-                    torch.sum(
-                        atomic_quadrupoles_i*atomic_quadrupoles_j,
-                        dim=-1),
-                    dim=-1,
-                    keepdim=False,
-                )
+            # Get anisotropic atomic quadrupole features
+            (
+                atomic_quadrupoles_outer_product_i,
+                atomic_quadrupoles_outer_product_j,
+                atomic_quadrupoles_dipoles_ij,
+                atomic_quadrupoles_dipoles_ji,
+                atomic_quadrupoles_quadrupoles_ij,
+                atomic_quadrupoles_vectors_ij
+            ) = self.get_anisotropic_quadrupole_features(
+                atomic_quadrupoles_i,
+                atomic_quadrupoles_j,
+                atomic_dipoles_i,
+                atomic_dipoles_j,
+                batch['vectors_normalized'],
+                batch['traceless_outer_product']
             )
 
-            # Compute atom pair quadrupole-vector product
-            atomic_quadrupoles_vectors_ij = torch.sum(
-                atomic_quadrupoles_vectors_i*atomic_quadrupoles_vectors_j,
-                dim=-1,
-                keepdim=False)
-
-        # Combine anisotropic features
-        if self.graph_atomic_quadrupoles:
+            # Combine anisotropic features
             features_anisotropic = torch.cat(
                 (
                     atomic_dipoles_vectors_i,
@@ -1326,8 +1246,26 @@ class Graph_AMP(torch.nn.Module):
                     atomic_quadrupoles_vectors_ij,
                 ),
                 dim=-1,
-            )#.reshape(batch['idx_i'].size(0), -1)
+            )
+
         elif self.graph_atomic_dipoles:
+            
+            # Grep atomic dipoles for ML atom pairs
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['idx_i']]
+            atomic_dipoles_j = batch['atomic_dipoles'][batch['idx_j']]
+
+            # Get anisotropic atomic dipole features
+            (
+                atomic_dipoles_vectors_i,
+                atomic_dipoles_vectors_j,
+                atomic_dipoles_dipoles_ij
+            ) = self.get_anisotropic_dipole_features(
+                atomic_dipoles_i,
+                atomic_dipoles_j,
+                batch['vectors_normalized']
+            )
+
+            # Combine anisotropic features
             features_anisotropic = torch.cat(
                 (
                     atomic_dipoles_vectors_i,
@@ -1335,9 +1273,193 @@ class Graph_AMP(torch.nn.Module):
                     atomic_dipoles_dipoles_ij,
                 ),
                 dim=-1,
-            )#.reshape(batch['idx_i'].size(0), -1)
+            )
+        
+        else:
+            
+            features_anisotropic = torch.tensor(
+                [],
+                device=self.device,
+                dtype=self.dtype,
+            )
 
         return features_anisotropic
+
+    def get_anisotropic_dipole_features(
+        self,
+        atomic_dipoles_i: torch.Tensor,
+        atomic_dipoles_j: torch.Tensor,
+        vectors_normalized: torch.Tensor,
+    ) -> List[torch.Tensor]:
+        """
+        Construct anisotropic atomic dipole features
+        
+        Parameter
+        ---------
+        atomic_dipoles_i: torch.Tensor
+            Atomic dipole vector of pair atom i
+        atomic_dipoles_j: torch.Tensor
+            Atomic dipole vector of pair atom j
+        vectors_normalized: torch.Tensor
+            Normalize connection vectors from atom i to j
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar product atomic dipole of atom i with connection vector
+        torch.Tensor
+            Scalar product atomic dipole of atom j with connection vector
+        torch.Tensor
+            Scalar product of atomic dipoles of atom i and j
+
+        """
+        
+        # Compute scalar products of atomic dipoles and atom pair connection 
+        # vectors
+        atomic_dipoles_vectors_i = torch.sum(
+            atomic_dipoles_i*vectors_normalized.unsqueeze(1),
+            dim=-1,
+            keepdim=False
+        )
+        atomic_dipoles_vectors_j = torch.sum(
+            atomic_dipoles_j*vectors_normalized.unsqueeze(1),
+            dim=-1,
+            keepdim=False
+        )
+
+        # Compute atomic dipole-dipole interaction
+        atomic_dipoles_dipoles_ij = torch.sum(
+            atomic_dipoles_i*atomic_dipoles_j,
+            dim=-1,
+            keepdim=False
+        )
+
+        return (
+            atomic_dipoles_vectors_i,
+            atomic_dipoles_vectors_j,
+            atomic_dipoles_dipoles_ij
+        )
+
+    def get_anisotropic_quadrupole_features(
+        self,
+        atomic_quadrupoles_i: torch.Tensor,
+        atomic_quadrupoles_j: torch.Tensor,
+        atomic_dipoles_i: torch.Tensor,
+        atomic_dipoles_j: torch.Tensor,
+        vectors_normalized: torch.Tensor,
+        traceless_outer_product: torch.Tensor,
+    ) -> List[torch.Tensor]:
+        """
+        Construct anisotropic atomic dipole features
+        
+        Parameter
+        ---------
+        atomic_quadrupoles_i: torch.Tensor
+            Atomic quadrupole vector of pair atom i
+        atomic_quadrupoles_j: torch.Tensor
+            Atomic quadrupole vector of pair atom j
+        atomic_dipoles_i: torch.Tensor
+            Atomic dipole vector of pair atom i
+        atomic_dipoles_j: torch.Tensor
+            Atomic dipole vector of pair atom j
+        vectors_normalized: torch.Tensor
+            Normalize connection vectors from atom i to j
+        traceless_outer_product: torch.Tensor
+            Detraced outer product of normalized connection vectors from 
+            atom i to j
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar product of atomic quadrupole of atom i with traceless outer 
+            product
+        torch.Tensor
+            Scalar product of atomic quadrupole of atom j with traceless outer 
+            product
+        torch.Tensor
+            Scalar product of atomic quadrupole of atom i with atomic dipole of
+            atom j
+        torch.Tensor
+            Scalar product of atomic quadrupole of atom j with atomic dipole of
+            atom i
+        torch.Tensor
+            Scalar product of atomic quadrupole of atom j and j
+
+        """
+
+        # Compute matrix products of atomic quadrupoles and atom pair
+        # connection vectors
+        atomic_quadrupoles_vectors_i = torch.sum(
+            atomic_quadrupoles_i
+            * vectors_normalized.unsqueeze(1).unsqueeze(2),
+            dim=-1
+        )
+        atomic_quadrupoles_vectors_j = torch.sum(
+            atomic_quadrupoles_j
+            * vectors_normalized.unsqueeze(1).unsqueeze(2),
+            dim=-1
+        )
+
+        # Copute matrix products of atomic quadrupoles and atom pair detraced 
+        # outer product
+        atomic_quadrupoles_outer_product_i = (
+            torch.sum(
+                torch.sum(
+                    atomic_quadrupoles_i
+                    * traceless_outer_product.unsqueeze(1),
+                    dim=-1),
+                dim=-1,
+                keepdim=False,
+            )
+        )
+        atomic_quadrupoles_outer_product_j = (
+            torch.sum(
+                torch.sum(
+                    atomic_quadrupoles_j
+                    * traceless_outer_product.unsqueeze(1),
+                    dim=-1),
+                dim=-1,
+                keepdim=False,
+            )
+        )
+
+        # Compute atomic quadrupole-dipole interaction
+        atomic_quadrupoles_dipoles_ij = torch.sum(
+            atomic_quadrupoles_vectors_i*atomic_dipoles_j,
+            dim=-1,
+            keepdim=False,
+        )
+        atomic_quadrupoles_dipoles_ji = torch.sum(
+            atomic_quadrupoles_vectors_j*atomic_dipoles_i,
+            dim=-1,
+            keepdim=False,
+        )
+
+        # Compute atomic quadrupole-quadrupole interaction
+        atomic_quadrupoles_quadrupoles_ij = (
+            torch.sum(
+                torch.sum(
+                    atomic_quadrupoles_i*atomic_quadrupoles_j,
+                    dim=-1),
+                dim=-1,
+                keepdim=False,
+            )
+        )
+
+        # Compute atom pair quadrupole-vector product
+        atomic_quadrupoles_vectors_ij = torch.sum(
+            atomic_quadrupoles_vectors_i*atomic_quadrupoles_vectors_j,
+            dim=-1,
+            keepdim=False)
+
+        return (
+            atomic_quadrupoles_outer_product_i,
+            atomic_quadrupoles_outer_product_j,
+            atomic_quadrupoles_dipoles_ij,
+            atomic_quadrupoles_dipoles_ji,
+            atomic_quadrupoles_quadrupoles_ij,
+            atomic_quadrupoles_vectors_ij
+        )
 
 #======================================
 # Output Module

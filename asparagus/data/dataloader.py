@@ -169,7 +169,10 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Initialize neighbor list creator
         self.neighbor_list = module.TorchNeighborListRangeSeparated(
-            cutoff, device, dtype)
+            cutoff,
+            device,
+            dtype
+        )
 
         return
 
@@ -197,7 +200,10 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Initialize neighbor list creator
         self.mlmm_neighbor_list = module.TorchNeighborListRangeSeparatedMLMM(
-            cutoff, device, dtype)
+            cutoff,
+            device,
+            dtype
+        )
 
         return
 
@@ -300,6 +306,13 @@ class DataLoader(torch.utils.data.DataLoader):
             if self.mlmm_neighbor_list is None:
                 self.init_mlmm_neighbor_list()
             coll_batch = self.mlmm_neighbor_list(coll_batch)
+
+            # Due to Torch-Script issues, do a reference atomic charges copy
+            # with key 'mlmm_atomic_charges'
+            if 'atomic_charges' in self.reference_properties:
+                coll_batch['mlmm_atomic_charges'] = torch.cat(
+                    [b['atomic_charges'] for b in batch]).to(
+                        device=self.device, dtype=self.dtype)
 
         # Compute pair indices and position offsets
         if self.neighbor_list is None:

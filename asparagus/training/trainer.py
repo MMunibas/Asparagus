@@ -449,6 +449,7 @@ class Trainer:
         reset_energy_shift: Optional[bool] = False,
         skip_property_scaling: Optional[bool] = False,
         skip_initial_testing: Optional[bool] = False,
+        mlmm_inf_cutoff: Optional[bool] = True,
         print_progress: Optional[bool] = True,
         ithread: Optional[int] = None,
         verbose: Optional[bool] = True,
@@ -485,6 +486,13 @@ class Trainer:
         skip_initial_testing: bool, optional, default False
             Skip the initial model evaluation on the reference test set, if the
             model evaluation is enabled anyways (see trainer_evaluate_testset).
+        mlmm_inf_cutoff: bool, optional, default True
+            For training purpose, set the ML-MM (electrostatic) interaction
+            cutoff to infinity, as usually the case in reference QM-MM
+            calculation (e.g. ORCA). 
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
         print_progress: bool, optional, default True
             Show  progress report.
         ithread: int, optional, default None
@@ -586,7 +594,9 @@ class Trainer:
             dtype=self.dtype)
 
         # Get model ML/MM cutoffs
-        mlmm_cutoffs = self.model_calculator.get_mlmm_cutoff_ranges()
+        mlmm_cutoffs = self.model_calculator.get_mlmm_cutoff_ranges(
+            mlmm_inf_cutoff=mlmm_inf_cutoff
+        )
 
         # Set ML/MM cutoffs for neighbor list calculation
         self.data_train.init_mlmm_neighbor_list(
@@ -716,10 +726,11 @@ class Trainer:
             self.tester.test(
                 self.model_calculator,
                 model_conversion=self.model_conversion,
+                mlmm_inf_cutoff=mlmm_inf_cutoff,
                 test_directory=self.filemanager.best_dir,
                 test_plot_correlation=True,
-                test_plot_histogram=True,
-                test_plot_residual=True,
+                test_plot_histogram=False,
+                test_plot_residual=False,
                 **kwargs)
 
         # Skip if max epochs are already reached
@@ -958,10 +969,11 @@ class Trainer:
                         self.tester.test(
                             self.model_calculator,
                             model_conversion=self.model_conversion,
+                            mlmm_inf_cutoff=mlmm_inf_cutoff,
                             test_directory=self.filemanager.best_dir,
                             test_plot_correlation=True,
-                            test_plot_histogram=True,
-                            test_plot_residual=True,
+                            test_plot_histogram=False,
+                            test_plot_residual=False,
                             verbose=verbose,
                             **kwargs)
 
@@ -1464,7 +1476,7 @@ class Trainer:
         """
 
         message = (
-            f" {'Property ':<17s} |"
+            f" {'Property ':<18s} |"
             + f" {'Model Unit':<12s} |"
             + f" {'Data Unit':<12s} |"
             + f" {'Conv. fact.':<12s} |"
@@ -1477,7 +1489,7 @@ class Trainer:
             else:
                 data_unit = self.data_units.get(prop)
             message += (
-                f" {prop:<17s} |"
+                f" {prop:<18s} |"
                 + f" {model_unit:<12s} |"
                 + f" {data_unit:<12s} |")
             if self.model_conversion.get(prop) is None:

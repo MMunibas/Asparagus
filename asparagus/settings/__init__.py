@@ -16,7 +16,7 @@ from .default import (
 )
 
 from .dtypes import (
-    _dtypes_args, _dtype_library
+    _dtypes_args, _dtype_library_dump, _dtype_library_read
 )
 
 from .properties import (

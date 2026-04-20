@@ -245,11 +245,12 @@ class Tester:
         self,
         model_calculator: torch.nn.Module,
         model_conversion: Optional[Dict[str, float]] = None,
+        mlmm_inf_cutoff: Optional[bool] = True,
         test_properties: Optional[Union[str, List[str]]] = None,
         test_directory: Optional[str] = None,
         test_plot_correlation: Optional[bool] = True,
-        test_plot_histogram: Optional[bool] = False,
-        test_plot_residual: Optional[bool] = False,
+        test_plot_histogram: Optional[bool] = True,
+        test_plot_residual: Optional[bool] = True,
         test_plot_format: Optional[str] = 'png',
         test_plot_dpi: Optional[int] = 300,
         test_save_csv: Optional[bool] = False,
@@ -272,6 +273,13 @@ class Tester:
             files will be loaded.
         model_conversion: dict(str, float), optional, default None
             Model prediction to reference data unit conversion.
+        mlmm_inf_cutoff: bool, optional, default True
+            For comparisons with reference data, set the ML-MM (electrostatic) 
+            interaction cutoff to infinity, as usually the case in reference
+            QM-MM calculation (e.g. ORCA). 
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
         test_properties: (str, list(str)), optional, default None
             Model properties to evaluate which must be available in the
             model prediction and the reference test data set. If None, model
@@ -281,9 +289,9 @@ class Tester:
         test_plot_correlation: bool, optional, default True
             Show evaluation in property correlation plots
             (x-axis: reference property; y-axis: predicted property).
-        test_plot_histogram: bool, optional, default False
+        test_plot_histogram: bool, optional, default True
             Show prediction error spread in histogram plots.
-        test_plot_residual: bool, optional, default False
+        test_plot_residual: bool, optional, default True
             Show evaluation in residual plots.
             (x-axis: reference property; y-axis: prediction error).
         test_plot_format: str, optional, default 'png'
@@ -408,7 +416,9 @@ class Tester:
                 datasubset.neighbor_list.set_cutoffs(cutoffs)
 
             # Get model ML/MM cutoffs
-            mlmm_cutoffs = model_calculator.get_mlmm_cutoff_ranges()
+            mlmm_cutoffs = model_calculator.get_mlmm_cutoff_ranges(
+                mlmm_inf_cutoff=mlmm_inf_cutoff
+            )
 
             # Set maximum model cutoff for neighbor list calculation
             if datasubset.mlmm_neighbor_list is None:
@@ -494,13 +504,17 @@ class Tester:
                     data_reference = (
                         batch['reference'][prop].detach().cpu().numpy())
 
+                    # Ensure same prediction and reference data shape
+                    data_shape = data_prediction.shape
+                    data_reference = data_reference.reshape(data_shape)
+
                     # Apply unit conversion of model prediction
                     data_prediction *= test_conversion[prop]
 
                     # If data are atom resolved
                     if not data_prediction.shape:
                         data_prediction = [data_prediction]
-                        data_reference = list(data_reference)
+                        data_reference = list(data_reference.reshape(data_shape))
                     elif data_prediction.shape[0] == Natoms:
                         sys_i = batch['sys_i'].cpu().numpy()
                         data_prediction = [

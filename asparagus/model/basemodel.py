@@ -388,10 +388,23 @@ class BaseModel(torch.nn.Module):
 
         return cutoffs
 
-    def get_mlmm_cutoff_ranges(self) -> List[float]:
+    def get_mlmm_cutoff_ranges(
+        self,
+        mlmm_inf_cutoff: Optional[bool] = False,
+    ) -> List[float]:
         """
         Get model ML and MM atom pair cutoff or, eventually, short range 
         descriptor and long range cutoff list between
+
+        Parameters
+        ----------
+        mlmm_inf_cutoff: bool, optional, default False
+            If True such as in model training, the ML-MM long range cutoff is
+            set to infinity, as usually the case in reference QM-MM calculation
+            (e.g. ORCA).
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
 
         Return
         ------
@@ -402,7 +415,9 @@ class BaseModel(torch.nn.Module):
 
         """
 
-        if hasattr(self, 'model_mlmm_cutoff'):
+        if mlmm_inf_cutoff:
+            long_range_cutoff = torch.inf
+        elif hasattr(self, 'model_mlmm_cutoff'):
             long_range_cutoff = self.model_mlmm_cutoff
         else:
             long_range_cutoff = self.model_cutoff
@@ -759,6 +774,29 @@ class BaseModel(torch.nn.Module):
         # Initialize atoms batch
         batch = {}
 
+        # First, check for atomic fragments and consider if number is larger 1
+        if 'fragment' in atoms[0].arrays:
+            fragment_numbers = torch.cat(
+                [
+                    torch.tensor(image.arrays['fragment'], dtype=torch.int64)
+                    for image in atoms
+                ], 0).to(
+                    device=self.device, dtype=torch.int64)
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                batch['fragment_numbers'] = fragment_numbers
+
+            # Due to Torch-Script issues, do a reference atomic charges copy
+            # with key 'mlmm_atomic_charges'
+            if 'atomic_charges' in atoms[0].arrays:
+                batch['mlmm_atomic_charges'] = torch.cat(
+                    [
+                        torch.tensor(
+                            image.arrays['atomic_charges'],
+                            dtype=self.dtype)
+                        for image in atoms
+                    ], 0).to(
+                        device=self.device, dtype=self.dtype)
+
         # Number of atoms
         batch['atoms_number'] = torch.tensor(
             [len(image) for image in atoms],
@@ -804,12 +842,28 @@ class BaseModel(torch.nn.Module):
         else:
             fconv = conversion['charge']
         if charge is None:
-            try:
-                charge = [np.sum(image.get_charges())*fconv for image in atoms]
-            except RuntimeError:
+            if 'fragment_numbers' in batch:
+                selection = (
+                    batch['fragment_numbers'] == self.model_ml_fragment
+                ).cpu().detach().numpy()
+            else:
+                selection = torch.ones_like(
+                    batch['atomic_numbers'],
+                    dtype=torch.bool
+                ).cpu().detach().numpy()
+            if 'atomic_charges' in atoms[0].arrays:
                 charge = [
-                    np.sum(image.get_initial_charges())*fconv
+                    np.sum(image.arrays['atomic_charges'][selection])*fconv
                     for image in atoms]
+            else:
+                try:
+                    charge = [
+                        np.sum(image.get_charges()[selection])*fconv
+                        for image in atoms]
+                except RuntimeError:
+                    charge = [
+                        np.sum(image.get_initial_charges()[selection])*fconv
+                        for image in atoms]
         elif utils.is_numeric(charge):
             charge = [charge*fconv]*len(atoms)
         elif utils.is_numeric_array(charge):
@@ -818,17 +872,6 @@ class BaseModel(torch.nn.Module):
             raise ValueError("Input 'charge' is not a numeric value or array!")
         batch['charge'] = torch.tensor(
             charge, dtype=self.dtype, device=self.device)
-
-        # Check for fragment definition
-        if 'fragment' in atoms[0].arrays:
-            fragment_numbers = torch.cat(
-                [
-                    torch.tensor(image.arrays['fragment'], dtype=torch.int64)
-                    for image in atoms
-                ], 0).to(
-                    device=self.device, dtype=torch.int64)
-            if torch.unique(fragment_numbers).shape[0] > 1:
-                batch['fragment_numbers'] = fragment_numbers
 
         # Compute atom pair indices
         batch = self.compute_neighborlist(batch)

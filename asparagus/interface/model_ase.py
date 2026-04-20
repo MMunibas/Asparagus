@@ -106,14 +106,15 @@ class ASE_Calculator(ase_calc.Calculator):
             self.model_calculator.model_unit_properties)
 
         # Initialize atoms object batch
-        self.charge = charge
         if atoms is None:
             self.atoms_batch = {}
+            self.charge = charge
         else:
             self.atoms_batch = self.model_calculator.create_batch(
                 atoms,
                 charge=charge,
                 conversion=self.model_conversion)
+            self.charge = self.atoms_batch['charge']
 
         # Initialize result dictionary
         self.results = {}

@@ -1511,16 +1511,19 @@ class DataReader():
 
         # Prepare header
         message = (
-            "Property assignment from database "
-            + f"'{data_source[0]:s}'!\n"
-            + f" {'Load':4s} |"
-            + f" {'Property Label':<14s} |"
+            f" {'Load':4s} |"
+            + f" {'Property Label':<18s} |"
             + f" {'Data Unit':<14s} |"
-            + f" {'Source Label':<14s} |"
+            + f" {'Source Label':<18s} |"
             + f" {'Source Unit':<14s} |"
             + f" {'Conversion Fac.':<14s}\n"
-            + "-"*(7 + 17*5)
-            + "\n")
+        )
+        message += "-"*len(message) + "\n"
+        message = (
+            "Property assignment from database "
+            + f"'{data_source[0]:s}'!\n"
+            + message
+        )
 
         # Iterate over properties
         for data_prop, source_prop in assigned_properties.items():
@@ -1558,9 +1561,9 @@ class DataReader():
 
             message += (
                 f" {load_label:4s} |"
-                + f" {data_prop:<14s} |"
+                + f" {data_prop:<18s} |"
                 + f" {data_unit_property:<14s} |"
-                + f" {source_prop:<14s} |"
+                + f" {source_prop:<18s} |"
                 + f" {source_unit_property:<14s} |"
                 + f" {unit_conversion[data_prop]:11.9e}\n"
             )
@@ -1895,6 +1898,7 @@ class DataReader():
                     + "atoms info dictionary!")
         else:
             atoms_properties['charge'] = 0.0
+
         if 'fragment_numbers' in infos:
             atoms_properties['fragment_numbers'] = infos['fragment_numbers']
         elif (
