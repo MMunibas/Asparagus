@@ -835,7 +835,7 @@ class DataContainer():
         # Initialize training, validation and test subset
         self.train_dataset = data.DataSubSet(
             self.data_file,
-            'test',
+            'train',
             idx_train)
         self.valid_dataset = data.DataSubSet(
             self.data_file,
@@ -857,6 +857,17 @@ class DataContainer():
             'testing': self.test_dataset,
             }
 
+        # Print data set and subset information
+        self.print_data_info()
+
+        return
+
+    def print_data_info(self):
+        """
+        Print data set and subset information
+
+        """
+
         # Prepare header
         message = (
             "Dataset and subset split information of database "
@@ -866,6 +877,7 @@ class DataContainer():
             + f" {'Rel. Number':<14s}\n"
             + "-"*(20 + 17*2)
             + "\n")
+        data_num_all = len(self.dataset)
 
         for label in ['All', 'Training', 'Validation', 'Test']:
             
@@ -1463,3 +1475,55 @@ class DataContainer():
             'data_num_test': self.data_num_test,
             'data_overwrite': self.data_overwrite,
             }
+
+    def delete(
+        self,
+        row_ids: Union[int, List[int]]
+    ):
+        """
+        Delete database entry(ies) 'row_id'
+        
+        Parameters
+        ----------
+        row_ids: (int, list(int))
+            Database index or list of indices to delete from the 
+            database.
+
+        """
+
+        # Check input
+        if utils.is_integer(row_ids):
+            row_ids = [row_ids]
+        elif not utils.is_integer_array(row_ids):
+            raise ValueError(
+                "Database index is neither an integer nor list of integers.")
+
+        # Delete entries from database (command piped via data set)
+        self.dataset.delete(row_ids)
+
+        # Update data subsets
+        assigned_ids = {}
+        if hasattr(self, 'all_datasets'):
+            for label in self.get_datalabels():
+                assigned_ids[label] = self.get_dataset(label).delete(row_ids)
+        
+        # Print delete note
+        message = (
+            f"Deleted entry ids in the database '{self.data_file[0]:s}' "
+            + "(assigned data subset):\n"
+        )
+        for idx in row_ids:
+            label_idx = None
+            for label in assigned_ids:
+                if idx in assigned_ids[label]:
+                    label_idx = label
+            if label_idx is None:
+                message += f" {idx:>5d} (not assigned)\n"
+            else:
+                message += f" {idx:>5d} ({label:s})\n"
+        self.logger.info(message)
+
+        # Print updated data set and subset information
+        self.print_data_info()
+        print(self.test_dataset.subset_idx)
+        return

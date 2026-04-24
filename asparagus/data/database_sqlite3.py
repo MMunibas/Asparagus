@@ -970,11 +970,10 @@ class DataBase_SQLite3(data.DataBase):
         # Convert reference properties to a dictionary
         properties = {}
 
-        # Add database information
+        # Add database information such as row id and, if requested, last
+        # modification time and initial user
+        properties["row_id"] = row[0]
         if verbose:
-
-            # Get row id
-            properties["row_id"] = row[0]
 
             # Get modification date
             properties["mtime"] = row[1]
@@ -1036,7 +1035,6 @@ class DataBase_SQLite3(data.DataBase):
         cmps = self.parse_selection(selection)
 
         sql, args = self.create_select_statement(cmps, what='COUNT(*)')
-
         with self.managed_connection() as con:
             cur = con.cursor()
             try:
@@ -1047,31 +1045,14 @@ class DataBase_SQLite3(data.DataBase):
 
     @parallel_function
     @lock
-    def delete(
+    def _delete(
         self,
-        row_ids: Union[int, List[int]],
+        row_ids: List[int]
     ):
-        """
-        Delete rows.
 
-        Parameters
-        ----------
-        row_ids: int or list of int
-            Row index or list of indices to delete
-        """
 
         if not len(row_ids):
             return
-
-        self._delete(row_ids)
-        self.vacuum()
-
-        return
-
-    def _delete(
-        self,
-        row_ids: Union[int, List[int]]
-    ):
 
         with self.managed_connection() as con:
             cur = con.cursor()
@@ -1080,11 +1061,15 @@ class DataBase_SQLite3(data.DataBase):
                 cur.execute(
                     f"DELETE FROM {table} WHERE id in ({selection});")
 
+        # Clean up database
+        self.vacuum()
+
         return
 
     def vacuum(self):
         """
-        Execute SQL command 'Vacuum' (?)
+        Execute SQL command 'Vacuum' which cleans up the database fragmentation
+        after updating/deleting data.
         """
 
         with self.managed_connection() as con:

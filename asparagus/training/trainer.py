@@ -560,9 +560,9 @@ class Trainer:
             if verbose:    
 
                 if restart:
-                    message = "Restart"
+                    message = "Restart "
                 else:
-                    message = "Start"
+                    message = "Start "
                 message += (
                     "training from checkpoint file "
                     + f"'{checkpoint_file:s}':\n"

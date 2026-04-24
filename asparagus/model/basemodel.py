@@ -394,7 +394,7 @@ class BaseModel(torch.nn.Module):
     ) -> List[float]:
         """
         Get model ML and MM atom pair cutoff or, eventually, short range 
-        descriptor and long range cutoff list between
+        descriptor and long range cutoff list
 
         Parameters
         ----------
@@ -1077,7 +1077,9 @@ class BaseModel(torch.nn.Module):
             False,
             num_workers,
             self.device,
-            self.dtype)
+            self.dtype,
+            data_fragments=self.model_mlmm_embedding,
+        )
 
         # Prepare result dictionary
         results = {}

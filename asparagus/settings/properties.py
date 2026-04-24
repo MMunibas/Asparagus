@@ -53,7 +53,10 @@ _alt_property_labels = {
         'Da', 'Fi', 'atom_dipole', 'atom_dipoles', 'atomic_dipole'],
     'dipole':               ['D', 'dipoles'],
     'atomic_quadrupoles':   [
-        'atomic_quadrupole', 'atom_quadropole', 'atom_quadropoles'],
+        'atomic_quadrupole',
+        'atomic_quadropoles', 'atomic_quadropole',
+        'atom_quadrupole', 'atom_quadrupoles',
+        'atom_quadropole', 'atom_quadropoles'],
     'quadrupole':           ['quadrupoles', 'quadropole', 'quadropoles'],
     'polarizability':       ['polarizability'],
     }

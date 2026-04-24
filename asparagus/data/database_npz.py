@@ -561,8 +561,9 @@ class DataBase_npz(data.DataBase):
         # Iterate over selection
         for idx in selection:
 
-            # Initialize reference data dictionary
+            # Initialize reference data dictionary and add 
             row = {}
+            row['row_id'] = idx
 
             # Get structural properties
             for prop_i in structure_properties_dtype:

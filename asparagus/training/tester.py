@@ -165,7 +165,7 @@ class Tester:
             self.data_properties)
 
         # Check test directory
-        if not os.path.exists(self.test_directory):
+        if not os.path.isdir(self.test_directory):
             os.makedirs(self.test_directory)
 
         #########################################
@@ -258,6 +258,11 @@ class Tester:
         test_save_npz: Optional[bool] = False,
         test_npz_file: Optional[str] = 'results.npz',
         test_scale_per_atom: Optional[Union[str, List[str]]] = ['energy'],
+        test_outlier: Optional[bool] = False,
+        test_outlier_property: Optional[str] = 'energy',
+        test_outlier_num_max: Optional[int] = 10,
+        test_outlier_threshold: Optional[float] = None,
+        test_outlier_metric: Optional[str] = 'mse',
         verbose: Optional[bool] = True,
         **kwargs,
     ):
@@ -315,6 +320,28 @@ class Tester:
         test_scale_per_atom: (str list(str), optional, default ['energy']
             List of properties where the results will be scaled by the number
             of atoms in the particular system.
+        test_outlier: bool, optional, default False
+            If True, show outlier in correlation plots with database id.
+            By default, outliers are depicted as the 'test_num_outlier'
+            number of systems with the largest system error 
+            'test_outlier_metric' of the property 'test_outlier_property'.
+            If 'test_outlier_threshold' is given (by default 'None'), outliers
+            are system where the error of the property
+            'test_outlier_property' is by a factor 'test_outlier_threshold'
+            larger than the average error of the dataset to test.
+        test_outlier_property: bool, optional, default 'energy'
+            System property to detect outliers.
+        test_num_outlier: int, optional, default 10
+            Number of system with the largest system error
+            'test_outlier_metric' of the property 'test_outlier_property' to
+            depict as outlier.
+        test_outlier_threshold: float, optional, default None
+            Threshold factor when system error 'test_outlier_metric' of
+            property 'test_outlier_property' is this much larger than the
+            average error of the dataset to test.
+        test_outlier_metric: str, optional, default 'mse'
+            Error metric ('mse', 'rmse' or 'mae') to use for outlier detection.
+            Only effects the outcome if 'test_outlier_threshold' is used.
         verbose: bool, optional, default True
             Print test metrics.
 
@@ -356,6 +383,8 @@ class Tester:
         for dataloader in self.test_data.values():
             dataloader.set_reference_properties(
                 test_properties + additional_properties)
+            dataloader.set_fragments(
+                model_calculator.model_mlmm_embedding)
 
         # Check test properties model to reference data conversion
         test_conversion = {}
@@ -429,18 +458,25 @@ class Tester:
             else:
                 datasubset.mlmm_neighbor_list.set_cutoffs(mlmm_cutoffs)
 
-            # Prepare dictionary for property values, number of atoms per
-            # system, and reference energy shifts
-            test_prediction = {prop: [] for prop in test_properties}
-            if model_ensemble:
-                test_prediction.update(
-                    {
-                        imodel: {prop: [] for prop in test_properties}
-                        for imodel in range(model_ensemble_num)
-                    })
-            test_reference = {prop: [] for prop in test_properties}
-            test_prediction['atoms_number'] = []
-            test_shifts = {prop: [] for prop in ['energy', 'atomic_energies']}
+            # Check fragment flag
+            datasubset.set_fragments(model_calculator.model_mlmm_embedding)
+
+            # Prepare dictionary for property values with system information
+            # and a dictionary with reference energy shifts
+            test_prediction = {}
+            test_reference = {}
+
+            test_prediction['atoms_number'] = np.array([], dtype=int)
+            test_prediction['mlmm_atoms_number'] = np.array([], dtype=int)
+            if test_outlier:
+                for prop in test_properties:
+                    prop_sys = 'sys_' + prop + '_i'
+                    test_prediction[prop_sys] = np.array([], dtype=int)
+
+            test_shifts = {
+                prop: np.array([], dtype=float)
+                for prop in ['energy', 'atomic_energies']
+            }
 
             # Check for number of fragments in the dataset systems
             fragments_available = np.all([
@@ -455,7 +491,9 @@ class Tester:
                         if fragment not in test_fragments:
                             test_fragments.append(
                                 fragment.detach().cpu().numpy())
-                    test_prediction['fragment_numbers'] = []
+                    test_prediction['fragment_numbers'] = (
+                        np.array([], dtype=int)
+                    )
             else:
                 test_fragments = None
 
@@ -464,7 +502,9 @@ class Tester:
                 test_properties,
                 model_ensemble,
                 model_ensemble_num,
-                test_fragments=test_fragments)
+                test_fragments=test_fragments,
+                test_outlier=test_outlier,
+            )
 
             # Loop over data batches
             for batch in datasubset:
@@ -474,6 +514,21 @@ class Tester:
                     batch,
                     verbose_results=True)
 
+                # Detach back-propagation graph from tensors and send to
+                # CPU memory to save, potentially, GPU memory
+                for key, item in batch.items():
+                    if key == 'reference':
+                        for key_ref, item_ref in batch[key].items():
+                            batch[key][key_ref] = item_ref.detach().cpu()
+                    else:
+                        batch[key] = item.detach().cpu()
+                if model_ensemble:
+                    for imodel in range(model_ensemble_num):
+                        for key, item in batch[imodel].items():
+                            batch[imodel][key] = (
+                                batch[imodel][key].detach().cpu()
+                            )
+
                 # Compute metrics for test properties
                 metrics_batch = self.compute_metrics(
                     batch,
@@ -482,7 +537,9 @@ class Tester:
                     test_conversion,
                     model_ensemble,
                     model_ensemble_num,
-                    test_fragments=test_fragments)
+                    test_fragments=test_fragments,
+                    test_outlier=test_outlier,
+                )
 
                 # Update average metrics
                 self.update_metrics(
@@ -491,18 +548,24 @@ class Tester:
                     test_properties,
                     model_ensemble,
                     model_ensemble_num,
-                    test_fragments=test_fragments)
+                    test_fragments=test_fragments,
+                    test_outlier=test_outlier,
+                )
 
                 # Store prediction and reference data system resolved
-                Nsys = len(batch['atoms_number'])
-                Natoms = len(batch['atomic_numbers'])
+                Nsys = batch['atoms_number'].shape[0]
+                if 'ml_idx' in batch:
+                    Natoms = batch['mlmm_sys_i'].shape[0]
+                    sys_i = batch['mlmm_sys_i'].numpy()
+                else:
+                    Natoms = batch['sys_i'].shape[0]
+                    sys_i = batch['sys_i'].numpy()
                 Npairs = len(batch['idx_i'])
                 for prop in test_properties:
                     
-                    # Detach prediction and reference data
-                    data_prediction = batch[prop].detach().cpu().numpy()
-                    data_reference = (
-                        batch['reference'][prop].detach().cpu().numpy())
+                    # Convert from torch tensors to numpy arrays
+                    data_prediction = batch[prop].numpy()
+                    data_reference = batch['reference'][prop].numpy()
 
                     # Ensure same prediction and reference data shape
                     data_shape = data_prediction.shape
@@ -511,100 +574,237 @@ class Tester:
                     # Apply unit conversion of model prediction
                     data_prediction *= test_conversion[prop]
 
+                    # If data are numeric (no idea when)
+                    if (not data_shape) and sys_i[-1] == 0:
+                        data_prediction = np.array(
+                            [data_prediction],
+                            dtype=float
+                        ).reshape(1, -1)
+                        data_reference = np.array(
+                            [data_reference],
+                            dtype=float
+                        ).reshape(1, -1)
+                    # If data are system resolved
+                    elif data_shape[0] == Nsys:
+                        if test_outlier:
+                            if data_prediction.ndim > 1:
+                                nvals = np.prod(data_prediction.shape[1:])
+                            else:
+                                nvals = 1
+                            prop_sys = 'sys_' + prop + '_i'
+                            if test_prediction[prop_sys].size:
+                                next_sys_i = test_prediction[prop_sys][-1] + 1
+                            else:
+                                next_sys_i = 0
+                            test_prediction[prop_sys] = np.concatenate(
+                                (
+                                    test_prediction[prop_sys],
+                                    np.arange(Nsys).repeat(nvals) + next_sys_i
+                                ),
+                                axis=0                                
+                            )
+                        data_prediction = np.array(
+                            data_prediction,
+                            dtype=float
+                        ).reshape(Nsys, -1)
+                        data_reference = np.array(
+                            data_reference,
+                            dtype=float
+                        ).reshape(Nsys, -1)
                     # If data are atom resolved
-                    if not data_prediction.shape:
-                        data_prediction = [data_prediction]
-                        data_reference = list(data_reference.reshape(data_shape))
-                    elif data_prediction.shape[0] == Natoms:
-                        sys_i = batch['sys_i'].cpu().numpy()
-                        data_prediction = [
-                            list(data_prediction[sys_i == isys])
-                            for isys in range(Nsys)]
-                        data_reference = [
-                            list(data_reference[sys_i == isys])
-                            for isys in range(Nsys)]
+                    elif data_shape[0] == Natoms:
+                        if test_outlier:
+                            if data_prediction.ndim > 1:
+                                nvals = np.prod(data_prediction.shape[1:])
+                            else:
+                                nvals = 1
+                            prop_sys = 'sys_' + prop + '_i'
+                            if test_prediction[prop_sys].size:
+                                next_sys_i = test_prediction[prop_sys][-1] + 1
+                            else:
+                                next_sys_i = 0
+                            test_prediction[prop_sys] = np.concatenate(
+                                (
+                                    test_prediction[prop_sys],
+                                    sys_i.repeat(nvals) + next_sys_i
+                                ),
+                                axis=0                                
+                            )
+                        data_prediction = np.array(
+                            data_prediction,
+                            dtype=float
+                        ).reshape(Natoms, -1)
+                        data_reference = np.array(
+                            data_reference,
+                            dtype=float
+                        ).reshape(Natoms, -1)
                     # If data are atom pair resolved
-                    elif data_prediction.shape[0] == Npairs:
-                        sys_pair_i = (
-                            batch['sys_i'][batch['idx_i']].cpu().numpy())
-                        data_prediction = [
-                            list(data_prediction[sys_pair_i == isys])
-                            for isys in range(Nsys)]
-                        data_reference = [
-                            list(data_reference[sys_pair_i == isys])
-                            for isys in range(Nsys)]
-                    # Else, it is already system resolved
-                    else:
-                        data_prediction = list(data_prediction)
-                        data_reference = list(data_reference)
+                    elif data_shape[0] == Npairs:
+                        sys_pair_i = sys_i[batch['idx_i']].numpy()
+                        if test_outlier:
+                            if data_prediction.ndim > 1:
+                                nvals = np.prod(data_prediction.shape[1:])
+                            else:
+                                nvals = 1
+                            prop_sys = 'sys_' + prop + '_i'
+                            if test_prediction[prop_sys].size:
+                                next_sys_i = test_prediction[prop_sys][-1] + 1
+                            else:
+                                next_sys_i = 0
+                            test_prediction[prop_sys] = np.concatenate(
+                                (
+                                    test_prediction[prop_sys],
+                                    sys_pair_i.repeat(nvals) + next_sys_i
+                                ),
+                                axis=0                                
+                            )
+                        data_prediction = np.array(
+                            data_prediction,
+                            dtype=float
+                        ).reshape(Natoms, -1)
+                        data_reference = np.array(
+                            data_reference,
+                            dtype=float
+                        ).reshape(Natoms, -1)
 
                     # Assign prediction and reference data
-                    test_prediction[prop] += data_prediction
-                    test_reference[prop] += data_reference
+                    if prop not in test_prediction:
+                        test_prediction[prop] = np.empty(
+                            (0, data_prediction.shape[1]),
+                            dtype=float
+                        )
+                    if prop not in test_reference:
+                        test_reference[prop] = np.empty(
+                            (0, data_reference.shape[1]),
+                            dtype=float
+                        )                    
+                    test_prediction[prop] = np.concatenate(
+                        (test_prediction[prop], data_prediction),
+                        axis=0
+                    )
+                    test_reference[prop] = np.concatenate(
+                        (test_reference[prop], data_reference),
+                        axis=0
+                    )
 
                     if model_ensemble:
-                        
+
                         for imodel in range(model_ensemble_num):
-                            
+
                             # Detach prediction and reference data
                             data_prediction = (
-                                batch[imodel][prop].detach().cpu().numpy()
+                                batch[imodel][prop].numpy()
                                 )
+                            
+                            # Ensure same prediction data shape
+                            data_prediction = data_prediction.reshape(
+                                data_shape
+                            )
 
                             # Apply unit conversion of model prediction
                             data_prediction *= test_conversion[prop]
 
+                            # If data are numeric (no idea when)
+                            if (not data_shape) and sys_i[-1] == 0:
+                                data_prediction = np.array(
+                                    [data_prediction],
+                                    dtype=float
+                                ).reshape(1, -1)
+                            # If data are system resolved
+                            elif data_shape[0] == Nsys:
+                                data_prediction = np.array(
+                                    data_prediction,
+                                    dtype=float
+                                ).reshape(Nsys, -1)
                             # If data are atom resolved
-                            if not data_prediction.shape:
-                                data_prediction = [data_prediction]
-                            elif data_prediction.shape[0] == Natoms:
-                                sys_i = batch['sys_i'].cpu().numpy()
-                                data_prediction = [
-                                    list(data_prediction[sys_i == isys])
-                                    for isys in range(Nsys)]
+                            elif data_shape[0] == Natoms:
+                                data_prediction = np.array(
+                                    data_prediction,
+                                    dtype=float
+                                ).reshape(Natoms, -1)
                             # If data are atom pair resolved
-                            elif data_prediction.shape[0] == Npairs:
-                                sys_pair_i = (
-                                    batch['sys_i'][
-                                        batch['idx_i']].cpu().numpy())
-                                data_prediction = [
-                                    list(data_prediction[sys_pair_i == isys])
-                                    for isys in range(Nsys)]
-                            # Else, it is already system resolved
-                            else:
-                                data_prediction = list(data_prediction)
-
+                            elif data_shape[0] == Npairs:
+                                sys_pair_i = sys_i[batch['idx_i']].numpy()
+                                data_prediction = np.array(
+                                    data_prediction,
+                                    dtype=float
+                                ).reshape(Natoms, -1)
+                            
+                            
                             # Assign prediction data
-                            test_prediction[imodel][prop] += data_prediction
+                            if imodel not in test_prediction:
+                                test_prediction[imodel] = {}
+                            if prop not in test_prediction:
+                                test_prediction[imodel][prop] = np.empty(
+                                    (0, data_prediction.shape[1]),
+                                    dtype=float
+                                )
+                            test_prediction[imodel][prop] = np.concatenate(
+                                (
+                                    test_prediction[imodel][prop],
+                                    data_prediction
+                                ),
+                                axis=0
+                            )
 
                 # Store atom numbers
-                test_prediction['atoms_number'] += list(
-                    batch['atoms_number'].cpu().numpy())
+                test_prediction['atoms_number'] = np.concatenate(
+                    (
+                        test_prediction['atoms_number'],
+                        batch['atoms_number'].numpy()
+                    ),
+                    axis=0
+                )
+                if 'mlmm_atoms_number' in batch:
+                    test_prediction['mlmm_atoms_number'] = np.concatenate(
+                        (
+                            test_prediction['mlmm_atoms_number'],
+                            batch['mlmm_atoms_number'].numpy()
+                        ),
+                        axis=0
+                    )
+                else:
+                    test_prediction['mlmm_atoms_number'] = np.concatenate(
+                        (
+                            test_prediction['mlmm_atoms_number'],
+                            batch['atoms_number'].numpy()
+                        ),
+                        axis=0
+                    )
 
                 # Store fragment numbers
                 if 'fragment_numbers' in test_prediction:
-                    test_prediction['fragment_numbers'] += list(
-                        batch['fragment_numbers'].cpu().numpy())
+                    test_prediction['fragment_numbers'] = np.concatenate(
+                    (
+                        test_prediction['fragment_numbers'],
+                        batch['fragment_numbers'].numpy()
+                    ),
+                    axis=0
+                )
 
                 # Compute energy and atomic energies shifts
                 test_shifts_energy = np.zeros(Nsys, dtype=float)
                 test_shifts_atomic_energies = np.zeros(Natoms, dtype=float)
-                if atomic_energies_shift is None:
-                    test_shifts['energy'] += list(test_shifts_energy)
-                    test_shifts['atomic_energies'] += list(
-                        test_shifts_atomic_energies)
-                else:
-                    atomic_numbers = batch['atomic_numbers'].cpu().numpy()
-                    sys_i = batch['sys_i'].cpu().numpy()
+                if atomic_energies_shift is not None:
+                    atomic_numbers = batch['atomic_numbers'].numpy()
+                    sys_i = batch['sys_i'].numpy()
                     test_shifts_atomic_energies = (
                         atomic_energies_shift[atomic_numbers])
                     np.add.at(
                         test_shifts_energy,
                         sys_i,
                         test_shifts_atomic_energies)
-                    test_shifts['energy'] += list(test_shifts_energy)
-                    test_shifts['atomic_energies'] += list(
-                        test_shifts_atomic_energies)
+                test_shifts['energy']  = np.concatenate(
+                    (test_shifts['energy'], test_shifts_energy),
+                    axis=0
+                )
+                test_shifts['atomic_energies']  = np.concatenate(
+                    (
+                        test_shifts['atomic_energies'],
+                        test_shifts_atomic_energies
+                    ),
+                    axis=0
+                )
 
             # Print metrics
             if verbose:
@@ -643,6 +843,7 @@ class Tester:
                             test_directory_model,
                             test_csv_file,
                             imodel=imodel)
+
             if test_save_npz:
                 self.save_npz(
                     test_prediction,
@@ -873,6 +1074,210 @@ class Tester:
                                 test_plot_format,
                                 test_plot_dpi)
 
+            #########################
+            # # # Plot Outliers # # #
+            #########################
+
+            # If requested, detect and plot outlier systems
+            if test_outlier:
+
+                # Check outlier metric
+                outlier_metric = test_outlier_metric.strip().lower()
+                if not outlier_metric in ['mae', 'mse', 'rmse']:
+                    raise SyntaxError(
+                        f"Metric label '{test_outlier_metric:s}' is unkown!\n"
+                        + "Choose between 'mae', 'mse' or 'rmse'."
+                    )
+
+                # Sort system metrics
+                outlier_sys_property = f"sys_{test_outlier_property:s}"
+                if outlier_metric == 'rmse':
+                    sys_prop_metric = torch.sqrt(
+                        metrics_test[outlier_sys_property]['mse']
+                    )
+                    sys_prop_metric_mean = torch.sqrt(
+                        metrics_test[test_outlier_property]['mse']
+                    )
+                else:
+                    sys_prop_metric = (
+                        metrics_test[outlier_sys_property][outlier_metric]
+                    )
+                    sys_prop_metric_mean = (
+                        metrics_test[test_outlier_property][outlier_metric]
+                    )
+                sys_prop_metric_sorted, sys_prop_metric_sorted_idx = (
+                    torch.sort(sys_prop_metric)
+                )
+                sys_prop_metric_sorted = sys_prop_metric_sorted[
+                    torch.logical_not(torch.isnan(sys_prop_metric))].flip(0)
+                sys_prop_metric_sorted_idx = sys_prop_metric_sorted_idx[
+                    torch.logical_not(torch.isnan(sys_prop_metric))].flip(0)
+
+                # Either get the nth outlier with largest metric
+                if test_outlier_threshold is None:
+                    num_outlier = test_outlier_num_max
+                # Or get the outlier with metric larger than n times the mean
+                else:
+                    num_outlier = torch.sum(
+                        sys_prop_metric_sorted
+                        >= test_outlier_threshold*sys_prop_metric_mean
+                    )
+                sys_prop_metric_sorted = (
+                    sys_prop_metric_sorted[:num_outlier]
+                )
+                sys_prop_metric_sorted_idx = (
+                    sys_prop_metric_sorted_idx[:num_outlier]
+                )
+
+                # Get auxiliary parameter
+                Nsys = test_prediction['mlmm_atoms_number'].shape[0]
+                Natoms = np.sum(test_prediction['mlmm_atoms_number'])
+
+                # Iterate over outlier
+                for ii, outlier_idx in enumerate(sys_prop_metric_sorted_idx):
+
+                    # Prepare directory for outlier plots
+                    outlier_row_id = metrics_test['row_ids'][outlier_idx]
+                    outlier_directory = os.path.join(
+                        test_directory,
+                        (
+                            f'outlier_{ii + 1:0{len(str(num_outlier)):d}d}_'
+                            + f'{test_outlier_property:s}_'
+                            + f'row_id_{outlier_row_id:d}'
+                        )
+                    )
+                    if not os.path.isdir(outlier_directory):
+                        os.makedirs(outlier_directory)
+
+                    # Write system to file
+                    datasubset.dataset.write_xyz(
+                        os.path.join(
+                            outlier_directory,
+                            f'outlier_row_id_{outlier_row_id:d}.xyz'
+                        ),
+                        (outlier_row_id - 1),
+                        global_idx=True,
+                    )
+
+                    # Iterate over test properties
+                    for prop in test_properties:
+                    
+                        # Get outlier selection mask
+                        data_shape = test_prediction[prop].shape
+                        if data_shape[0] == Nsys:
+                            outlier_selection = outlier_idx
+                        elif data_shape[0] == Natoms:
+                            outlier_selection = np.concatenate(
+                                (
+                                    np.zeros(1, dtype=int),
+                                    np.cumsum(
+                                        test_prediction['mlmm_atoms_number']
+                                    )
+                                )
+                            )
+                            outlier_selection = np.arange(
+                                outlier_selection[outlier_idx],
+                                outlier_selection[outlier_idx + 1]
+                            )
+                        outlier_prediction = (
+                            test_prediction[prop][outlier_selection]
+                        )
+                        outlier_reference = (
+                            test_reference[prop][outlier_selection]
+                        )
+                    
+                        # Plot correlation with highlighted outliers
+                        prop_sys = f"sys_{prop:s}"
+                        outlier_metrics = {
+                            'mae': metrics_test[prop_sys]['mae'][outlier_idx],
+                            'mse': metrics_test[prop_sys]['mse'][outlier_idx],
+                        }
+                        if test_property_atoms_scaling[prop] is None:
+                            outlier_scaling = None
+                        else:
+                            outlier_scaling = (
+                                test_property_atoms_scaling[prop][outlier_idx]
+                            )
+                        self.plot_correlation(
+                            label,
+                            prop,
+                            self.plain_data(test_prediction[prop]),
+                            self.plain_data(test_reference[prop]),
+                            self.data_units[prop],
+                            metrics_test[prop],
+                            test_property_atoms_scaling[prop],
+                            outlier_directory,
+                            test_plot_format,
+                            test_plot_dpi,
+                            outlier_data=[
+                                self.plain_data(outlier_prediction),
+                                self.plain_data(outlier_reference),
+                            ],
+                            outlier_metrics=outlier_metrics,
+                            outlier_row_id=outlier_row_id,
+                            outlier_atoms_scaling=outlier_scaling,
+                        )
+                        if (
+                            test_fragments is not None
+                            and len(test_fragments) > 1
+                            and prop in self._fragment_properties
+                        ):
+                            for fragment in test_fragments:
+                                fragment_prop = f'{prop:s}_{fragment:d}'
+                                frag_prop_sys = f'sys_{fragment_prop:s}'
+                                fragment_selection = (
+                                    fragment == np.array(
+                                        test_prediction['fragment_numbers'])
+                                    )
+                                outlier_fragment_selection = (
+                                    fragment_selection[outlier_selection]
+                                )
+                                outlier_fragment_metrics = {
+                                    'mae': (
+                                        metrics_test[
+                                            frag_prop_sys]['mae'][outlier_idx]
+                                    ),
+                                    'mse': (
+                                        metrics_test[
+                                            frag_prop_sys]['mse'][outlier_idx]
+                                    ),
+                                }
+                                self.plot_correlation(
+                                    label,
+                                    fragment_prop,
+                                    self.plain_data([
+                                        prediction
+                                        for ii, prediction in enumerate(
+                                            test_prediction[prop])
+                                        if fragment_selection[ii]
+                                        ]),
+                                    self.plain_data([
+                                        reference
+                                        for ii, reference in enumerate(
+                                            test_reference[prop])
+                                        if fragment_selection[ii]
+                                        ]),
+                                    self.data_units[prop],
+                                    metrics_test[fragment_prop],
+                                    test_property_atoms_scaling[prop],
+                                    outlier_directory,
+                                    test_plot_format,
+                                    test_plot_dpi,
+                                    outlier_data=[
+                                        self.plain_data(
+                                            outlier_prediction[
+                                                outlier_fragment_selection]
+                                        ),
+                                        self.plain_data(
+                                            outlier_reference[
+                                                outlier_fragment_selection]
+                                        ),
+                                    ],
+                                    outlier_metrics=outlier_fragment_metrics,
+                                    outlier_row_id=outlier_row_id,
+                                    outlier_atoms_scaling=outlier_scaling,
+                                )
+
         return
 
     @staticmethod
@@ -938,44 +1343,25 @@ class Tester:
             # Check property in reference data, if not skip
             if not prop in reference:
                 continue
-            
+
             # Prepare npz file name
             npz_file_prop = os.path.join(
                 test_directory, f"{label:s}_{prop:s}_{npz_file:s}")
 
-            # Prepare data
+            # Store data in npz format
             if prop in shifts:
-                results_np = np.column_stack((
-                    np.array(pred).reshape(-1),
-                    np.array(reference[prop]).reshape(-1),
-                    np.array(shifts[prop]).reshape(-1))
-                )
-                columns_np=[
-                    "prediction", "reference", "shift"]
-            else:
-                results_np = np.column_stack((
-                    np.array(pred).reshape(-1),
-                    np.array(reference[prop]).reshape(-1))
-                )
-                columns_np=[
-                    "prediction", "reference"]
-            
-            # Store data in npz format generated via the pandas data frame
-            if self.is_imported("pandas"):
-                results = pd.DataFrame(
-                    results_np,
-                    columns=columns_np
-                    )
                 np.savez(
                     npz_file_prop,
-                    **{
-                        column: results[column].values
-                        for column in results.columns}
-                    )
+                    prediction=pred,
+                    reference=reference[prop],
+                    shift=shifts[prop],
+                )
             else:
-                self.logger.warning(
-                    "Module 'pandas' is not available. "
-                    + "Test properties are not written to a npz file!")
+                np.savez(
+                    npz_file_prop,
+                    prediction=pred,
+                    reference=reference[prop],
+                )
 
             # Print info
             if imodel is None:
@@ -1083,6 +1469,7 @@ class Tester:
         model_ensemble: bool,
         model_ensemble_num: int,
         test_fragments: List[int] = None,
+        test_outlier: bool = False,
     ) -> Dict[str, float]:
         """
         Reset the metrics dictionary.
@@ -1096,11 +1483,14 @@ class Tester:
         model_ensemble_num: int
             Model ensemble calculator number
         test_fragments: list(int)
-            List of occuring fragment indices in the dataset systems.
+            List of occurring fragment indices in the dataset systems.
             If None or just one, properties metrics are not separately 
             evaluated for each fragment.
             If two or more indices, possible properties are evaluated for each
             fragment also individually.
+        test_outlier: bool, optional, default False
+            If True, prepare for metrics per system.
+            System specific property metrics are stored as 'sys_{property}'.
 
         Returns
         -------
@@ -1112,15 +1502,28 @@ class Tester:
         # Initialize metrics dictionary
         metrics = {}
 
-        # Add data counter
+        # Add data counter and, eventually, system information
         metrics['Ndata'] = 0
+        if test_outlier:
+            metrics['row_ids'] = torch.tensor(
+                [],
+                device='cpu',
+                dtype=torch.int64,
+            )
 
         # Add property metrics
         for prop in test_properties:
             
             metrics[prop] = {
                 'mae': 0.0,
-                'mse': 0.0}
+                'mse': 0.0,
+            }
+            if test_outlier:
+                prop_sys = f"sys_{prop:s}"
+                metrics[prop_sys] = {
+                    'mae': torch.tensor([], device='cpu', dtype=self.dtype),
+                    'mse': torch.tensor([], device='cpu', dtype=self.dtype),
+                }
             
             # For model ensemble, reset individual model metrics
             if model_ensemble:
@@ -1128,8 +1531,9 @@ class Tester:
                 for imodel in range(model_ensemble_num):
                     metrics[prop][imodel] = {
                         'mae': 0.0,
-                        'mse': 0.0}
-            
+                        'mse': 0.0,
+                    }
+
             # If multiple fragments are available, reset metrics for each
             # fragment system but just for suited properties
             if (
@@ -1144,7 +1548,22 @@ class Tester:
                     fragment_prop = f'{prop:s}_{fragment:d}'
                     metrics[fragment_prop] = {
                         'mae': 0.0,
-                        'mse': 0.0}
+                        'mse': 0.0,
+                    }
+                    if test_outlier:
+                        frag_prop_sys = f'sys_{fragment_prop:s}'
+                        metrics[frag_prop_sys] = {
+                            'mae': torch.tensor(
+                                [],
+                                device='cpu',
+                                dtype=self.dtype
+                            ),
+                            'mse': torch.tensor(
+                                [],
+                                device='cpu',
+                                dtype=self.dtype
+                            ),
+                        }
 
         return metrics
 
@@ -1157,6 +1576,7 @@ class Tester:
         model_ensemble: bool,
         model_ensemble_num: int,
         test_fragments: List[int] = None,
+        test_outlier: bool = False
     ) -> Dict[str, float]:
         """
         Compute the metrics mean absolute error (MAE) and mean squared error
@@ -1177,11 +1597,14 @@ class Tester:
         model_ensemble_num: int
             Model ensemble calculator number
         test_fragments: list(int)
-            List of occuring fragment indices in the dataset systems.
+            List of occurring fragment indices in the dataset systems.
             If None or just one, properties metrics are not separately 
             evaluated for each fragment.
             If two or more indices, possible properties are evaluated for each
             fragment also individually.
+        test_outlier: bool, optional, default False
+            If True, additionally compute metrics per system.
+            System specific property metrics are stored as 'sys_{property}'.
 
         Returns
         -------
@@ -1193,77 +1616,222 @@ class Tester:
         # Initialize metrics dictionary
         metrics = {}
 
-        # Add batch size
-        metrics['Ndata'] = reference[
-            test_properties[0]].size()[0]
+        # Add system information
+        metrics['Ndata'] = reference[test_properties[0]].size()[0]
+        if test_outlier:
+            metrics['row_ids'] = prediction['row_ids']
+            Nsys = prediction['atoms_number'].size()[0]
+            if 'ml_idx' in prediction:
+                Natoms = prediction['mlmm_sys_i'].size()[0]
+                sys_i = prediction['mlmm_sys_i']
+                atoms_number = prediction['mlmm_atoms_number']
+            else:
+                Natoms = prediction['sys_i'].size()[0]
+                sys_i = prediction['sys_i']
+                atoms_number = prediction['atoms_number']
 
-        # Iterate over test properties
-        mae_fn = torch.nn.L1Loss(reduction="mean")
-        mse_fn = torch.nn.MSELoss(reduction="mean")
-        for ip, prop in enumerate(test_properties):
+        # Prepare metic functions
+        if test_outlier:
+            mae_fn = torch.nn.L1Loss(reduction='none')
+            mse_fn = torch.nn.MSELoss(reduction='none')
+        else:
+            mae_fn = torch.nn.L1Loss(reduction='mean')
+            mse_fn = torch.nn.MSELoss(reduction='mean')
 
-            # Initialize single property metrics dictionary
-            metrics[prop] = {}
+        # Iterate over metric type
+        for metric_fn, metric in zip([mae_fn, mse_fn], ['mae', 'mse']):
 
-            # Compute MAE and MSE
-            metrics[prop]['mae'] = mae_fn(
-                torch.flatten(prediction[prop])
-                * test_conversion[prop],
-                torch.flatten(reference[prop]))
-            metrics[prop]['mse'] = mse_fn(
-                torch.flatten(prediction[prop])
-                * test_conversion[prop],
-                torch.flatten(reference[prop]))
+            # Iterate over test properties
+            for ip, prop in enumerate(test_properties):
 
-            # For model ensembles
-            if model_ensemble:
-                
-                # Compute mean standard deviation
-                prop_std = f"std_{prop:s}"
-                metrics[prop]['std'] = torch.mean(prediction[prop_std])
-                
-                #  Compute single calculator statistics
-                for imodel in range(model_ensemble_num):
-                    metrics[prop][imodel] = {}
-                    metrics[prop][imodel]['mae'] = mae_fn(
-                        torch.flatten(prediction[imodel][prop])
+                # Initialize single property metrics dictionary
+                if prop not in metrics:
+                    metrics[prop] = {}
+
+                # Compute MAE and MSE
+                if test_outlier:
+
+                    # Initialize system resolved property metrics dictionary
+                    prop_sys = f"sys_{prop:s}"
+                    if prop_sys not in metrics:
+                        metrics[prop_sys] = {}
+
+                    # Compute element-wise property metrics
+                    metrics[prop_sys][metric] = metric_fn(
+                        torch.flatten(prediction[prop])
                         * test_conversion[prop],
-                        torch.flatten(reference[prop]))
-                    metrics[prop][imodel]['mse'] = mse_fn(
-                        torch.flatten(prediction[imodel][prop])
-                        * test_conversion[prop],
-                        torch.flatten(reference[prop]))
+                        torch.flatten(reference[prop])
+                    ).detach()
 
-            # If multiple fragments are available, compute metrics for each
-            # fragment system but just for suited properties
-            if (
-                test_fragments is not None
-                and len(test_fragments) > 1
-                and prop in self._fragment_properties
-            ):
+                    # Compute mean property metrics
+                    metrics[prop][metric] = torch.mean(
+                        metrics[prop_sys][metric]
+                    )
+
+                    # Reduce atom-wise property metric to system-wise metric
+                    if prediction[prop].shape[0] == Natoms:
+                        metrics[prop_sys][metric] = torch.zeros(
+                            Nsys,
+                            device=prediction[prop].device,
+                            dtype=prediction[prop].dtype,
+                            ).scatter_add_(
+                                0, sys_i,
+                                metrics[prop_sys][metric]
+                            )/atoms_number
+                    elif (
+                        prediction[prop].shape[0] == Nsys
+                        and prediction[prop].dim() > 1
+                    ):
+                        metrics[prop_sys][metric] = torch.zeros(
+                            Nsys,
+                            device=prediction[prop].device,
+                            dtype=prediction[prop].dtype,
+                            ).scatter_add_(
+                                0, 
+                                torch.arange(
+                                    Nsys, device='cpu', dtype=torch.int64
+                                    ).repeat(prediction[prop].shape[1:].numel()
+                                ),
+                                metrics[prop_sys][metric]
+                            )/prediction[prop].shape[1:].numel()
+
+                else:
+
+                    # Compute mean property metrics
+                    metrics[prop][metric] = metric_fn(
+                        torch.flatten(prediction[prop])
+                        * test_conversion[prop],
+                        torch.flatten(reference[prop])
+                    ).detach()
                 
-                # Iterate over fragment indices
-                for fragment in test_fragments:
+                # For model ensembles
+                if model_ensemble:
                     
-                    # Fragment property tag
-                    fragment_prop = f'{prop:s}_{fragment:d}'
+                    # Compute mean standard deviation
+                    prop_std = f"std_{prop:s}"
+                    metrics[prop]['std'] = torch.mean(prediction[prop_std])
+                    
+                    # Compute single calculator statistics
+                    for imodel in range(model_ensemble_num):
 
-                    # Initialize single property metrics dictionary
-                    metrics[fragment_prop] = {}
+                        # Initialize model resolved property metrics dictionary
+                        if imodel not in metrics[prop]:
+                            metrics[prop][imodel] = {}
+                        
+                        # Compute mean property metrics
+                        metrics[prop][imodel][metric] = metric_fn(
+                            torch.flatten(prediction[imodel][prop])
+                            * test_conversion[prop],
+                            torch.flatten(reference[prop]))
 
-                    # Fragment selection
-                    fragment_selection = (
-                        fragment == prediction['fragment_numbers'])
+                # If multiple fragments are available, compute metrics for each
+                # fragment system but just for suited properties
+                if (
+                    test_fragments is not None
+                    and len(test_fragments) > 1
+                    and prop in self._fragment_properties
+                ):
+                    
+                    # Iterate over fragment indices
+                    for fragment in test_fragments:
+                        
+                        # Fragment property tag
+                        fragment_prop = f'{prop:s}_{fragment:d}'
 
-                    # Compute MAE and MSE
-                    metrics[fragment_prop]['mae'] = mae_fn(
-                        torch.flatten(prediction[prop][fragment_selection])
-                        * test_conversion[prop],
-                        torch.flatten(reference[prop][fragment_selection]))
-                    metrics[fragment_prop]['mse'] = mse_fn(
-                        torch.flatten(prediction[prop][fragment_selection])
-                        * test_conversion[prop],
-                        torch.flatten(reference[prop][fragment_selection]))
+                        # Initialize single property metrics dictionary
+                        if fragment_prop not in metrics:
+                            metrics[fragment_prop] = {}
+
+                        # Fragment selection
+                        fragment_selection = (
+                            fragment == prediction['fragment_numbers'])
+
+                        # Compute MAE and MSE
+                        if test_outlier:
+
+                            # Initialize system resolved property metrics 
+                            # dictionary
+                            frag_prop_sys = f'sys_{fragment_prop:s}'
+                            if frag_prop_sys not in metrics:
+                                metrics[frag_prop_sys] = {}
+
+                            # Compute element-wise property metrics
+                            metrics[frag_prop_sys][metric] = metric_fn(
+                                torch.flatten(
+                                    prediction[prop][fragment_selection]
+                                )*test_conversion[prop],
+                                torch.flatten(
+                                    reference[prop][fragment_selection])
+                            )
+
+                            # Compute mean property metrics
+                            metrics[fragment_prop][metric] = torch.mean(
+                                metrics[frag_prop_sys][metric])
+
+                            # Get fragments number of atoms
+                            fragment_atoms_number = torch.bincount(
+                                sys_i[fragment_selection],
+                                minlength=Nsys,
+                            )
+
+                            # Reduce atom-wise property metric to system-wise
+                            # metric
+                            if prediction[prop].shape[0] == Natoms:
+                                metrics[frag_prop_sys][metric] = (
+                                    torch.zeros(
+                                        Nsys,
+                                        device=prediction[prop].device,
+                                        dtype=prediction[prop].dtype,
+                                    ).scatter_add_(
+                                        0, sys_i[fragment_selection],
+                                        metrics[frag_prop_sys][metric]
+                                    )
+                                )
+                                metrics[frag_prop_sys][metric] = (
+                                    torch.where(
+                                        fragment_atoms_number.to(
+                                            dtype=torch.bool
+                                        ),
+                                        (
+                                            metrics[frag_prop_sys][metric]
+                                            / fragment_atoms_number
+                                        ),
+                                        metrics[frag_prop_sys][metric]
+                                    ).detach()
+                                )
+                            elif (
+                                prediction[prop].shape[0] == Nsys
+                                and prediction[prop].dim() > 1
+                            ):
+                                metrics[frag_prop_sys][metric] = (
+                                    torch.zeros(
+                                        Nsys,
+                                        device=prediction[prop].device,
+                                        dtype=prediction[prop].dtype,
+                                    ).scatter_add_(
+                                        0, 
+                                        torch.arange(
+                                            Nsys,
+                                            device='cpu',
+                                            dtype=torch.int64
+                                        ).repeat(
+                                            prediction[prop].shape[1:].numel()
+                                        ),
+                                        metrics[frag_prop_sys][metric]
+                                    )/prediction[prop].shape[1:].numel()
+                                )
+
+                        else:
+                            
+                            # Compute mean property metrics                            
+                            metrics[fragment_prop][metric] = metric_fn(
+                                torch.flatten(
+                                    prediction[prop][fragment_selection]
+                                )*test_conversion[prop],
+                                torch.flatten(
+                                    reference[prop][fragment_selection]
+                                )
+                            )
 
         return metrics
 
@@ -1275,6 +1843,7 @@ class Tester:
         model_ensemble: bool,
         model_ensemble_num: int,
         test_fragments: List[int] = None,
+        test_outlier: bool = False,
     ) -> Dict[str, float]:
         """
         Update the metrics dictionary.
@@ -1282,9 +1851,9 @@ class Tester:
         Parameters
         ----------
         metrics: dict
-            Dictionary of the new metrics
+            Dictionary of the metrics which gets updated
         metrics_update: dict
-            Dictionary of the metrics to update
+            Dictionary of the new metrics for the update
         test_properties: list(str)
             List of properties to evaluate
         model_ensemble: bool
@@ -1292,11 +1861,14 @@ class Tester:
         model_ensemble_num: int
             Model ensemble calculator number
         test_fragments: list(int)
-            List of occuring fragment indices in the dataset systems.
+            List of occurring fragment indices in the dataset systems.
             If None or just one, properties metrics are not separately 
             evaluated for each fragment.
             If two or more indices, possible properties are evaluated for each
             fragment also individually.
+        test_outlier: bool, optional, default False
+            If True, additionally update metrics per system.
+            System specific property metrics are stored as 'sys_{property}'.
 
         Returns
         -------
@@ -1311,21 +1883,48 @@ class Tester:
         fdata = float(Ndata)/float((Ndata + Ndata_update))
         fdata_update = 1. - fdata
 
-        # Update metrics
+        # Update system information
         metrics['Ndata'] = metrics['Ndata'] + metrics_update['Ndata']
+        if test_outlier:
+            metrics['row_ids'] = torch.cat(
+                (metrics['row_ids'], metrics_update['row_ids']),
+                dim=0
+            )
+
+        # Update metrics
         for prop in test_properties:
-            
+
+            # Skip if metric is not available
+            # print(prop, metrics[prop]['mae'])
+            # print(prop, metrics[prop]['mse'])
+            # if torch.any(
+            #     [
+            #         torch.isnan(metrics[prop][metric])
+            #         for metric in ['mae', 'mse']
+            #     ]
+            # ):
+            #     continue
+
             for metric in ['mae', 'mse']:
                 metrics[prop][metric] = (
                     fdata*metrics[prop][metric]
                     + fdata_update*metrics_update[prop][metric].detach().item()
+                )
+                if test_outlier:
+                    prop_sys = f"sys_{prop:s}"
+                    metrics[prop_sys][metric] = torch.cat(
+                        (
+                            metrics[prop_sys][metric],
+                            metrics_update[prop_sys][metric]
+                        ),
+                        dim=0
                     )
             
             if model_ensemble:
                 metrics[prop]['std'] = (
                     fdata*metrics[prop]['std']
                     + fdata_update*metrics_update[prop]['std'].detach().item()
-                    )
+                )
                 for imodel in range(model_ensemble_num):
                     for metric in ['mae', 'mse']:
                         metrics[prop][imodel][metric] = (
@@ -1333,7 +1932,7 @@ class Tester:
                             + fdata_update
                             * (metrics_update
                                )[prop][imodel][metric].detach().item()
-                            )
+                        )
 
             if (
                 test_fragments is not None
@@ -1343,11 +1942,22 @@ class Tester:
                 for fragment in test_fragments:
                     fragment_prop = f'{prop:s}_{fragment:d}'
                     for metric in ['mae', 'mse']:
-                        metrics[fragment_prop][metric] = (
-                            fdata*metrics[fragment_prop][metric]
-                            + fdata_update*metrics_update[
-                                fragment_prop][metric].detach().item()
+                        if not np.isnan(metrics_update[fragment_prop][metric]):
+                            metrics[fragment_prop][metric] = (
+                                fdata*metrics[fragment_prop][metric]
+                                + fdata_update*metrics_update[
+                                    fragment_prop][metric].detach().item()
                             )
+                        if test_outlier:
+                            frag_prop_sys = f'sys_{fragment_prop:s}'
+                            metrics[frag_prop_sys][metric] = torch.cat(
+                                (
+                                    metrics[frag_prop_sys][metric],
+                                    metrics_update[frag_prop_sys][metric]
+                                ),
+                                dim=0
+                            )
+                            
 
         return metrics
 
@@ -1460,6 +2070,10 @@ class Tester:
         test_directory: str,
         test_plot_format: str,
         test_plot_dpi: int,
+        outlier_data: Optional[List[float]] = None,
+        outlier_metrics: Optional[Dict[str, float]] = None,
+        outlier_row_id: Optional[int] = None,
+        outlier_atoms_scaling: Optional[float] = None,
     ):
         """
         Plot property data correlation data.
@@ -1491,6 +2105,14 @@ class Tester:
             Format of the plot
         test_plot_dpi: int
             DPI of the plot
+        outlier_data: list(float), optional, default None
+            List of the predicted and reference data of the outlier
+        outlier_metrics: dict, optional, default None
+            Dictionary of the outlier metrics
+        outlier_row_id: int, optional, default None
+            Database row id of the outlier
+        outlier_atoms_scaling: float, optional, default None
+            Outlier data scaling factor
 
         """
 
@@ -1532,6 +2154,15 @@ class Tester:
             metrics_label += (
                 f"\nStd = {data_metrics['std']:3.2e} {unit_property:s}")
 
+        # If requested, outlier data label
+        if outlier_data is not None:
+            outlier_metrics_label = (
+                f"row_id: {outlier_row_id}\nMAE = "
+                + f"{outlier_metrics['mae']:3.2e} {unit_property:s}\n"
+                + f"RMSE = {np.sqrt(outlier_metrics['mse']):3.2e} "
+                + f"{unit_property:s}"
+            )
+
         # Scale data if requested
         if test_atoms_scaling is not None:
             data_prediction = data_prediction*test_atoms_scaling
@@ -1539,6 +2170,10 @@ class Tester:
             scale_label = "/atom"
         else:
             scale_label = ""
+        if outlier_data is not None and outlier_atoms_scaling is not None:
+            outlier_data = [
+                data_i*outlier_atoms_scaling for data_i in outlier_data
+            ]
 
         # Plot data
         data_min = np.min(
@@ -1557,6 +2192,15 @@ class Tester:
             color='blue', markerfacecolor='None',
             marker='o', linestyle='None',
             label=metrics_label)
+
+        # If requested, plot outlier data
+        if outlier_data is not None:
+            axs1.plot(
+                outlier_data[1],
+                outlier_data[0],
+                color='red', markerfacecolor='None',
+                marker='o', linestyle='None',
+                label=outlier_metrics_label)
 
         # Axis range
         axs1.set_xlim(data_min - data_dif*0.05, data_max + data_dif*0.05)

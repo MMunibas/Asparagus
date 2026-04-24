@@ -295,9 +295,12 @@ class Input_AMP(torch.nn.Module):
         idx_i = batch['idx_i']
         idx_j = batch['idx_j']
 
-        # ML/MM approach - Select only ML atom inputs
+        # ML/MM approach - Select only ML atom inputs and store original as
+        # copy in 'mlmm_*' 
         if 'ml_idx' in batch:
             batch['atomic_numbers'] = batch['atomic_numbers'][batch['ml_idx']]
+            batch['mlmm_sys_i'] = batch['sys_i'].clone()
+            batch['mlmm_atoms_number'] = batch['atoms_number'].clone()
             batch['sys_i'] = batch['sys_i'][batch['ml_idx']]
             batch['atoms_number'] = torch.bincount(batch['sys_i'])
 

@@ -33,6 +33,8 @@ class DataLoader(torch.utils.data.DataLoader):
         If True data are loaded to GPU
     data_atomic_energies_shift: list(float), optional, default None
         Atom type specific energy shift terms to shift the system energies.
+    data_fragments: bool, optional, default False
+        Always include fragment information (e.g. for ML/MM system predictions)
     device: str, optional, default 'cpu'
         Device type for data allocation
     dtype: dtype object, optional, default 'torch.float64'
@@ -56,6 +58,7 @@ class DataLoader(torch.utils.data.DataLoader):
         data_collate_fn: Optional[object] = None,
         data_pin_memory: Optional[bool] = False,
         data_atomic_energies_shift: Optional[List[float]] = None,
+        data_fragments: Optional[bool] = False,
         **kwargs
     ):
         """
@@ -100,6 +103,9 @@ class DataLoader(torch.utils.data.DataLoader):
             data_atomic_energies_shift,
             self.dataset.get_data_properties_dtype())
 
+        # Assign fragment flag
+        self.data_fragments = data_fragments
+
         return
 
     def set_data_atomic_energies_shift(
@@ -142,6 +148,25 @@ class DataLoader(torch.utils.data.DataLoader):
         
         # Assign new reference properties list
         self.reference_properties = reference_properties
+        
+        return
+
+    def set_fragments(
+        self,
+        data_fragments: bool,
+    ):
+        """
+        Update data fragment flag.
+        
+        Parameters
+        ----------
+        data_fragments: bool
+            If True, always include fragment information
+
+        """
+        
+        # Assign new reference properties list
+        self.data_fragments = data_fragments
         
         return
 
@@ -226,6 +251,7 @@ class DataLoader(torch.utils.data.DataLoader):
             Collated data batch with essential properties, optional structure
             and reference properties.
             Essential Properties:
+                row_id: (Nsystem,) torch.Tensor
                 atoms_number: (Nsystem,) torch.Tensor
                 atomic_numbers: (Natoms,) torch.Tensor
                 positions: (Natoms, 3) torch.Tensor
@@ -252,8 +278,16 @@ class DataLoader(torch.utils.data.DataLoader):
         # Collected batch system properties
         coll_batch = {}
 
+        # Check for empty system data
+        batch = [b for b in batch if b]
+
         # Get batch size a.k.a. number of systems
         Nsys = len(batch)
+
+        # Get database index of the system
+        coll_batch['row_ids'] = torch.tensor(
+            [b['row_id'] for b in batch],
+            device=self.device, dtype=torch.int64)
 
         # Get atoms number per system segment
         coll_batch['atoms_number'] = torch.tensor(
@@ -294,25 +328,31 @@ class DataLoader(torch.utils.data.DataLoader):
                 ).reshape(Nsys, -1)
 
         # System atomic fragment indices
-        # Only add to batch, if multiple fragments are defined
         if 'fragment_numbers' in batch[0]:
+
             fragment_numbers = torch.cat(
                 [b['fragment_numbers'] for b in batch], 0).to(
                     device=self.device, dtype=torch.int64)
-            if torch.unique(fragment_numbers).shape[0] > 1:
+        
+            # Only add to batch, if multiple fragments are defined
+            if (
+                self.data_fragments
+                or torch.unique(fragment_numbers).shape[0] > 1
+            ):
+
                 coll_batch['fragment_numbers'] = fragment_numbers
 
-            # Compute ML/MM pair indices and position offsets
-            if self.mlmm_neighbor_list is None:
-                self.init_mlmm_neighbor_list()
-            coll_batch = self.mlmm_neighbor_list(coll_batch)
+                # Compute ML/MM pair indices and position offsets
+                if self.mlmm_neighbor_list is None:
+                    self.init_mlmm_neighbor_list()
+                coll_batch = self.mlmm_neighbor_list(coll_batch)
 
-            # Due to Torch-Script issues, do a reference atomic charges copy
-            # with key 'mlmm_atomic_charges'
-            if 'atomic_charges' in self.reference_properties:
-                coll_batch['mlmm_atomic_charges'] = torch.cat(
-                    [b['atomic_charges'] for b in batch]).to(
-                        device=self.device, dtype=self.dtype)
+                # Due to Torch-Script issues, do a reference atomic charges
+                # copy with key 'mlmm_atomic_charges'
+                if 'atomic_charges' in self.reference_properties:
+                    coll_batch['mlmm_atomic_charges'] = torch.cat(
+                        [b['atomic_charges'] for b in batch]).to(
+                            device=self.device, dtype=self.dtype)
 
         # Compute pair indices and position offsets
         if self.neighbor_list is None:

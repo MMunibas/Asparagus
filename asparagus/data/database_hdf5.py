@@ -198,6 +198,7 @@ class DataBase_hdf5(data.DataBase):
         metadata = self._get_metadata()
         for idx in selection:
             row = {}
+            row['row_id'] = idx
             for prop_i, dtype_i in structure_properties_dtype.items():
                 item = self.data['systems'][f"{selection[0]:d}"].get(prop_i)
                 if item is not None:

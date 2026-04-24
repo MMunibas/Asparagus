@@ -335,8 +335,8 @@ class DMC:
         stepsize: float, optional, default None
             Step size for the DMC in imaginary time
         alpha: float, optional, default None
-            Alpha parameter for the DMC feed-back parameter, usually proportional
-            to 1/stepsize
+            Alpha parameter for the DMC feed-back parameter, usually 
+            proportional to 1/stepsize
         seed: int, optional, default None
             Specify random seed for atom positions shuffling
         store_steps: int, optional, default 10
@@ -666,8 +666,8 @@ class DMC:
         stepsize: float, optional, default None
             Step size for the DMC in imaginary time
         alpha: float, optional, default None
-            Alpha parameter for the DMC feed-back parameter, usually proportional
-            to 1/stepsize
+            Alpha parameter for the DMC feed-back parameter, usually
+            proportional to 1/stepsize
         defective_threshold: float, optional, default -1.0e-5
             Negative threshold of potential energy below the minimum potential
             energy to decide if walker atom positions predict wrong/defective
@@ -943,7 +943,8 @@ class Logger_DMC:
     ):
         """
         Subroutine to write header of log file
-        logging all job details and the initial parameters of the DMC simulation
+        logging all job details and the initial parameters of the DMC 
+        simulation
 
         Parameters
         ----------

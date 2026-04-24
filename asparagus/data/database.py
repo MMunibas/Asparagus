@@ -160,6 +160,7 @@ class DataBase:
         dict
             Metadata stored in Database
             If Database is new output is same as input.
+
         """
 
         return self._set_metadata(metadata)
@@ -191,9 +192,10 @@ class DataBase:
 
         Returns
         -------
-            dict
-                Metadata stored in Database
-                If Database is new output is same as input.
+        dict
+            Metadata stored in Database
+            If Database is new output is same as input.
+
         """
 
         return self._get_metadata()
@@ -222,15 +224,16 @@ class DataBase:
 
         Parameters
         ----------
-            properties: dict
-                Reference data
-            row_id: int
-                Overwrite existing row.
+        properties: dict
+            Reference data
+        row_id: int
+            Overwrite existing row.
 
         Returns
         -------
-            int
-                Returns integer id of the new row.
+        int
+            Returns integer id of the new row.
+
         """
 
         row_id = self._write(properties, row_id)
@@ -256,6 +259,7 @@ class DataBase:
         -------
         int
             Returns integer id of the updated row.
+
         """
 
         row_id = self._update(row_id, properties)
@@ -278,6 +282,7 @@ class DataBase:
         -------
         dict
             Returns entry of the selection.
+
         """
 
         if utils.is_integer(selection):

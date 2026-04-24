@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 import ase
+from ase import io
 
 from asparagus import data
 from asparagus import utils
@@ -199,7 +200,11 @@ class DataSet():
 
         if self.db is None:
             self.db = self.connect(self.data_file[0], mode='r')
-        return self.db.get(idx + 1)[0]
+        properties = self.db.get(idx + 1)
+        if properties:
+            return self.db.get(idx + 1)[0]
+        else:
+            return {}
 
     def set_properties(
         self,
@@ -588,6 +593,63 @@ class DataSet():
         with self.connect(self.data_file[0], mode='r') as db:
             return db.properties_torch_dtype
 
+    def write_xyz(
+        self,
+        file_xyz: str,
+        idx: int,
+        global_idx: Optional[bool] = False
+    ):
+        """
+        Save system of index 'idx' to 'file_xyz' as xyz file
+
+        Parameters:
+        -----------
+        file_xyz: str
+            File path of the xyz file
+        idx: int
+            Data set index of system to write
+        global_idx: bool, optional, default False
+            Not applied in here in the complete data set.
+
+        """
+        
+        # Get system data
+        data = self.get(idx)
+
+        # Create ASE atoms object
+        system = ase.Atoms(
+            data['atomic_numbers'],
+            positions=data['positions'],
+            cell=data['cell'],
+            pbc=data['pbc'],
+        )
+
+        # Save as xyz file
+        io.write(file_xyz, system, format='xyz')
+
+        return
+
+    def delete(
+        self,
+        row_ids: List[int],
+    ):
+        """
+        Delete database entries 'row_ids'
+
+        Parameters:
+        -----------
+        row_ids: list(int)
+            Database indices to delete
+
+        """
+
+        if self.db is None:
+            self.db = self.connect(self.data_file[0], mode='a')
+        self.db.delete(row_ids)
+
+        return
+
+
 class DataSubSet(DataSet):
     """
     DataSubSet class iterating and returning over a subset of DataSet.
@@ -606,6 +668,7 @@ class DataSubSet(DataSet):
     -------
     object
         DataSubSet to present training, validation or testing
+
     """
 
     def __init__(
@@ -712,3 +775,77 @@ class DataSubSet(DataSet):
 
         return self._update_properties(
             [self.subset_idx[idxi] for idxi in idx], properties)
+
+    def write_xyz(
+        self,
+        file_xyz: str,
+        idx: int,
+        global_idx: Optional[bool] = False,
+    ):
+        """
+        Save system of index 'idx' to 'file_xyz' as xyz file
+
+        Parameters:
+        -----------
+        file_xyz: str
+            File path of the xyz file
+        idx: int
+            Data subset index of system to write
+        global_idx: bool, optional, default False
+            If False as by default, the index 'idx' refers to the system index
+            in the data subset.
+            If True, the index 'idx' refers to the system index in the complete
+            data set.
+
+        """
+        
+        # Get system data
+        if global_idx:
+            data = self._get_properties(idx)
+        else:
+            data = self._get_properties(self.subset_idx[idx])
+
+        # Create ASE atoms object
+        # TODO unit conversion from data units to ASE units
+        system = ase.Atoms(
+            data['atomic_numbers'],
+            positions=data['positions'],
+        )
+
+        # Save as xyz file
+        io.write(file_xyz, system, format='xyz')
+
+        return
+
+    def delete(
+        self,
+        row_ids: List[int],
+    ) -> List[int]:
+        """
+        Delete database entries 'row_ids' from the subset indices list
+
+        Parameters:
+        -----------
+        row_ids: list(int)
+            Database indices to delete from subset indices list
+
+        Returns
+        -------
+        list(int)
+            Database indices stored in this data subset
+
+        """
+
+        # Iterate over indices (subset indices start counting at zero, while
+        # database entries row_ids are start  counting at one)
+        matching_ids = []
+        for idx in row_ids:
+            match = self.subset_idx == (idx - 1)
+            if np.any(match):
+                matching_ids.append(idx)
+                self.subset_idx = self.subset_idx[np.logical_not(match)]
+
+        # Update data subset size
+        self.Nidx = len(self.subset_idx)
+
+        return matching_ids

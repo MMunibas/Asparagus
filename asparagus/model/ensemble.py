@@ -239,6 +239,12 @@ class EnsembleModel(torch.nn.Module):
             model_calculator.checkpoint_file
             for model_calculator in self.model_calculator_list]
 
+    @property
+    def model_mlmm_embedding(self):
+        return any([
+            model_calculator.model_mlmm_embedding
+            for model_calculator in self.model_calculator_list])
+
     def load(
         self,
         checkpoint: List[Dict[str, Any]],
@@ -338,6 +344,20 @@ class EnsembleModel(torch.nn.Module):
 
         """
         return self.model_calculator_list[0].get_cutoff_ranges()
+
+    def get_mlmm_cutoff_ranges(self) -> List[float]:
+        """
+        Get model ML and MM atom pair cutoff or, eventually, short range 
+        descriptor and long range cutoff list.
+
+        Return
+        list(float)
+            List of ML and MM atom pair long range model and, eventually, short
+            range descriptor cutoff (if defined and not short range equal long
+            range cutoff).
+
+        """
+        return self.model_calculator_list[0].get_mlmm_cutoff_ranges()
 
     # @torch.compile # Not supporting backwards propagation with torch.float64
     def forward(
@@ -574,7 +594,9 @@ class EnsembleModel(torch.nn.Module):
             False,
             num_workers,
             self.device,
-            self.dtype)
+            self.dtype,
+            data_fragments=model_calculator_list[0].model_mlmm_embedding,
+        )
 
         # Initialize model ensemble result dictionary
         results = {}
