@@ -492,8 +492,8 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
     Parameters
     ----------
-    cutoffs: list(float)
-        List of Cutoff distances
+    cutoffs: (float, list(float))
+        Cutoff distance or list of cutoff distances
     device: str, optional, default global setting
         Device type for model variable allocation
     dtype: dtype object, optional, default global setting
@@ -528,15 +528,15 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
     def set_cutoffs(
         self,
-        cutoffs: List[float],
+        cutoffs: Union[float, List[float]],
     ):
         """
         Set cutoff values,
         
         Parameters
         ----------
-        cutoffs: list(float)
-            List of cutoff distances
+        cutoffs: (float, list(float))
+        Cutoff distance or list of cutoff distances
 
         """
 

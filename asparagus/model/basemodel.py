@@ -388,10 +388,23 @@ class BaseModel(torch.nn.Module):
 
         return cutoffs
 
-    def get_mlmm_cutoff_ranges(self) -> List[float]:
+    def get_mlmm_cutoff_ranges(
+        self,
+        mlmm_inf_cutoff: Optional[bool] = False,
+    ) -> List[float]:
         """
         Get model ML and MM atom pair cutoff or, eventually, short range 
-        descriptor and long range cutoff list between
+        descriptor and long range cutoff list
+
+        Parameters
+        ----------
+        mlmm_inf_cutoff: bool, optional, default False
+            If True such as in model training, the ML-MM long range cutoff is
+            set to infinity, as usually the case in reference QM-MM calculation
+            (e.g. ORCA).
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
 
         Return
         ------
@@ -402,7 +415,9 @@ class BaseModel(torch.nn.Module):
 
         """
 
-        if hasattr(self, 'model_mlmm_cutoff'):
+        if mlmm_inf_cutoff:
+            long_range_cutoff = torch.inf
+        elif hasattr(self, 'model_mlmm_cutoff'):
             long_range_cutoff = self.model_mlmm_cutoff
         else:
             long_range_cutoff = self.model_cutoff
@@ -759,6 +774,29 @@ class BaseModel(torch.nn.Module):
         # Initialize atoms batch
         batch = {}
 
+        # First, check for atomic fragments and consider if number is larger 1
+        if 'fragment' in atoms[0].arrays:
+            fragment_numbers = torch.cat(
+                [
+                    torch.tensor(image.arrays['fragment'], dtype=torch.int64)
+                    for image in atoms
+                ], 0).to(
+                    device=self.device, dtype=torch.int64)
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                batch['fragment_numbers'] = fragment_numbers
+
+            # Due to Torch-Script issues, do a reference atomic charges copy
+            # with key 'mlmm_atomic_charges'
+            if 'atomic_charges' in atoms[0].arrays:
+                batch['mlmm_atomic_charges'] = torch.cat(
+                    [
+                        torch.tensor(
+                            image.arrays['atomic_charges'],
+                            dtype=self.dtype)
+                        for image in atoms
+                    ], 0).to(
+                        device=self.device, dtype=self.dtype)
+
         # Number of atoms
         batch['atoms_number'] = torch.tensor(
             [len(image) for image in atoms],
@@ -804,12 +842,28 @@ class BaseModel(torch.nn.Module):
         else:
             fconv = conversion['charge']
         if charge is None:
-            try:
-                charge = [np.sum(image.get_charges())*fconv for image in atoms]
-            except RuntimeError:
+            if 'fragment_numbers' in batch:
+                selection = (
+                    batch['fragment_numbers'] == self.model_ml_fragment
+                ).cpu().detach().numpy()
+            else:
+                selection = torch.ones_like(
+                    batch['atomic_numbers'],
+                    dtype=torch.bool
+                ).cpu().detach().numpy()
+            if 'atomic_charges' in atoms[0].arrays:
                 charge = [
-                    np.sum(image.get_initial_charges())*fconv
+                    np.sum(image.arrays['atomic_charges'][selection])*fconv
                     for image in atoms]
+            else:
+                try:
+                    charge = [
+                        np.sum(image.get_charges()[selection])*fconv
+                        for image in atoms]
+                except RuntimeError:
+                    charge = [
+                        np.sum(image.get_initial_charges()[selection])*fconv
+                        for image in atoms]
         elif utils.is_numeric(charge):
             charge = [charge*fconv]*len(atoms)
         elif utils.is_numeric_array(charge):
@@ -818,17 +872,6 @@ class BaseModel(torch.nn.Module):
             raise ValueError("Input 'charge' is not a numeric value or array!")
         batch['charge'] = torch.tensor(
             charge, dtype=self.dtype, device=self.device)
-
-        # Check for fragment definition
-        if 'fragment' in atoms[0].arrays:
-            fragment_numbers = torch.cat(
-                [
-                    torch.tensor(image.arrays['fragment'], dtype=torch.int64)
-                    for image in atoms
-                ], 0).to(
-                    device=self.device, dtype=torch.int64)
-            if torch.unique(fragment_numbers).shape[0] > 1:
-                batch['fragment_numbers'] = fragment_numbers
 
         # Compute atom pair indices
         batch = self.compute_neighborlist(batch)
@@ -1034,7 +1077,9 @@ class BaseModel(torch.nn.Module):
             False,
             num_workers,
             self.device,
-            self.dtype)
+            self.dtype,
+            data_fragments=self.model_mlmm_embedding,
+        )
 
         # Prepare result dictionary
         results = {}
@@ -1301,15 +1346,21 @@ class BaseModel(torch.nn.Module):
         else:
             positions_dipole = batch['positions']
 
-        # In case of non-zero system charges, shift origin to center of
-        # mass
+        # In case of non-zero system charges (and even for neutral systems),
+        # shift origin to center of mass
         if 'positions_com' in batch:
+
+            # Take stored center of mass positions when available
             positions_com = batch['positions_com']
+
         else:
+
+            # Get atom masses and sum up to system masses
             atomic_masses = self.atomic_masses[batch['atomic_numbers']]
             system_mass = torch.zeros_like(batch['charge']).scatter_add_(
                 0, batch['sys_i'], atomic_masses)
 
+            # Compute systems center of masses
             system_com = torch.zeros(
                 (batch['atoms_number'].size(0), 3),
                 device=self.device, dtype=self.dtype)
@@ -1320,12 +1371,21 @@ class BaseModel(torch.nn.Module):
                     ).reshape(-1, 3)
                 / system_mass.unsqueeze(-1)
                 )
+
+            # Shift positions origin into center of mass
             positions_com = positions_dipole - system_com[batch['sys_i']]
 
+            # Store centered atom positions for potential subsequent use
+            batch['positions_com'] = positions_com
+
         # Compute molecular dipole moment from atomic charges
-        batch['dipole'] = torch.zeros_like(system_com).scatter_add_(
-            0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-            batch['atomic_charges'].unsqueeze(-1)*positions_com)
+        batch['dipole'] = torch.zeros(
+            (batch['atoms_number'].size(0), 3),
+            device=self.device,
+            dtype=self.dtype).scatter_add_(
+                0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                batch['atomic_charges'].unsqueeze(-1)*positions_com)
+        batch['dipole_from_charges'] = batch['dipole'].clone()
 
         # Refine molecular dipole moment with atomic dipole moments
         if self.model_atomic_dipoles:
@@ -1361,53 +1421,46 @@ class BaseModel(torch.nn.Module):
         else:
             positions_quadrupole = batch['positions']
 
-        # Shift origin to center of geometry
-        system_cog = torch.zeros(
-            (batch['atoms_number'].size(0), 3),
-            device=self.device, dtype=self.dtype)
-        system_cog = (
-            system_cog.scatter_add_(
-                0,
-                batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-                positions_quadrupole
-                ).reshape(-1, 3)
-            / batch['atoms_number'].unsqueeze(-1)
-            )
-        positions_cog = positions_quadrupole - system_cog[batch['sys_i']]
+        # In case of non-zero system charges (and even for neutral systems),
+        # shift origin to center of mass
+        if 'positions_com' in batch:
 
-#         # In case of non-zero system charges, shift origin to center of
-#         # mass
-#         if 'positions_com' in batch:
-#             positions_com = batch['positions_com']
-#         else:
-#             atomic_masses = self.atomic_masses[batch['atomic_numbers']]
-#             system_mass = torch.zeros_like(batch['charge']).scatter_add_(
-#                 0, batch['sys_i'], atomic_masses)
-#         
-#             system_com = torch.zeros(
-#                 (batch['atoms_number'].size(0), 3),
-#                 device=self.device, dtype=self.dtype)
-#             system_com = (
-#                 system_com.scatter_add_(
-#                     0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-#                     atomic_masses.unsqueeze(-1)*positions_quadrupole
-#                     ).reshape(-1, 3)
-#                 / system_mass.unsqueeze(-1)
-#                 )
-#             positions_com = positions_quadrupole - system_com[batch['sys_i']]
+            # Take stored center of mass positions when available
+            positions_com = batch['positions_com']
 
-        # Compute detraced outer product
-        outer_product = positions_cog.unsqueeze(-1)*positions_cog.unsqueeze(-2)
-        # outer_product = positions_com.unsqueeze(-1)*positions_com.unsqueeze(-2)
-        # outer_product = (
-        #     positions_quadrupole.unsqueeze(-1)
-        #     * positions_quadrupole.unsqueeze(-2))
-        detraced_outer_product = (
-            3.0*outer_product
+        else:
+
+            # Get atom masses and sum up to system masses
+            atomic_masses = self.atomic_masses[batch['atomic_numbers']]
+            system_mass = torch.zeros_like(batch['charge']).scatter_add_(
+                0, batch['sys_i'], atomic_masses)
+
+            # Compute systems center of masses
+            system_com = torch.zeros(
+                (batch['atoms_number'].size(0), 3),
+                device=self.device, dtype=self.dtype)
+            system_com = (
+                system_com.scatter_add_(
+                    0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
+                    atomic_masses.unsqueeze(-1)*positions_quadrupole
+                    ).reshape(-1, 3)
+                / system_mass.unsqueeze(-1)
+                )
+
+            # Shift positions origin into center of mass
+            positions_com = positions_quadrupole - system_com[batch['sys_i']]
+
+            # Store centered atom positions for potential subsequent use
+            batch['positions_com'] = positions_com
+
+        # Compute traceless outer product from center of mass positions
+        outer_product = positions_com.unsqueeze(-1)*positions_com.unsqueeze(-2)
+        traceless_outer_product = (
+            outer_product
             - torch.diag_embed(
                 torch.tile(
                     outer_product.diagonal(
-                        dim1=-2, dim2=-1).sum(
+                        dim1=-2, dim2=-1).mean(
                             dim=-1, keepdim=True),
                     (1, 3)
                 )
@@ -1422,17 +1475,9 @@ class BaseModel(torch.nn.Module):
                 0,
                 batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
                 batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
-                * detraced_outer_product
+                * traceless_outer_product
             )
-
-        # print(batch['quadrupole'][0])
-        # print(batch['atomic_charges'][:3])
-        # print(detraced_outer_product[:3])
-        # print(
-        #     (batch['atomic_charges'].unsqueeze(-1).unsqueeze(-1)
-        #     * detraced_outer_product)[:3])
-        # print(batch['reference']['quadrupole'][:9].reshape(3,3))
-        # exit()
+        batch['quadrupole_from_charges'] = batch['quadrupole'].clone()
 
         # Refine molecular quadrupole moment with atomic quadrupole moments
         if self.model_atomic_quadrupoles:

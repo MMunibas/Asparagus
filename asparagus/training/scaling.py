@@ -27,6 +27,7 @@ def set_property_scaling_estimation(
     atomic_energies_guess: Optional[bool] = True,
     set_shift_term: Optional[bool] = True,
     set_scaling_factor: Optional[bool] = True,
+    properties_exception: Optional[List[str]] = ['atomic_charges'],
 ):
     """
     Estimate model property scaling parameters and prepare respective
@@ -55,6 +56,9 @@ def set_property_scaling_estimation(
         If True, set or update the shift term. Else, keep previous value.
     set_scaling_factor: bool, optional, default True
         If True, set or update the scaling factor. Else, keep previous value.
+    properties_exception: list(str), optional, default ['atomic_charges']
+        Properties exception list which should not scaled, as it doesn't
+        provide good results in principle.
 
     """
 
@@ -64,6 +68,7 @@ def set_property_scaling_estimation(
     for prop in properties:
         if (
             prop in data_loader.data_properties
+            and prop not in properties_exception
             and prop not in properties_available
         ):
             properties_available.append(prop)
@@ -296,8 +301,15 @@ def get_model_prediction_and_reference_properties(
             properties_reference[prop].append(
                 batch[prop].cpu().detach())
         for prop in properties:
-            properties_reference[prop].append(
-                batch['reference'][prop].cpu().detach())
+            if (
+                'ml_idx' in batch
+                and batch[prop].shape[0] != batch['reference'][prop].shape[0] 
+            ):
+                properties_reference[prop].append(
+                    batch['reference'][prop][batch['ml_idx']].cpu().detach())
+            else:
+                properties_reference[prop].append(
+                    batch['reference'][prop].cpu().detach())
 
     # Concatenate prediction and reference results
     for prop, item in properties_prediction.items():

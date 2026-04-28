@@ -6,6 +6,7 @@ import torch
 
 from asparagus import utils
 from asparagus import layer
+from asparagus import module
 
 # Import OpenMM modules if possible
 try:
@@ -21,16 +22,18 @@ except ModuleNotFoundError as e:
 __all__ = ['OpenMM_Calculator']
 
 OpenMM_calculator_units = {
-    'positions':        'nm',
-    'energy':           'kJ/mol',
-    'atomic_energies':  'kJ/mol',
-    'forces':           'kJ/mol/nm',
-    'hessian':          'kJ/mol/nm/nm',
-    'charge':           'e',
-    'atomic_charges':   'e',
-    'dipole':           'e*Ang',
-    'atomic_dipoles':   'e*Ang',
-    'mass':             'amu',
+    'positions':            'nm',
+    'energy':               'kJ/mol',
+    'atomic_energies':      'kJ/mol',
+    'forces':               'kJ/mol/nm',
+    'hessian':              'kJ/mol/nm/nm',
+    'charge':               'e',
+    'atomic_charges':       'e',
+    'dipole':               'e*Ang',
+    'atomic_dipoles':       'e*Ang',
+    'quadrupole':           'e*Ang',
+    'atomic_quadrupoles':   'e*Ang',
+    'mass':                 'amu',
     }
 
 
@@ -391,7 +394,10 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.model_unit_properties,
                 self.mlmm_lambda,
                 atomic_dipoles=self.model_calculator.model_atomic_dipoles,
-                **kwargs)
+                atomic_quadrupoles=(
+                    self.model_calculator.model_atomic_quadrupoles),
+                **kwargs
+            )
 
         else:
 
@@ -406,7 +412,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             )
         self.ml_fragment = 0
         self.ml_neighbor_list_calc = (
-            asparagus_module.TorchNeighborListRangeSeparated(
+            module.TorchNeighborListRangeSeparated(
                     self.ml_cutoffs,
                     self.device,
                     self.dtype,
@@ -417,7 +423,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         # units
         self.mm_fragment = 1
         self.mlmm_neighbor_list_calc = (
-            asparagus_module.TorchNeighborListRangeSeparatedMLMM(
+            module.TorchNeighborListRangeSeparatedMLMM(
                 self.mlmm_cutoff,
                 self.device,
                 self.dtype,
@@ -651,12 +657,11 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     device=self.device
                     )
                 
-                # Check input device
-                if positions.device != self.device:
-                    positions = positions.to(device=self.device)
+                # Check input device and dtype
+                positions = positions.to(device=self.device, dtype=self.dtype)
                 if boxvectors is not None and boxvectors.device != self.device:
                     boxvectors = boxvectors.to(
-                        device=self.device)
+                        device=self.device, dtype=self.dtype)
 
                 # Update system batch with ML/MM inputs
                 self.batch['positions'] = positions/self.conversion_positions
@@ -728,10 +733,10 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             )
 
         # Convert model force instance to TorchScript
-        module = torch.jit.script(modelForce)
+        torch_model = torch.jit.script(modelForce)
 
         # Create the TorchForce and add it to the system
-        force = openmmtorch.TorchForce(module)
+        force = openmmtorch.TorchForce(torch_model)
         force.setForceGroup(forceGroup)
         force.setUsesPeriodicBoundaryConditions(self.pbc)
         system.addForce(force)
@@ -775,7 +780,10 @@ class MLMM_electrostatics(torch.nn.Module):
                         - (dV_Coulomb/dr)|r_cutoff  * (r - r_cutoff)
     atomic_dipoles: bool, optional, default False
         Flag if atomic dipoles are predicted and to include in the
-        electrostatic interaction potential computation
+        electrostatic interaction potential computation.
+    atomic_quadrupoles: bool, optional, default False
+        Flag if atomic quadrupoles are predicted and to include in the
+        electrostatic interaction potential computation.
     **kwargs
         Additional keyword arguments.
 
@@ -792,6 +800,7 @@ class MLMM_electrostatics(torch.nn.Module):
         switch_fn: Union[str, object] = 'Poly6_range',
         truncation: str = 'potential',
         atomic_dipoles: bool = False,
+        atomic_quadrupoles: bool = False,
         **kwargs
     ):
 
@@ -820,19 +829,25 @@ class MLMM_electrostatics(torch.nn.Module):
                 self.cutoff,
                 self.ke,
                 self.switch_fn,
-                atomic_dipoles)
+                atomic_dipoles,
+                atomic_quadrupoles,
+            )
         elif truncation.lower() == 'potential':
             self.potential_fn = MLMM_electrostatics_ShiftedPotential(
                 self.cutoff,
                 self.ke,
                 self.switch_fn,
-                atomic_dipoles)
+                atomic_dipoles,
+                atomic_quadrupoles,
+            )
         elif truncation.lower() in ['force', 'forces']:
             self.potential_fn = MLMM_electrostatics_ShiftedForce(
                 self.cutoff,
                 self.ke,
                 self.switch_fn,
-                atomic_dipoles)
+                atomic_dipoles,
+                atomic_quadrupoles,
+            )
         else:
             raise SyntaxError(
                 "Truncation method of the Coulomb potential "
@@ -954,9 +969,12 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
     switch_fn: callable
         Switch off function to turn of electrostatics for pair distances
         between cuton and cutoff radius
-    atomic_dipoles: bool, optional, default False
+    atomic_dipoles: bool
         Flag if atomic dipoles are predicted and to include in the
-        electrostatic interaction potential computation
+        electrostatic interaction potential computation.
+    atomic_quadrupoles: bool
+        Flag if atomic quadrupoles are predicted and to include in the
+        electrostatic interaction potential computation.
 
     """
 
@@ -966,6 +984,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         ke: float,
         switch_fn: Callable,
         atomic_dipoles: bool,
+        atomic_quadrupoles: bool,
     ):
 
         super(MLMM_electrostatics_NoShift, self).__init__()
@@ -975,6 +994,14 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         self.ke = ke
         self.switch_fn = switch_fn
         self.atomic_dipoles = atomic_dipoles
+        self.atomic_quadrupoles = atomic_quadrupoles
+        
+        # Atomic quadrupoles can only be included if atomic dipoles are 
+        # included as well
+        if not self.atomic_dipoles and self.atomic_quadrupoles:
+            raise SyntaxError(
+                "Electrostatic interaction including atomic quadrupoles also "
+                "requires the inclusion of atomic dipoles!")
 
         return
 
@@ -998,39 +1025,104 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         """
 
         # Compute reciprocal distances and cutoff shifts
-        distances = batch['mlmm_distances']
-        chi = 1.0/distances
+        mlmm_distances = batch['mlmm_distances']
+        chi = 1.0/mlmm_distances
 
         # Gather atomic charge pairs
         atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_i']]
         atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_j']]
 
-        # Compute damped charge-charge electrostatics
-        Eelec = atomic_charges_i*atomic_charges_j*chi
+        # Compute B terms, G terms and MLMM electrostatic interaction potential
+        # according to expressions in https://doi.org/10.3390/ijms21010277 
+        # and from implementation of AMP (https://doi.org/10.1021/jacs.4c17015)
+        B0 = chi
+        G0 = atomic_charges_i*atomic_charges_j
+        Eelec = B0*G0
 
-        # Compute damped charge-dipole and dipole-dipole electrostatics
-        if self.atomic_dipoles:
+        if self.atomic_dipoles or self.atomic_quadrupoles:
 
-            # Compute powers of damped reciprocal distances
+            # Compute reciprocal distances and cutoff shifts
             chi2 = chi**2
 
-            # Adjust atom pair vectors
-            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+            # Compute B terms, G terms and MLMM interaction potential
+            B1 = B0/chi2
+            G1 = torch.sum(
+                (
+                    batch['atomic_dipoles'][batch['mlmm_idx_i']]
+                    * batch['mlmm_vectors']
+                ),
+                dim=1,
+                keepdim=False
+            )*atomic_charges_j
+                
+            Eelec = Eelec + B1*G1
 
-            # Gather atomic dipole pairs
-            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_i']]
+            if self.atomic_quadrupoles:
 
-            # Compute dot products of atom pair vector and atomic dipole
-            dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+                # Compute detraced outer product of not-normalized atom pair
+                # connection vectors
+                mlmm_outer_product = (
+                    batch['mlmm_vectors'].unsqueeze(-1)
+                    * batch['mlmm_vectors'].unsqueeze(-2)
+                )
+                mlmm_traceless_outer_product = (
+                    mlmm_outer_product
+                    - torch.diag_embed(
+                        torch.tile(
+                            mlmm_outer_product.diagonal(
+                                dim1=-2, dim2=-1).mean(
+                                    dim=-1, keepdim=True),
+                            (1, 3)
+                        )
+                    )
+                )
+                                
+                # Compute B terms, G terms and MLMM interaction potential
+                B2 = 3.*B1/chi2
+                G2 = torch.sum(
+                    (
+                        batch['atomic_quadrupoles'][batch['mlmm_idx_i']]
+                        * mlmm_traceless_outer_product
+                    ),
+                    dim=(1, 2)
+                )*atomic_charges_j
 
-            # Compute damped charge-dipole electrostatics
-            Eelec = Eelec + atomic_charges_j*dot_ji*chi2
+                Eelec = Eelec - B2*G2
+
+        # # Compute reciprocal distances and cutoff shifts
+        # mlmm_distances = batch['mlmm_distances']
+        # chi = 1.0/mlmm_distances
+        # 
+        # # Gather atomic charge pairs
+        # atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_i']]
+        # atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_j']]
+        # 
+        # # Compute damped charge-charge electrostatics
+        # Eelec = atomic_charges_i*atomic_charges_j*chi
+        # 
+        # # Compute damped charge-dipole and dipole-dipole electrostatics
+        # if self.atomic_dipoles:
+        # 
+        #     # Compute powers of damped reciprocal distances
+        #     chi2 = chi**2
+        # 
+        #     # Adjust atom pair vectors
+        #     chi_vectors = batch['mlmm_vectors']/mlmm_distances.unsqueeze(-1)
+        # 
+        #     # Gather atomic dipole pairs
+        #     atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_i']]
+        # 
+        #     # Compute dot products of atom pair vector and atomic dipole
+        #     dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+        # 
+        #     # Compute damped charge-dipole electrostatics
+        #     Eelec = Eelec + atomic_charges_j*dot_ji*chi2
 
         # Sum electrostatic contributions
         Eelec = self.ke*Eelec
 
         # Apply switch off function
-        Eelec = Eelec*self.switch_fn(distances)
+        Eelec = Eelec*self.switch_fn(mlmm_distances)
 
         return Eelec
 
@@ -1050,9 +1142,12 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
     switch_fn: callable
         Switch off function to turn of electrostatics for pair distances
         between cuton and cutoff radius
-    atomic_dipoles: bool, optional, default False
+    atomic_dipoles: bool
         Flag if atomic dipoles are predicted and to include in the
-        electrostatic interaction potential computation
+        electrostatic interaction potential computation.
+    atomic_quadrupoles: bool
+        Flag if atomic quadrupoles are predicted and to include in the
+        electrostatic interaction potential computation.
 
     """
 
@@ -1062,6 +1157,7 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
         ke: float,
         switch_fn: Callable,
         atomic_dipoles: bool,
+        atomic_quadrupoles: bool,
         **kwargs
     ):
 
@@ -1072,6 +1168,14 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
         self.ke = ke
         self.switch_fn = switch_fn
         self.atomic_dipoles = atomic_dipoles
+        self.atomic_quadrupoles = atomic_quadrupoles
+        
+        # Atomic quadrupoles can only be included if atomic dipoles are 
+        # included as well
+        if not self.atomic_dipoles and self.atomic_quadrupoles:
+            raise SyntaxError(
+                "Electrostatic interaction including atomic quadrupoles also "
+                "requires the inclusion of atomic dipoles!")
 
         return
 
@@ -1094,42 +1198,111 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
 
         """
 
-        # Compute damped reciprocal distances and cutoff shifts
-        distances = batch['mlmm_distances']
-        chi = 1.0/distances
+        # Compute reciprocal distances and cutoff shifts
+        mlmm_distances = batch['mlmm_distances']
+        chi = 1.0/mlmm_distances
         chi_shift = 1.0/self.cutoff
 
         # Gather atomic charge pairs
         atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_i']]
         atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_j']]
 
-        # Compute damped charge-charge electrostatics
-        Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
+        # Compute B terms, G terms and MLMM electrostatic interaction potential
+        # according to expressions in https://doi.org/10.3390/ijms21010277 
+        # and from implementation of AMP (https://doi.org/10.1021/jacs.4c17015)
+        B0 = chi - chi_shift
+        G0 = atomic_charges_i*atomic_charges_j
+        Eelec = B0*G0
 
-        # Compute damped charge-dipole and dipole-dipole electrostatics
-        if self.atomic_dipoles:
+        if self.atomic_dipoles or self.atomic_quadrupoles:
 
-            # Compute powers of damped reciprocal distances
+            # Compute reciprocal distances and cutoff shifts
             chi2 = chi**2
+            chi3 = chi2*chi
             chi2_shift = chi_shift**2
+            chi3_shift = chi2_shift*chi_shift
 
-            # Adjust atom pair vectors
-            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+            # Compute B terms, G terms and MLMM interaction potential
+            B1 = chi3 - chi3_shift
+            G1 = torch.sum(
+                (
+                    batch['atomic_dipoles'][batch['mlmm_idx_i']]
+                    * batch['mlmm_vectors']
+                ),
+                dim=1,
+                keepdim=False
+            )*atomic_charges_j
+                
+            Eelec = Eelec + B1*G1
 
-            # Gather atomic dipole pairs
-            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_i']]
+            if self.atomic_quadrupoles:
 
-            # Compute dot products of atom pair vector and atomic dipole
-            dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+                # Compute detraced outer product of not-normalized atom pair
+                # connection vectors
+                mlmm_outer_product = (
+                    batch['mlmm_vectors'].unsqueeze(-1)
+                    * batch['mlmm_vectors'].unsqueeze(-2)
+                )
+                mlmm_traceless_outer_product = (
+                    mlmm_outer_product
+                    - torch.diag_embed(
+                        torch.tile(
+                            mlmm_outer_product.diagonal(
+                                dim1=-2, dim2=-1).mean(
+                                    dim=-1, keepdim=True),
+                            (1, 3)
+                        )
+                    )
+                )
+                                
+                # Compute B terms, G terms and MLMM interaction potential
+                B2 = 3.*(chi2*chi3 - chi2_shift*chi3_shift)
+                G2 = torch.sum(
+                    (
+                        batch['atomic_quadrupoles'][batch['mlmm_idx_i']]
+                        * mlmm_traceless_outer_product
+                    ),
+                    dim=(1, 2)
+                )*atomic_charges_j
 
-            # Compute damped charge-dipole electrostatics
-            Eelec = Eelec + atomic_charges_j*dot_ji*(chi2 - chi2_shift)
+                Eelec = Eelec - B2*G2
+
+        # # Compute damped reciprocal distances and cutoff shifts
+        # mlmm_distances = batch['mlmm_distances']
+        # chi = 1.0/mlmm_distances
+        # chi_shift = 1.0/self.cutoff
+        # 
+        # # Gather atomic charge pairs
+        # atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_i']]
+        # atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_j']]
+        # 
+        # # Compute damped charge-charge electrostatics
+        # Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
+        # 
+        # # Compute damped charge-dipole and dipole-dipole electrostatics
+        # if self.atomic_dipoles:
+        # 
+        #     # Compute powers of damped reciprocal distances
+        #     chi2 = chi**2
+        #     chi2_shift = chi_shift**2
+        # 
+        #     # Adjust atom pair vectors
+        #     chi_vectors = batch['mlmm_vectors']/mlmm_distances.unsqueeze(-1)
+        # 
+        #     # Gather atomic dipole pairs
+        #     atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_i']]
+        # 
+        #     # Compute dot products of atom pair vector and atomic dipole
+        #     dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+        # 
+        #     # Compute damped charge-dipole electrostatics
+        #     Eelec = Eelec + atomic_charges_j*dot_ji*(chi2 - chi2_shift)
 
         # Sum electrostatic contributions
         Eelec = self.ke*Eelec
 
         # Apply switch off function
-        Eelec = Eelec*self.switch_fn(distances)
+        Eelec = Eelec*self.switch_fn(mlmm_distances)
 
         return Eelec
 
@@ -1149,9 +1322,12 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
     switch_fn: callable
         Switch off function to turn of electrostatics for pair distances
         between cuton and cutoff radius
-    atomic_dipoles: bool, optional, default False
+    atomic_dipoles: bool
         Flag if atomic dipoles are predicted and to include in the
-        electrostatic interaction potential computation
+        electrostatic interaction potential computation.
+    atomic_quadrupoles: bool
+        Flag if atomic quadrupoles are predicted and to include in the
+        electrostatic interaction potential computation.
 
     """
 
@@ -1172,6 +1348,14 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
         self.ke = ke
         self.switch_fn = switch_fn
         self.atomic_dipoles = atomic_dipoles
+        self.atomic_quadrupoles = atomic_quadrupoles
+        
+        # Atomic quadrupoles can only be included if atomic dipoles are 
+        # included as well
+        if not self.atomic_dipoles and self.atomic_quadrupoles:
+            raise SyntaxError(
+                "Electrostatic interaction including atomic quadrupoles also "
+                "requires the inclusion of atomic dipoles!")
 
         return
 
@@ -1194,47 +1378,117 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
 
         """
 
-        # Compute damped reciprocal distances and cutoff shifts
-        distances = batch['mlmm_distances']
-        chi = 1.0/distances
-        chi_shift = 2.0/self.cutoff - distances/self.cutoff2
+
+        # Compute reciprocal distances and cutoff shifts
+        mlmm_distances = batch['mlmm_distances']
+        chi = 1.0/mlmm_distances
+        chi_shift = 1.0/self.cutoff
 
         # Gather atomic charge pairs
         atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_i']]
         atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_j']]
 
-        # Compute damped charge-charge electrostatics
-        Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
+        # Compute B terms, G terms and MLMM electrostatic interaction potential
+        # according to expressions in https://doi.org/10.3390/ijms21010277 
+        # and from implementation of AMP (https://doi.org/10.1021/jacs.4c17015)
+        B0 = chi - chi_shift
+        G0 = atomic_charges_i*atomic_charges_j
+        Eelec = B0*G0
 
-        # Compute damped charge-dipole and dipole-dipole electrostatics
-        if self.atomic_dipoles:
+        if self.atomic_dipoles or self.atomic_quadrupoles:
 
-            # Compute powers of damped reciprocal distances
+            # Compute reciprocal distances and cutoff shifts
             chi2 = chi**2
-            chi2_shift = (
-                3.0/self.cutoff2 - 2.0*distances/self.cutoff3)
-
-            # Compute powers of damped reciprocal distances
-            chi2 = chi**2
+            chi3 = chi2*chi
             chi2_shift = chi_shift**2
+            chi3_shift = chi_shift2*chi_shift
 
-            # Adjust atom pair vectors
-            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+            # Compute B terms, G terms and MLMM interaction potential
+            B1 = chi3 - chi3_shift
+            G1 = torch.sum(
+                (
+                    batch['atomic_dipoles'][batch['mlmm_idx_i']]
+                    * batch['mlmm_vectors']
+                ),
+                dim=1,
+                keepdim=False
+            )*atomic_charges_j
+                
+            Eelec = Eelec + B1*G1
 
-            # Gather atomic dipole pairs
-            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_i']]
+            if self.atomic_quadrupoles:
 
-            # Compute dot products of atom pair vector and atomic dipole
-            dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+                # Compute detraced outer product of not-normalized atom pair
+                # connection vectors
+                mlmm_outer_product = (
+                    batch['mlmm_vectors'].unsqueeze(-1)
+                    * batch['mlmm_vectors'].unsqueeze(-2)
+                )
+                mlmm_traceless_outer_product = (
+                    mlmm_outer_product
+                    - torch.diag_embed(
+                        torch.tile(
+                            mlmm_outer_product.diagonal(
+                                dim1=-2, dim2=-1).mean(
+                                    dim=-1, keepdim=True),
+                            (1, 3)
+                        )
+                    )
+                )
+                                
+                # Compute B terms, G terms and MLMM interaction potential
+                B2 = 3.*(chi2*chi3 - chi2_shift*chi3_shift)
+                G2 = torch.sum(
+                    (
+                        batch['atomic_quadrupoles'][batch['mlmm_idx_i']]
+                        * mlmm_traceless_outer_product
+                    ),
+                    dim=(1, 2)
+                )*atomic_charges_j
 
-            # Compute damped charge-dipole electrostatics
-            Eelec = Eelec + atomic_charges_j*dot_ji*(chi2 - chi2_shift)
+                Eelec = Eelec - B2*G2
+
+        # # Compute damped reciprocal distances and cutoff shifts
+        # mlmm_distance = batch['mlmm_distances']
+        # chi = 1.0/mlmm_distances
+        # chi_shift = 2.0/self.cutoff - mlmm_distances/self.cutoff2
+        # 
+        # # Gather atomic charge pairs
+        # atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_i']]
+        # atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_j']]
+        # 
+        # # Compute damped charge-charge electrostatics
+        # Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
+        # 
+        # # Compute damped charge-dipole and dipole-dipole electrostatics
+        # if self.atomic_dipoles:
+        # 
+        #     # Compute powers of damped reciprocal distances
+        #     chi2 = chi**2
+        #     chi2_shift = (
+        #         3.0/self.cutoff2 - 2.0*mlmm_distances/self.cutoff3)
+        # 
+        #     # Compute powers of damped reciprocal distances
+        #     chi2 = chi**2
+        #     chi2_shift = chi_shift**2
+        # 
+        #     # Adjust atom pair vectors
+        #     chi_vectors = batch['mlmm_vectors']/mlmm_distances.unsqueeze(-1)
+        # 
+        #     # Gather atomic dipole pairs
+        #     atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_i']]
+        # 
+        #     # Compute dot products of atom pair vector and atomic dipole
+        #     dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
+        # 
+        #     # Compute damped charge-dipole electrostatics
+        #     Eelec = Eelec + atomic_charges_j*dot_ji*(chi2 - chi2_shift)
 
         # Sum electrostatic contributions
         Eelec = self.ke*Eelec
 
         # Apply switch off function
-        Eelec = Eelec*self.switch_fn(distances)
+        Eelec = Eelec*self.switch_fn(mlmm_distances)
 
         return Eelec
 

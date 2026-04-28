@@ -1511,16 +1511,19 @@ class DataReader():
 
         # Prepare header
         message = (
-            "Property assignment from database "
-            + f"'{data_source[0]:s}'!\n"
-            + f" {'Load':4s} |"
-            + f" {'Property Label':<14s} |"
+            f" {'Load':4s} |"
+            + f" {'Property Label':<18s} |"
             + f" {'Data Unit':<14s} |"
-            + f" {'Source Label':<14s} |"
+            + f" {'Source Label':<18s} |"
             + f" {'Source Unit':<14s} |"
             + f" {'Conversion Fac.':<14s}\n"
-            + "-"*(7 + 17*5)
-            + "\n")
+        )
+        message += "-"*len(message) + "\n"
+        message = (
+            "Property assignment from database "
+            + f"'{data_source[0]:s}'!\n"
+            + message
+        )
 
         # Iterate over properties
         for data_prop, source_prop in assigned_properties.items():
@@ -1558,12 +1561,20 @@ class DataReader():
 
             message += (
                 f" {load_label:4s} |"
-                + f" {data_prop:<14s} |"
+                + f" {data_prop:<18s} |"
                 + f" {data_unit_property:<14s} |"
-                + f" {source_prop:<14s} |"
+                + f" {source_prop:<18s} |"
                 + f" {source_unit_property:<14s} |"
                 + f" {unit_conversion[data_prop]:11.9e}\n"
-                )
+            )
+
+        # If quadrupole is available, add the remark, that the quadrupole is
+        # converted to its traceless version
+        if 'quadrupole' in assigned_properties:
+            message += (
+                "*Molecular quadrupole moment is converted to its traceless "
+                + "form.\n"
+            )
 
         # Print property information
         self.logger.info(message)
@@ -1630,6 +1641,10 @@ class DataReader():
                         + "in results dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
+
+        # Detrace molecular quadrupole if available
+        if 'quadrupole' in atoms_properties:
+            atoms_properties = self.detrace_quadrupole(atoms_properties)
 
         return atoms_properties
 
@@ -1715,6 +1730,10 @@ class DataReader():
                         * item[idx][:source['atoms_number'][idx]])
                 elif prop in load_properties:
                     atoms_properties[prop] = conversion[prop]*item[idx]
+                
+            # Detrace molecular quadrupole if available
+            if 'quadrupole' in atoms_properties:
+                atoms_properties = self.detrace_quadrupole(atoms_properties)
 
             # Add atoms system data
             all_atoms_properties.append(atoms_properties)
@@ -1807,6 +1826,11 @@ class DataReader():
                 atoms_properties[prop] = (
                     conversion[prop]*source[item])
 
+        # Detrace molecular quadrupole if available
+        if 'quadrupole' in atoms_properties:
+            atoms_properties['quadrupole'] = self.detrace_quadrupole(
+                atoms_properties['quadrupole'])
+
         return atoms_properties
 
     def collect_from_atoms(
@@ -1874,6 +1898,7 @@ class DataReader():
                     + "atoms info dictionary!")
         else:
             atoms_properties['charge'] = 0.0
+
         if 'fragment_numbers' in infos:
             atoms_properties['fragment_numbers'] = infos['fragment_numbers']
         elif (
@@ -1905,6 +1930,10 @@ class DataReader():
                         + "in atoms info dictionary (None)!")
                 atoms_properties[prop] = (
                     conversion[prop]*infos[prop])
+
+        # Detrace molecular quadrupole if available
+        if 'quadrupole' in atoms_properties:
+            atoms_properties = self.detrace_quadrupole(atoms_properties)
 
         return atoms_properties
 
@@ -2043,4 +2072,30 @@ class DataReader():
                     source_metadata['data_atomic_energies_scaling'][atom]]
 
         return source_metadata
+
+    def detrace_quadrupole(
+        self,
+        atoms_properties: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Convert any molecular quadrupole to its traceless form.
+
+        Parameters
+        ----------
+        atoms_properties: dict(str, any)
+            System property dictionary
+
+        Returns
+        -------
+        dict(str, any)
+            System property dictionary with traceless molecular quadrupole
+            moment
+
+        """
+        atoms_properties['quadrupole'] = (
+            atoms_properties['quadrupole']
+            - np.diag(np.diag(atoms_properties['quadrupole']).mean().repeat(3))
+        )
+        return atoms_properties
+
 

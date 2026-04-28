@@ -384,7 +384,6 @@ class Configuration():
                     msg += f"Ignore parameter '{key}'.\n"
 
             elif not conflict:
-
                 if self.is_convertible(key):
                     self.config_dict[key] = self.convert(
                         key, config_new.get(key), 'read')
@@ -423,7 +422,7 @@ class Configuration():
 
         # Convert config dictionary to json compatible dictionary
         config_dump = self.make_dumpable(self.config_dict)
-
+        
         # Check config file
         if config_file is None:
             config_file = self.config_file
@@ -457,7 +456,7 @@ class Configuration():
         for key, item in config_source.items():
 
             # Skip callable class objects
-            if utils.is_callable(item):
+            if 'dtype' not in key and utils.is_callable(item):
                 continue
 
             # Convert numeric values to integer or float
@@ -696,11 +695,14 @@ class Configuration():
 
         """
         if operation == 'dump':
-            for dlabel, dtype in settings._dtype_library.items():
+            for dlabel, dtype in settings._dtype_library_dump.items():
                 if arg is dtype:
                     return dlabel
         elif operation == 'read':
-            for dlabel, dtype in settings._dtype_library.items():
-                if arg == dlabel:
-                    return dtype
+            if utils.is_string(arg):
+                for dlabel, dtype in settings._dtype_library_read.items():
+                    if arg in dlabel:
+                        return dtype
+            else:
+                return arg
         return None

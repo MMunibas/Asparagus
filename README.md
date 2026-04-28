@@ -78,7 +78,7 @@ Please check our documentation [here](http://asparagus-bundle.readthedocs.io/en/
 - [ ] Model potentials:
    - [x] PhysNet
    - [x] PaiNN
-   - [ ] AMP
+   - [x] AMP
    - [ ] MACE
 - [x] Trainer class:
   - [x] Training of model ensemble 

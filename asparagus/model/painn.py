@@ -141,6 +141,7 @@ class Model_PaiNN(model.BaseModel):
         model_cutoff: Optional[float] = None,
         model_cuton: Optional[float] = None,
         model_switch_range: Optional[float] = None,
+        model_mlmm_cutoff: Optional[float] = None,
         model_repulsion: Optional[bool] = None,
         model_repulsion_cutoff: Optional[float] = None,
         model_repulsion_cuton: Optional[float] = None,

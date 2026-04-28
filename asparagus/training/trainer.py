@@ -449,6 +449,7 @@ class Trainer:
         reset_energy_shift: Optional[bool] = False,
         skip_property_scaling: Optional[bool] = False,
         skip_initial_testing: Optional[bool] = False,
+        mlmm_inf_cutoff: Optional[bool] = True,
         print_progress: Optional[bool] = True,
         ithread: Optional[int] = None,
         verbose: Optional[bool] = True,
@@ -485,6 +486,13 @@ class Trainer:
         skip_initial_testing: bool, optional, default False
             Skip the initial model evaluation on the reference test set, if the
             model evaluation is enabled anyways (see trainer_evaluate_testset).
+        mlmm_inf_cutoff: bool, optional, default True
+            For training purpose, set the ML-MM (electrostatic) interaction
+            cutoff to infinity, as usually the case in reference QM-MM
+            calculation (e.g. ORCA). 
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
         print_progress: bool, optional, default True
             Show  progress report.
         ithread: int, optional, default None
@@ -552,9 +560,9 @@ class Trainer:
             if verbose:    
 
                 if restart:
-                    message = "Restart"
+                    message = "Restart "
                 else:
-                    message = "Start"
+                    message = "Start "
                 message += (
                     "training from checkpoint file "
                     + f"'{checkpoint_file:s}':\n"
@@ -586,7 +594,9 @@ class Trainer:
             dtype=self.dtype)
 
         # Get model ML/MM cutoffs
-        mlmm_cutoffs = self.model_calculator.get_mlmm_cutoff_ranges()
+        mlmm_cutoffs = self.model_calculator.get_mlmm_cutoff_ranges(
+            mlmm_inf_cutoff=mlmm_inf_cutoff
+        )
 
         # Set ML/MM cutoffs for neighbor list calculation
         self.data_train.init_mlmm_neighbor_list(
@@ -716,10 +726,11 @@ class Trainer:
             self.tester.test(
                 self.model_calculator,
                 model_conversion=self.model_conversion,
+                mlmm_inf_cutoff=mlmm_inf_cutoff,
                 test_directory=self.filemanager.best_dir,
                 test_plot_correlation=True,
-                test_plot_histogram=True,
-                test_plot_residual=True,
+                test_plot_histogram=False,
+                test_plot_residual=False,
                 **kwargs)
 
         # Skip if max epochs are already reached
@@ -958,10 +969,11 @@ class Trainer:
                         self.tester.test(
                             self.model_calculator,
                             model_conversion=self.model_conversion,
+                            mlmm_inf_cutoff=mlmm_inf_cutoff,
                             test_directory=self.filemanager.best_dir,
                             test_plot_correlation=True,
-                            test_plot_histogram=True,
-                            test_plot_residual=True,
+                            test_plot_histogram=False,
+                            test_plot_residual=False,
                             verbose=verbose,
                             **kwargs)
 
@@ -1321,10 +1333,12 @@ class Trainer:
 
     def compute_metrics(
         self,
-        prediction: Dict[str, Any],
-        reference: Dict[str, Any],
+        prediction: Dict[str, torch.Tensor],
+        reference: Dict[str, torch.Tensor],
         loss_fn: Optional[Dict[str, Callable]] = None,
         loss_only: Optional[bool] = True,
+        ml_fragment: Optional[int] = 0,
+        mm_fragment: Optional[int] = 1,
     ) -> Dict[str, float]:
         """
         Compute metrics. This function evaluates the loss function.
@@ -1356,27 +1370,76 @@ class Trainer:
 
         # Initialize MAE and MSE calculator function if needed
         if not loss_only:
-            mae_fn = torch.nn.L1Loss(reduction="mean")
-            mse_fn = torch.nn.MSELoss(reduction="mean")
+            mae_fn = torch.nn.L1Loss(reduction='mean')
+            mse_fn = torch.nn.MSELoss(reduction='mean')
 
         # Iterate over training properties
         for ip, prop in enumerate(self.trainer_properties):
 
             # Check loss function input
             if loss_fn is None:
-                loss = torch.nn.SmoothL1Loss(reduction="mean")
+                loss = torch.nn.SmoothL1Loss(reduction='mean')
             else:
                 loss = loss_fn[prop]
 
             # Initialize single property metrics dictionary
             metrics[prop] = {}
 
-            # Compute loss value system-wise or atom-wise multiplied by
-            # 100 for display convenience
-            metrics[prop]['loss'] = loss(
-                torch.flatten(prediction[prop])
-                * self.model_conversion[prop],
-                torch.flatten(reference[prop]))
+            # Compute loss value system-wise or atom-wise
+            # Special case for forces in ML/MM systems: equal weighting of the
+            # ML atom forces loss and the MM atom forces loss due to 
+            # reduction='mean'
+            if prop == 'forces' and 'fragment_numbers' in prediction:
+                ml_selection = (prediction['fragment_numbers'] == ml_fragment)
+                mm_selection = (prediction['fragment_numbers'] == mm_fragment)
+                metrics[prop]['loss'] = (
+                    loss(
+                        (
+                            self.model_conversion[prop]
+                            * torch.flatten(prediction[prop][ml_selection])
+                        ),
+                        torch.flatten(reference[prop][ml_selection])
+                    )
+                    + loss(
+                        (
+                            self.model_conversion[prop]
+                            * torch.flatten(prediction[prop][mm_selection])
+                        ),
+                        torch.flatten(reference[prop][mm_selection])
+                    )
+                )
+            # Special case for dipole and quadrupole: include loss value for
+            # both molecular multipoles including atomic multipoles and 
+            # molecular multipoles just from atomic charges (monopoles) to
+            # focus on atomic charges for molecular multipole predictions and
+            # emphasize atomic multipoles just as a correction term.
+            elif prop in ['dipole', 'quadrupole']:
+                prop_from_charges = prop + '_from_charges'
+                if prop_from_charges in prediction:
+                    metrics[prop]['loss'] = 0.5*(
+                        loss(
+                            (
+                                self.model_conversion[prop]
+                                * torch.flatten(prediction[prop_from_charges])
+                            ),
+                            torch.flatten(reference[prop])
+                        )
+                        + loss(
+                            (
+                                self.model_conversion[prop]
+                                * torch.flatten(prediction[prop])
+                            ),
+                            torch.flatten(reference[prop])
+                        )
+                    )
+            else:
+                metrics[prop]['loss'] = loss(
+                    (
+                        self.model_conversion[prop]
+                        * torch.flatten(prediction[prop])
+                    ),
+                    torch.flatten(reference[prop])
+                )
 
             # Check for NaN loss value
             if torch.isnan(metrics[prop]['loss']):
@@ -1413,7 +1476,7 @@ class Trainer:
         """
 
         message = (
-            f" {'Property ':<17s} |"
+            f" {'Property ':<18s} |"
             + f" {'Model Unit':<12s} |"
             + f" {'Data Unit':<12s} |"
             + f" {'Conv. fact.':<12s} |"
@@ -1426,7 +1489,7 @@ class Trainer:
             else:
                 data_unit = self.data_units.get(prop)
             message += (
-                f" {prop:<17s} |"
+                f" {prop:<18s} |"
                 + f" {model_unit:<12s} |"
                 + f" {data_unit:<12s} |")
             if self.model_conversion.get(prop) is None:
