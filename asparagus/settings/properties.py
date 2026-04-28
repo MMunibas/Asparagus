@@ -27,6 +27,7 @@ _valid_properties = [
     'dipole',
     'quadrupole',
     'polarizability',
+    'dipole_derivative',
 ]
 
 # Alternative property label dictionary
@@ -58,7 +59,8 @@ _alt_property_labels = {
         'atom_quadrupole', 'atom_quadrupoles',
         'atom_quadropole', 'atom_quadropoles'],
     'quadrupole':           ['quadrupoles', 'quadropole', 'quadropoles'],
-    'polarizability':       ['polarizability'],
+    'polarizability':       ['polarizabilities'],
+    'dipole_derivative':    ['dipole_derivatives', 'dipder'],
     }
 
 # ASE units
@@ -78,6 +80,7 @@ _ase_units = {
     'atomic_dipoles':       'e*Ang',
     'quadrupole':           'e*Ang**2',
     'atomic_quadrupoles':   'e*Ang**2',
+    'dipole_derivative':    'e',
     }
 
 # Default property units - ASE units

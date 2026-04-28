@@ -345,6 +345,12 @@ class Trainer:
         self.data_train = self.data_container.get_dataloader('train')
         self.data_valid = self.data_container.get_dataloader('valid')
 
+        # Set ML/MM flag to dataloader
+        self.data_train.set_fragments(
+            self.model_calculator.model_mlmm_embedding)
+        self.data_valid.set_fragments(
+            self.model_calculator.model_mlmm_embedding)
+
         ###################################################################
         # # # Prepare Optimizer, Scheduler and Gradient Normalization # # #
         ###################################################################

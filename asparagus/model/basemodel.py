@@ -73,6 +73,9 @@ class BaseModel(torch.nn.Module):
         self.model_atomic_charges = False
         self.model_atomic_dipoles = False
         self.model_dipole = False
+        self.model_dipole_derivative = False
+        self.model_atomic_quadrupoles = False
+        self.model_quadrupole = False
         
         # Initialize ML/MM embedding flags
         self.model_mlmm_embedding = False
@@ -1277,7 +1280,11 @@ class BaseModel(torch.nn.Module):
             [torch.sum(batch['energy']),],
             [batch['positions'],],
             create_graph=(
-                self.training or self.model_hessian or create_graph)
+                create_graph
+                or self.training
+                or self.model_hessian
+                or self.model_dipole_derivative
+            )
         )[0]
         
         # Provoke crashing if forces are none
@@ -1289,6 +1296,7 @@ class BaseModel(torch.nn.Module):
     def compute_hessian(
         self,
         batch: Dict[str, torch.Tensor],
+        create_graph: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """
         Compute Hessian from the gradient with respect to atom positions
@@ -1298,6 +1306,9 @@ class BaseModel(torch.nn.Module):
         batch: dict(str, torch.Tensor)
             Dictionary of input and result data tensors for gradient and 
             Hessian computation
+        create_graph: bool, optional, default False
+            Parameter for 'torch.autograd.grad' to force keeping derivative
+            graph if set to true.
 
         Returns
         -------
@@ -1313,7 +1324,12 @@ class BaseModel(torch.nn.Module):
             hessian_ig = torch.autograd.grad(
                 [grad_i],
                 [batch['positions']],
-                retain_graph=(ig < dim_hessian))[0]
+                retain_graph=(ig < dim_hessian),
+                create_graph=(
+                    create_graph
+                    or self.model_dipole_derivative
+                )
+            )[0]
             if hessian_ig is not None:
                 hessian[ig] = hessian_ig.view(-1)
         batch['hessian'] = hessian
@@ -1323,6 +1339,7 @@ class BaseModel(torch.nn.Module):
     def compute_dipole(
         self,
         batch: Dict[str, torch.Tensor],
+        no_derivation: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """
         Compute the molecular dipole moment from atom-centred charges and
@@ -1337,6 +1354,13 @@ class BaseModel(torch.nn.Module):
         -------
         dict(str, torch.Tensor)
             Dictionary with additional molecular dipole prediction
+        no_derivation: bool, optional, default False
+            If True, only predict non-derived properties (e.g. no dipole
+            derivative).
+        create_graph: bool, optional, default False
+            Parameter for 'torch.autograd.grad' to force keeping derivative
+            graph if set to true. Necessary when further derivatives needs to
+            be computed from the results.
 
         """
         
@@ -1392,6 +1416,35 @@ class BaseModel(torch.nn.Module):
             batch['dipole'] = batch['dipole'].scatter_add_(
                 0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
                 batch['atomic_dipoles'])
+
+        # Compute systems dipole derivatives
+        if self.model_dipole_derivative and not no_derivation:
+
+                # Initialize dipole derivative tensor (Natoms, 3, 3)
+                dipder = torch.zeros(
+                    (batch['positions'].size(0), 3, 3),
+                    device=self.device,
+                    dtype=self.dtype,
+                )
+                
+                for ii in range(3):
+
+                    dipole_component = batch['dipole'][:, ii]
+                    grad_outputs = torch.ones_like(dipole_component)
+                    
+                    g = torch.autograd.grad(
+                        outputs=dipole_component,
+                        inputs=batch['positions'],
+                        grad_outputs=grad_outputs,
+                        retain_graph=True,
+                        create_graph=create_graph,
+                        allow_unused=True
+                    )[0]
+                    
+                    if g is not None:
+                        dipder[:, ii] = g
+                
+                batch['dipole_derivative'] = dipder
 
         return batch
 
