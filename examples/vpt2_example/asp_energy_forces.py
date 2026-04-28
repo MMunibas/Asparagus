@@ -13,11 +13,11 @@ if __name__ == "__main__":
     # What you get out from Gaussian.
     # Cartesian coordinates in angstrom, use 0.52917721092 to get Bohr.
     (natoms, deriv, charge, spin, atomtypes, coordinates) = parse_ifile(ifile)
-    
+
 #===============================================================================
 #NN part, get nn energy and force
     atoms = Atoms(atomtypes, coordinates)
-    model = Asparagus(config='your_model.json') #Replace with your model .json file
+    model = Asparagus(config='.json') #Replace with your model .json file
     calc = model.get_ase_calculator()
     atoms.calc = calc
 
@@ -30,4 +30,3 @@ if __name__ == "__main__":
 #===============================================================================
     # Produce the Gaussian input file with the supplied data
     write_ofile(ofile, energy, natoms, gradient=gradient, dipole=mu)
-
