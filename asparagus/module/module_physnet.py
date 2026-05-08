@@ -216,23 +216,7 @@ class Input_PhysNet(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            atomic_numbers : torch.Tensor(N_atoms)
-                Atomic numbers of the system
-            positions : torch.Tensor(N_atoms, 3)
-                Atomic positions of the system
-            idx_i : torch.Tensor(N_pairs)
-                Atom i pair index
-            idx_j : torch.Tensor(N_pairs)
-                Atom j pair index
-            pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
-                Position offset from periodic boundary condition
-            idx_u : torch.Tensor(N_pairs), optional, default None
-                Long-range atom u pair index
-            idx_v : torch.Tensor(N_pairs), optional, default None
-                Long-range atom v pair index
-            pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
-                Long-range position offset from periodic boundary condition
+            Dictionary of data tensors.
 
         Returns
         -------
@@ -268,18 +252,18 @@ class Input_PhysNet(torch.nn.Module):
             vectors = positions[idx_j] - positions[idx_i]
         distances = torch.norm(vectors, dim=-1)
 
-        # ML/MM approach - Point ML atom pair indices from full ML/MM system to
-        # the ML system indices (ML/MM index number of, e.g., 41 for the first
-        # ML atom in the ML/MM system becomes index 0 for the ML system).
-        if 'ml_idx_p' in batch:
-            batch['idx_i'] = batch['ml_idx_p'][idx_i]
-            batch['idx_j'] = batch['ml_idx_p'][idx_j]
-
-            # PBC supercluster approach - Point from ML atom pair index j of
-            # atoms in the image cell to the respective primary cell ML
-            # atom index,
-            if 'ml_idx_jp' in batch:
-                batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
+        # # ML/MM approach - Point ML atom pair indices from full ML/MM system to
+        # # the ML system indices (ML/MM index number of, e.g., 41 for the first
+        # # ML atom in the ML/MM system becomes index 0 for the ML system).
+        # if 'ml_idx_p' in batch:
+        #     batch['idx_i'] = batch['ml_idx_p'][idx_i]
+        #     batch['idx_j'] = batch['ml_idx_p'][idx_j]
+        # 
+        #     # PBC supercluster approach - Point from ML atom pair index j of
+        #     # atoms in the image cell to the respective primary cell ML
+        #     # atom index,
+        #     if 'ml_idx_jp' in batch:
+        #         batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
 
         # Check long-range atom pair indices
         if 'idx_u' in batch:
@@ -297,17 +281,17 @@ class Input_PhysNet(torch.nn.Module):
                 vectors_uv = positions[idx_v] - positions[idx_u]
             distances_uv = torch.norm(vectors_uv, dim=-1)
             
-            # ML/MM approach - Point ML atom pair indices from full ML/MM
-            # system to the ML system indices 
-            if 'ml_idx_p' in batch:
-                batch['idx_u'] = batch['ml_idx_p'][idx_u]
-                batch['idx_v'] = batch['ml_idx_p'][idx_v]
-                
-                # PBC supercluster approach - Point from ML atom pair index j
-                # of atoms in the image cell to the respective primary cell
-                # ML atom index.
-                if 'ml_idx_vp' in batch:
-                    batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
+            # # ML/MM approach - Point ML atom pair indices from full ML/MM
+            # # system to the ML system indices 
+            # if 'ml_idx_p' in batch:
+            #     batch['idx_u'] = batch['ml_idx_p'][idx_u]
+            #     batch['idx_v'] = batch['ml_idx_p'][idx_v]
+            #     
+            #     # PBC supercluster approach - Point from ML atom pair index j
+            #     # of atoms in the image cell to the respective primary cell
+            #     # ML atom index.
+            #     if 'ml_idx_vp' in batch:
+            #         batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
 
         else:
             
@@ -477,19 +461,7 @@ class Graph_PhysNet(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            features: torch.tensor(N_atoms, n_atombasis)
-                Atomic feature vectors
-            distances: torch.tensor(N_pairs)
-                Atom pair distances
-            cutoffs: torch.tensor(N_pairs)
-                Atom pair distance cutoffs
-            rbfs: torch.tensor(N_pairs, n_radialbasis)
-                Atom pair radial basis functions
-            idx_i : torch.Tensor(N_pairs)
-                Atom i pair index
-            idx_j : torch.Tensor(N_pairs)
-                Atom j pair index
+            Dictionary of data tensors.
 
         Returns
         -------
@@ -958,15 +930,7 @@ class Output_PhysNet(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            atoms_numbers: torch.Tensor(N_atoms)
-                List of atom numbers per system
-            atomic_charges: torch.Tensor(N_atoms)
-                List of atomic charges
-            charge: torch.Tesnsor(N_system)
-                Total charge of molecules in batch
-            sys_i: torch.Tensor(N_atoms)
-                System indices of atoms in batch
+            Dictionary of data tensors.
 
         Returns
         -------
@@ -978,9 +942,13 @@ class Output_PhysNet(torch.nn.Module):
         # Apply charge manipulation
         charge_deviation = batch['charge'].clone()
         charge_deviation = charge_deviation.scatter_add_(
-            0, batch['sys_i'], -batch['atomic_charges'])/batch['atoms_number']
+            0,
+            batch['sys_i'],
+            -batch['atomic_charges']
+        )/batch['atoms_number']
         batch['atomic_charges'] = (
-            batch['atomic_charges'] + charge_deviation[batch['sys_i']])
+            batch['atomic_charges'] + charge_deviation[batch['sys_i']]
+        )
 
         return batch
 
@@ -996,13 +964,7 @@ class Output_PhysNet(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            features_list : torch.Tensor(n_blocks, N_atoms, n_atombasis)
-                List of atom feature vectors
-            atomic_numbers: torch.Tensor(N_atoms)
-                List of atomic numbers
-            charge: torch.Tesnsor(N_system)
-                Total charge of molecules in batch
+            Dictionary of data tensors.
         verbose: bool, optional, default False
             If True, store extended model property contributions in the data
             dictionary.

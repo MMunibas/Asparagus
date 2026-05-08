@@ -246,25 +246,7 @@ class Input_AMP(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            atomic_numbers : torch.Tensor(N_atoms)
-                Atomic numbers of the system
-            positions : torch.Tensor(N_atoms, 3)
-                Atomic positions of the system
-            idx_i : torch.Tensor(N_pairs)
-                Atom i pair index
-            idx_j : torch.Tensor(N_pairs)
-                Atom j pair index
-            pbc_offset_ij : torch.Tensor(N_pairs, 3), optional, default None
-                Position offset from periodic boundary condition
-            idx_u : torch.Tensor(N_pairs), optional, default None
-                Long-range atom u pair index
-            idx_v : torch.Tensor(N_pairs), optional, default None
-                Long-range atom v pair index
-            pbc_offset_uv : torch.Tensor(N_pairs, 3), optional, default None
-                Long-range position offset from periodic boundary condition
-            fragment_numbers : torch.Tensor(N_atoms)
-                Atomic fragment index number
+            Dictionary of data tensors. 
         verbose: bool, optional, default False
             If True, store extended model property contributions in the data
             dictionary.
@@ -295,22 +277,14 @@ class Input_AMP(torch.nn.Module):
         idx_i = batch['idx_i']
         idx_j = batch['idx_j']
 
-        # ML/MM approach - Select only ML atom inputs and store original as
-        # copy in 'mlmm_*' 
-        if 'ml_idx' in batch:
-            batch['atomic_numbers'] = batch['atomic_numbers'][batch['ml_idx']]
-            batch['mlmm_sys_i'] = batch['sys_i'].clone()
-            batch['mlmm_atoms_number'] = batch['atoms_number'].clone()
-            batch['sys_i'] = batch['sys_i'][batch['ml_idx']]
-            batch['atoms_number'] = torch.bincount(batch['sys_i'])
-
         # Collect ML atom feature vectors
         features = self.atom_features(batch['atomic_numbers'])
 
         # Compute ML atom pair connection vectors
         if 'pbc_offset_ij' in batch:
             vectors = (
-                positions[idx_j] - positions[idx_i] + batch['pbc_offset_ij'])
+                positions[idx_j] - positions[idx_i] + batch['pbc_offset_ij']
+            )
         else:
             vectors = positions[idx_j] - positions[idx_i]
 
@@ -343,19 +317,19 @@ class Input_AMP(torch.nn.Module):
         # Compute ML atom pair radial basis functions
         rbfs = self.radial_fn(distances)
 
-        # ML/MM approach - Point ML atom pair indices from full ML/MM system to
-        # the ML system indices (ML/MM index number of, e.g., 41 for the first
-        # ML atom in the ML/MM system becomes index 0 for the ML system).
-        if 'ml_idx_p' in batch:
-
-            batch['idx_i'] = batch['ml_idx_p'][idx_i]
-            batch['idx_j'] = batch['ml_idx_p'][idx_j]
-
-            # PBC supercluster approach - Point from ML atom pair index j of
-            # atoms in the image cell to the respective primary cell ML
-            # atom index.
-            if 'ml_idx_jp' in batch:
-                batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
+        # # ML/MM approach - Point ML atom pair indices from full ML/MM system to
+        # # the ML system indices (ML/MM index number of, e.g., 41 for the first
+        # # ML atom in the ML/MM system becomes index 0 for the ML system).
+        # if 'ml_idx_p' in batch:
+        # 
+        #     batch['idx_i'] = batch['ml_idx_p'][idx_i]
+        #     batch['idx_j'] = batch['ml_idx_p'][idx_j]
+        # 
+        #     # PBC supercluster approach - Point from ML atom pair index j of
+        #     # atoms in the image cell to the respective primary cell ML
+        #     # atom index.
+        #     if 'ml_idx_jp' in batch:
+        #         batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
 
         # Compute distances and vectors for long-range ML atom pairs
         if 'idx_u' in batch:
@@ -368,7 +342,8 @@ class Input_AMP(torch.nn.Module):
             if 'pbc_offset_uv' in batch:
                 vectors_uv = (
                     positions[idx_v] - positions[idx_u]
-                    + batch['pbc_offset_uv'])
+                    + batch['pbc_offset_uv']
+                )
             else:
                 vectors_uv = positions[idx_v] - positions[idx_u]
 
@@ -377,21 +352,18 @@ class Input_AMP(torch.nn.Module):
             
             # Compute long-range ML atom pair vectors outer product
             vectors_uv_normalized = vectors_uv/distances_uv.unsqueeze(-1)
-            # outer_product_uv = (
-            #     vectors_uv_normalized.unsqueeze(-1)
-            #     * vectors_uv_normalized.unsqueeze(-2))
 
-            # ML/MM approach - Point ML atom pair indices from full ML/MM
+            # # ML/MM approach - Point ML atom pair indices from full ML/MM
             # system to the ML system indices 
-            if 'ml_idx_p' in batch:
-                batch['idx_u'] = batch['ml_idx_p'][idx_u]
-                batch['idx_v'] = batch['ml_idx_p'][idx_v]
-                
-                # PBC supercluster approach - Point from ML atom pair index j
-                # of atoms in the image cell to the respective primary cell
-                # ML atom index.
-                if 'ml_idx_vp' in batch:
-                    batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
+            # if 'ml_idx_p' in batch:
+            #     batch['idx_u'] = batch['ml_idx_p'][idx_u]
+            #     batch['idx_v'] = batch['ml_idx_p'][idx_v]
+            #     
+            #     PBC supercluster approach - Point from ML atom pair index v
+            #     of atoms in the image cell to the respective primary cell
+            #     ML atom index.
+            #     if 'ml_idx_vp' in batch:
+            #         batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
 
         else:
             
@@ -400,7 +372,6 @@ class Input_AMP(torch.nn.Module):
             batch['idx_v'] = batch['idx_j']
             vectors_uv = vectors
             distances_uv = distances
-            # outer_product_uv = outer_product
 
         # Assign ML atom result data
         batch['features'] = features
@@ -413,19 +384,22 @@ class Input_AMP(torch.nn.Module):
         batch['rbfs'] = rbfs
         batch['distances_uv'] = distances_uv
         batch['vectors_uv'] = vectors_uv
-        # batch['outer_product_uv'] = outer_product_uv
 
         # Assign ML-MM input data for ML charge polarization
+        mlmm_positions = batch['mlmm_positions']
         mlmm_idx_i = batch['mlmm_idx_i']
         mlmm_idx_j = batch['mlmm_idx_j']
 
         # Compute ML-MM atom pair connection vectors
         if 'mlmm_pbc_offset_ij' in batch:
             mlmm_vectors = (
-                positions[mlmm_idx_j] - positions[mlmm_idx_i]
-                + batch['mlmm_pbc_offset_ij'])
+                mlmm_positions[mlmm_idx_j] - mlmm_positions[mlmm_idx_i]
+                + batch['mlmm_pbc_offset_ij']
+            )
         else:
-            mlmm_vectors = positions[mlmm_idx_j] - positions[mlmm_idx_i]
+            mlmm_vectors = (
+                mlmm_positions[mlmm_idx_j] - mlmm_positions[mlmm_idx_i]
+            )
 
         # Compute ML-MM atom pair distances
         mlmm_distances = torch.norm(mlmm_vectors, dim=-1)
@@ -436,7 +410,8 @@ class Input_AMP(torch.nn.Module):
         # Compute ML-MM atom pair vectors outer product
         mlmm_outer_product = (
             mlmm_vectors_normalized.unsqueeze(-1)
-            * mlmm_vectors_normalized.unsqueeze(-2))
+            * mlmm_vectors_normalized.unsqueeze(-2)
+        )
 
         # Get traceless ML-MM atom pair outer product
         mlmm_traceless_outer_product = (
@@ -456,16 +431,16 @@ class Input_AMP(torch.nn.Module):
         # Compute ML-MM atom pair radial basis functions
         mlmm_rbfs = self.mlmm_radial_fn(mlmm_distances)
 
-        # ML/MM approach - Point ML/MM atom pair indices i (ML atom) from full
-        # ML/MM system to the ML system indices and store as additional entry.
-        if 'ml_idx_p' in batch:
-            batch['mlmm_idx_i'] = batch['ml_idx_p'][mlmm_idx_i]
+        # # ML/MM approach - Point ML/MM atom pair indices i (ML atom) from full
+        # # ML/MM system to the ML system indices and store as additional entry.
+        # if 'ml_idx_p' in batch:
+        #     batch['mlmm_idx_i'] = batch['ml_idx_p'][mlmm_idx_i]
 
-        # PBC supercluster approach - Point from ML/MM atom pair index j 
-        # (MM atom) of atoms in the image cell to the respective primary cell
-        # MM atom index, while keeping structure data to image atom.
-        if 'mlmm_idx_jp' in batch:
-            batch['mlmm_idx_j'] = batch['mlmm_idx_jp']
+        # # PBC supercluster approach - Point from ML/MM atom pair index j 
+        # # (MM atom) of atoms in the image cell to the respective primary cell
+        # # MM atom index, while keeping structure data to image atom.
+        # if 'mlmm_idx_jp' in batch:
+        #     batch['mlmm_idx_j'] = batch['mlmm_idx_jp']
 
         # Compute distances and vectors for long-range ML-MM atom pairs
         if 'mlmm_idx_u' in batch:
@@ -477,32 +452,33 @@ class Input_AMP(torch.nn.Module):
             # Compute long-range ML atom pair connection vectors
             if 'mlmm_pbc_offset_uv' in batch:
                 mlmm_vectors_uv = (
-                    positions[mlmm_idx_v] - positions[mlmm_idx_u]
-                    + batch['mlmm_pbc_offset_uv'])
+                    mlmm_positions[mlmm_idx_v] - mlmm_positions[mlmm_idx_u]
+                    + batch['mlmm_pbc_offset_uv']
+                )
             else:
-                mlmm_vectors_uv = positions[mlmm_idx_u] - positions[mlmm_idx_v]
+                mlmm_vectors_uv = (
+                    mlmm_positions[mlmm_idx_u] - mlmm_positions[mlmm_idx_v]
+                )
             
             # Compute long-range  ML-MM atom pair distances
             mlmm_distances_uv = torch.norm(mlmm_vectors_uv, dim=-1)
 
             # Compute long-range ML-MM atom pair vectors outer product
             mlmm_vectors_uv_normalized = (
-                mlmm_vectors_uv/mlmm_distances_uv.unsqueeze(-1))
-            # mlmm_outer_product_uv = (
-            #     mlmm_vectors_uv_normalized.unsqueeze(-1)
-            #     * mlmm_vectors_uv_normalized.unsqueeze(-2))
+                mlmm_vectors_uv/mlmm_distances_uv.unsqueeze(-1)
+            )
             
-            # ML/MM approach - Point ML/MM atom pair indices u (ML atom) from
-            # full ML/MM system to the ML system indices and store as 
-            # additional entry.
-            if 'ml_idx_p' in batch:
-                batch['mlmm_idx_u'] = batch['ml_idx_p'][mlmm_idx_u]
+            # # ML/MM approach - Point ML/MM atom pair indices u (ML atom) from
+            # # full ML/MM system to the ML system indices and store as 
+            # # additional entry.
+            # if 'ml_idx_p' in batch:
+            #     batch['mlmm_idx_u'] = batch['ml_idx_p'][mlmm_idx_u]
 
-            # PBC supercluster approach - Point from ML/MM atom pair index v 
-            # (MM atom) of atoms in the image cell to the respective primary
-            # cell MM atom index, while keeping structure data to image atom.
-            if 'mlmm_idx_vp' in batch:
-                batch['mlmm_idx_v'] = batch['mlmm_idx_vp']
+            # # PBC supercluster approach - Point from ML/MM atom pair index v 
+            # # (MM atom) of atoms in the image cell to the respective primary
+            # # cell MM atom index, while keeping structure data to image atom.
+            # if 'mlmm_idx_vp' in batch:
+            #     batch['mlmm_idx_v'] = batch['mlmm_idx_vp']
 
         else:
             
@@ -511,7 +487,6 @@ class Input_AMP(torch.nn.Module):
             batch['mlmm_idx_v'] = batch['mlmm_idx_j']
             mlmm_vectors_uv = mlmm_vectors
             mlmm_distances_uv = mlmm_distances
-            # mlmm_outer_product_uv = mlmm_outer_product
 
         # Assign ML-MM atom pair result data
         batch['mlmm_distances'] = mlmm_distances
@@ -523,7 +498,6 @@ class Input_AMP(torch.nn.Module):
         batch['mlmm_rbfs'] = mlmm_rbfs
         batch['mlmm_distances_uv'] = mlmm_distances_uv
         batch['mlmm_vectors_uv'] = mlmm_vectors_uv
-        # batch['mlmm_outer_product_uv'] = mlmm_outer_product_uv
 
         return batch
 
@@ -867,7 +841,7 @@ class Graph_AMP(torch.nn.Module):
         """
 
         # Assign input data
-        atomic_numbers = batch['atomic_numbers']
+        Natoms = batch['atomic_numbers'].size(0)
         features = batch['features']
         cutoffs = batch['cutoffs']
         rbfs = batch['rbfs']
@@ -878,25 +852,25 @@ class Graph_AMP(torch.nn.Module):
         # auxiliaries
         if self.graph_atomic_quadrupoles:
             batch['atomic_quadrupoles'] = torch.zeros(
-                (atomic_numbers.size(0), self.graph_n_messagebasis, 3, 3, ),
+                (Natoms, self.graph_n_messagebasis, 3, 3, ),
                 device=self.device,
                 dtype=self.dtype)
             batch['pol_atomic_quadrupoles'] = torch.zeros(
-                (atomic_numbers.size(0), 3, 3, ),
+                (Natoms, 3, 3, ),
                 device=self.device,
                 dtype=self.dtype)
         if self.graph_atomic_dipoles:
             batch['atomic_dipoles'] = torch.zeros(
-                (atomic_numbers.size(0), self.graph_n_messagebasis, 3, ),
+                (Natoms, self.graph_n_messagebasis, 3, ),
                 device=self.device,
                 dtype=self.dtype)
             batch['pol_atomic_dipoles'] = torch.zeros(
-                (atomic_numbers.size(0), 3, ),
+                (Natoms, 3, ),
                 device=self.device,
                 dtype=self.dtype)
         if self.graph_atomic_charges:
             batch['atomic_charges'] = torch.zeros(
-                (atomic_numbers.size(0), self.graph_n_messagebasis, 1, ),
+                (Natoms, self.graph_n_messagebasis, 1, ),
                 device=self.device,
                 dtype=self.dtype)
 
@@ -985,7 +959,7 @@ class Graph_AMP(torch.nn.Module):
             # Apply invariant message network and weight message vector with
             # distance cutoffs
             message = torch.zeros(
-                (atomic_numbers.size(0), self.n_atombasis),
+                (Natoms, self.n_atombasis),
                 device=self.device,
                 dtype=self.dtype,
                 ).scatter_add_(
@@ -1037,6 +1011,7 @@ class Graph_AMP(torch.nn.Module):
             coeffs = (
                 coefficients[2].unsqueeze(-1).unsqueeze(-1)
                 * batch['traceless_outer_product'].unsqueeze(1))
+
             idx_ic = (
                 (
                     batch['idx_i'].unsqueeze(-1).unsqueeze(-1).unsqueeze(-1)
@@ -1062,7 +1037,7 @@ class Graph_AMP(torch.nn.Module):
     def get_ml_polarization(
         self,
         batch: Dict[str, torch.Tensor],
-        atomic_charges: torch.Tensor,
+        mlmm_atomic_charges: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """
         Predict ML atoms polarization by MM atoms.
@@ -1071,7 +1046,7 @@ class Graph_AMP(torch.nn.Module):
         ---------
         batch: dict(str, torch.Tensor)
             Dictionary of data tensors
-        atomic_charges: torch.Tensor
+        mlmm_atomic_charges: torch.Tensor
             List of reference ML and MM atomic charges also listed in
             batch['reference']['atomic_charges'] but as batch is declared
             as a dictionary of tensors, torch script returns an error that way.
@@ -1083,8 +1058,13 @@ class Graph_AMP(torch.nn.Module):
 
         """
 
+        # Get ML atom indices for ML lists of the ML/MM atom indices
+        mlmm_ml_idx_i = batch['ml_idx_p'][batch['mlmm_idx_i']]
+
         # Grep ML electrostatic atomic multipoles
-        ml_atomic_dipoles = batch['atomic_dipoles'][batch['mlmm_idx_i'], 0:1]
+        ml_atomic_dipoles = (
+            batch['atomic_dipoles'][mlmm_ml_idx_i, 0:1]
+        )
 
         # Compute auxiliary variables
         dipoles_vectors = torch.sum(
@@ -1097,7 +1077,8 @@ class Graph_AMP(torch.nn.Module):
             
             # Grep ML electrostatic atomic multipoles
             ml_atomic_quadrupoles = (
-                batch['atomic_quadrupoles'][batch['mlmm_idx_i'], 0:1])
+                batch['atomic_quadrupoles'][mlmm_ml_idx_i, 0:1]
+            )
 
             quadrupoles_outer_product = torch.sum(
                 torch.sum(
@@ -1130,7 +1111,7 @@ class Graph_AMP(torch.nn.Module):
         mm_b_coefficients = self.mm_b_coefficient_block(mlmm_rbfs_features)
 
         # Compute MM electric field coefficients
-        mm_atomic_charges_j = atomic_charges[batch['mlmm_idx_j']]
+        mm_atomic_charges_j = mlmm_atomic_charges[batch['mlmm_idx_j']]
         mm_electric_field = (
             mm_atomic_charges_j/batch['mlmm_distances']**2).unsqueeze(-1)
         mm_coefficients = (
@@ -1143,7 +1124,9 @@ class Graph_AMP(torch.nn.Module):
 
         # Compute electrostatic multipole polarization correction
         coeff_pol1 = mm_coefficients[0]*batch['mlmm_vectors_normalized']
-        idx_pol1 = batch['mlmm_idx_i'].unsqueeze(-1).expand(coeff_pol1.size())
+        idx_pol1 = mlmm_ml_idx_i.unsqueeze(-1).expand(
+            coeff_pol1.size()
+        )
         batch['pol_atomic_dipoles'] = (
             ml_atomic_alphas[:, 0].unsqueeze(-1)
             * batch['pol_atomic_dipoles'].scatter_add_(
@@ -1154,8 +1137,11 @@ class Graph_AMP(torch.nn.Module):
             coeff_pol2 = (
                 mm_coefficients[1].unsqueeze(-1)
                 * batch['mlmm_traceless_outer_product'])
-            idx_pol2 = batch['mlmm_idx_i'].unsqueeze(-1).unsqueeze(-1).expand(
-                coeff_pol2.size())
+            idx_pol2 = (
+                mlmm_ml_idx_i.unsqueeze(-1).unsqueeze(-1).expand(
+                    coeff_pol2.size()
+                )
+            )
             batch['pol_atomic_quadrupoles'] = (
                 ml_atomic_alphas[:, 1].unsqueeze(-1).unsqueeze(-1)
                 * batch['pol_atomic_quadrupoles'].scatter_add_(
@@ -1463,6 +1449,7 @@ class Graph_AMP(torch.nn.Module):
             atomic_quadrupoles_quadrupoles_ij,
             atomic_quadrupoles_vectors_ij
         )
+
 
 #======================================
 # Output Module
@@ -2005,15 +1992,7 @@ class Output_AMP(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            atoms_numbers: torch.Tensor(N_atoms)
-                List of atom numbers per system
-            atomic_charges: torch.Tensor(N_atoms)
-                List of atomic charges
-            charge: torch.Tesnsor(N_system)
-                Total charge of molecules in batch
-            sys_i: torch.Tensor(N_atoms)
-                System indices of atoms in batch
+            Dictionary of data tensors.
 
         Returns
         -------
@@ -2025,9 +2004,13 @@ class Output_AMP(torch.nn.Module):
         # Apply charge manipulation
         charge_deviation = batch['charge'].clone()
         charge_deviation = charge_deviation.scatter_add_(
-            0, batch['sys_i'], -batch['atomic_charges'])/batch['atoms_number']
+            0,
+            batch['sys_i'],
+            -batch['atomic_charges']
+        )/batch['atoms_number']
         batch['atomic_charges'] = (
-            batch['atomic_charges'] + charge_deviation[batch['sys_i']])
+            batch['atomic_charges'] + charge_deviation[batch['sys_i']]
+        )
 
         return batch
 
@@ -2042,17 +2025,7 @@ class Output_AMP(torch.nn.Module):
         Parameters
         ----------
         batch: dict(str, torch.Tensor)
-            Dictionary of data tensors. Required and optional keys are:
-            atomic_numbers: torch.Tensor(N_atoms)
-                List of atomic numbers
-            features: torch.tensor(N_atoms, n_atombasis)
-                Atomic feature vectors
-            atoms_number: torch.Tesnsor(N_system)
-                Number of atoms per molecule in batch
-            charge: torch.Tesnsor(N_system)
-                Total charge of molecules in batch
-            sys_i: torch.Tensor(N_atoms)
-                System indices of atoms in batch
+            Dictionary of data tensors.
         verbose: bool, optional, default False
             If True, store extended model property contributions in the data
             dictionary.

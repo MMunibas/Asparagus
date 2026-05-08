@@ -1395,25 +1395,24 @@ class Trainer:
             # Special case for forces in ML/MM systems: equal weighting of the
             # ML atom forces loss and the MM atom forces loss due to 
             # reduction='mean'
-            if prop == 'forces' and 'fragment_numbers' in prediction:
+            if prop == 'forces' and prediction['fragmented']:
                 ml_selection = (prediction['fragment_numbers'] == ml_fragment)
                 mm_selection = (prediction['fragment_numbers'] == mm_fragment)
-                metrics[prop]['loss'] = (
-                    loss(
-                        (
-                            self.model_conversion[prop]
-                            * torch.flatten(prediction[prop][ml_selection])
-                        ),
-                        torch.flatten(reference[prop][ml_selection])
-                    )
-                    + loss(
+                metrics[prop]['loss'] = loss(
+                    (
+                        self.model_conversion[prop]
+                        * torch.flatten(prediction[prop][ml_selection])
+                    ),
+                    torch.flatten(reference[prop][ml_selection])
+                )
+                if torch.any(mm_selection):
+                    metrics[prop]['loss'] = metrics[prop]['loss'] + loss(
                         (
                             self.model_conversion[prop]
                             * torch.flatten(prediction[prop][mm_selection])
                         ),
                         torch.flatten(reference[prop][mm_selection])
                     )
-                )
             # Special case for dipole and quadrupole: include loss value for
             # both molecular multipoles including atomic multipoles and 
             # molecular multipoles just from atomic charges (monopoles) to

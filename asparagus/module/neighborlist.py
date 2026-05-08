@@ -125,6 +125,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                 (positions.shape[0], ),
                 device=self.device,
                 dtype=atoms_number.dtype)
+            batch['sys_i'] = sys_i
 
         # Check for system batch or single system input
         # System batch:
@@ -156,33 +157,10 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
 
         # Check fragment indices and if fragments are defined get selected
         # fragment mask
-        if 'fragment_numbers' in batch:
-            
-            fragment_numbers = batch['fragment_numbers']
-            
-            # If multiple fragments are defined, create index pointer from
-            # full system to fragment system (e.g. atom with index 42 in the
-            # full system has only index 2 in the fragment subsystem).
-            if torch.unique(fragment_numbers).shape[0] > 1:
-                ml_idx = (
-                    torch.arange(
-                        fragment_numbers.shape[0],
-                        device=self.device,
-                        dtype=fragment_numbers.dtype)
-                    )[fragment_numbers == self.fragment]
-                ml_idx_p = torch.full_like(
-                    fragment_numbers,
-                    -1,
-                    device=self.device,
-                    dtype=fragment_numbers.dtype)
-                for ia, ai in enumerate(ml_idx):
-                    ml_idx_p[ai] = ia
-                batch['ml_idx'] = ml_idx.detach()
-                batch['ml_idx_p'] = ml_idx_p.detach()
-
-        else:
-            
-            fragment_numbers = torch.full_like(sys_i, self.fragment)
+        # if 'fragment_numbers' in batch and batch['fragmented']:
+        #     fragment_numbers = batch['fragment_numbers']
+        # else:
+        fragment_numbers = torch.full_like(sys_i, self.fragment)
 
         # Compute atom pair neighbor list
         idcs_i, idcs_j, pbc_offsets = self._build_neighbor_list(
@@ -198,19 +176,26 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
         # 1: Neighbor list of first cutoff (usually short range)
         batch['idx_i'] = idcs_i[0].detach()
         batch['idx_j'] = idcs_j[0].detach()
-        batch['pbc_offset_ij'] = pbc_offsets[0].detach()
+        if torch.any(pbc):
+            batch['pbc_offset_ij'] = pbc_offsets[0].detach()
         # 2: If demanded, neighbor list of second cutoff (usually long range)
         if len(self.cutoffs) > 1:
             batch['idx_u'] = idcs_i[1].detach()
             batch['idx_v'] = idcs_j[1].detach()
-            batch['pbc_offset_uv'] = pbc_offsets[1].detach()
+            if torch.any(pbc):
+                batch['pbc_offset_uv'] = pbc_offsets[1].detach()
         # 3+: If demanded, list of neighbor lists of further cutoffs
         if len(self.cutoffs) > 2:
             for icut, (idx_i, idx_j) in enumerate(zip(idcs_i[2:], idcs_j[2:])):
                 batch['idcs_k:{:d}'.format(icut + 2)] = idx_i.detach()
                 batch['idcs_l:{:d}'.format(icut + 2)] = idx_j.detach()
-                batch['pbc_offsets_kl:{:d}'.format(icut + 2)] = (
-                    pbc_offsets[icut].detach())
+                if torch.any(pbc):
+                    batch['pbc_offsets_kl:{:d}'.format(icut + 2)] = (
+                        pbc_offsets[icut].detach())
+
+        # # The default batch properties are for the full system and the
+        # # ML subsystem properties are stored with the prefix 'ml_*'.
+        # batch = self._get_fragmented_list(batch)
 
         return batch
 
@@ -498,7 +483,11 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         Device type for model variable allocation
     dtype: dtype object, optional, default global setting
         Model variables data type
-
+    ml_fragment: int, optional, default 0
+        Atomic fragment number for ML atoms
+    mm_fragment: int, optional, default 1
+        Atomic fragment number for MM atoms
+    
     """
 
     def __init__(
@@ -579,19 +568,20 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         """
 
         # Assign batch data
-        atoms_number = batch["atoms_number"]
-        positions = batch['positions']
+        atoms_number = batch['mlmm_atoms_number']
+        positions = batch['mlmm_positions']
         cell = batch['cell']
         pbc = batch['pbc']
 
         # Check ML and MM system indices
-        if 'sys_i' in batch:
-            sys_i = batch['sys_i']
+        if 'mlmm_sys_i' in batch:
+            sys_i = batch['mlmm_sys_i']
         else:
             sys_i = torch.zeros(
                 (positions.shape[0], ),
                 device=self.device,
                 dtype=atoms_number.dtype)
+            batch['mlmm_sys_i'] = sys_i
 
         # Check for system batch or single system input
         # System batch:
@@ -623,22 +613,8 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
 
         # Check fragment indices
         if 'fragment_numbers' in batch:
-
             fragment_numbers = batch['fragment_numbers']
-
-            # If multiple fragments are defined, create index pointer from
-            # full system to MM fragment system
-            if torch.unique(fragment_numbers).shape[0] > 1:
-                mm_idx = (
-                    torch.arange(
-                        fragment_numbers.shape[0],
-                        device=self.device,
-                        dtype=fragment_numbers.dtype)
-                    )[fragment_numbers == self.mm_fragment]
-                batch['mm_idx'] = mm_idx.detach()
-
         else:
-
             fragment_numbers = torch.full_like(sys_i, self.ml_fragment)
 
         # Compute atom pair neighbor list
@@ -655,19 +631,26 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         # 1: Neighbor list of first cutoff (usually short range)
         batch['mlmm_idx_i'] = idcs_i[0].detach()
         batch['mlmm_idx_j'] = idcs_j[0].detach()
-        batch['mlmm_pbc_offset_ij'] = pbc_offsets[0].detach()
+        if torch.any(pbc):
+            batch['mlmm_pbc_offset_ij'] = pbc_offsets[0].detach()
         # 2: If demanded, neighbor list of second cutoff (usually long range)
         if len(self.cutoffs) > 1:
             batch['mlmm_idx_u'] = idcs_i[1].detach()
             batch['mlmm_idx_v'] = idcs_j[1].detach()
-            batch['mlmm_pbc_offset_uv'] = pbc_offsets[1].detach()
+            if torch.any(pbc):
+                batch['mlmm_pbc_offset_uv'] = pbc_offsets[1].detach()
         # 3+: If demanded, list of neighbor lists of further cutoffs
         if len(self.cutoffs) > 2:
             for icut, (idx_i, idx_j) in enumerate(zip(idcs_i[2:], idcs_j[2:])):
                 batch['idcs_k:{:d}'.format(icut + 2)] = idx_i.detach()
                 batch['idcs_l:{:d}'.format(icut + 2)] = idx_j.detach()
-                batch['pbc_offsets_kl:{:d}'.format(icut + 2)] = (
-                    pbc_offsets[icut].detach())
+                if torch.any(pbc):
+                    batch['pbc_offsets_kl:{:d}'.format(icut + 2)] = (
+                        pbc_offsets[icut].detach())
+
+        # The default batch properties are for the full ML/MM system and the
+        # ML subsystem properties are stored with the prefix 'mlmm_ml_*'.
+        # batch = self._get_fragmented_list(batch)
 
         return batch
 

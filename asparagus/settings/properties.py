@@ -44,24 +44,31 @@ _alt_property_labels = {
     'energy':               ['E', 'energies', 'U0', 'V'],
     'atomic_energies':      [
         'Ea', 'Ei', 'atom_energy', 'atoms_energy', 'atomic_energy',
-        'atom_energies', 'atoms_energies'],
+        'atom_energies', 'atoms_energies'
+    ],
     'forces':               ['F', 'force'],
     'hessian':              ['H', 'hessians'],
     'charge':               ['Q', 'charges', 'total_charge', 'total_charges'],
     'atomic_charges':       [
-        'Qa', 'Qi', 'atom_charge', 'atom_charges', 'atomic_charge'],
+        'Qa', 'Qi', 'atom_charge', 'atom_charges', 'atomic_charge'
+    ],
     'atomic_dipoles':       [
-        'Da', 'Fi', 'atom_dipole', 'atom_dipoles', 'atomic_dipole'],
+        'Da', 'Fi', 'atom_dipole', 'atom_dipoles', 'atomic_dipole'
+    ],
     'dipole':               ['D', 'dipoles'],
     'atomic_quadrupoles':   [
         'atomic_quadrupole',
-        'atomic_quadropoles', 'atomic_quadropole',
-        'atom_quadrupole', 'atom_quadrupoles',
-        'atom_quadropole', 'atom_quadropoles'],
+        'atomic_quadropoles',
+        'atomic_quadropole',
+        'atom_quadrupole',
+        'atom_quadrupoles',
+        'atom_quadropole',
+        'atom_quadropoles',
+    ],
     'quadrupole':           ['quadrupoles', 'quadropole', 'quadropoles'],
     'polarizability':       ['polarizabilities'],
     'dipole_derivative':    ['dipole_derivatives', 'dipder'],
-    }
+}
 
 # ASE units
 _ase_units = {
@@ -81,7 +88,7 @@ _ase_units = {
     'quadrupole':           'e*Ang**2',
     'atomic_quadrupoles':   'e*Ang**2',
     'dipole_derivative':    'e',
-    }
+}
 
 # Default property units - ASE units
 _default_units = _ase_units.copy()
@@ -93,4 +100,4 @@ _related_unit_properties = [
     ['charge', 'atomic_charges'],
     ['dipole', 'atomic_dipoles'],
     ['quadrupole', 'atomic_quadrupoles'],
-    ]
+]

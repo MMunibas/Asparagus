@@ -612,32 +612,6 @@ class Model_AMP(model.BaseModel):
         ----------
         batch: dict(str, torch.Tensor)
             Dictionary of input data tensors for forward pass.
-            Basic keys are:
-                'atoms_number': torch.Tensor(n_systems)
-                    Number of atoms per molecule in batch
-                'atomic_numbers': torch.Tensor(n_atoms)
-                    Atomic numbers of the batch of molecules
-                'positions': torch.Tensor(n_atoms, 3)
-                    Atomic positions of the batch of molecules
-                'charge': torch.Tensor(n_systems)
-                    Total charge of molecules in batch
-                'idx_i': torch.Tensor(n_pairs)
-                    Atom i pair index
-                'idx_j': torch.Tensor(n_pairs)
-                    Atom j pair index
-                'sys_i': torch.Tensor(n_atoms)
-                    System indices of atoms in batch
-            Extra keys are:
-                'pbc_offset': torch.Tensor(n_pairs)
-                    Periodic boundary atom pair vector offset
-                'ml_idx': torch.Tensor(n_atoms)
-                    Primary atom indices for the supercluster approach
-                'ml_idx_p': torch.Tensor(n_pairs)
-                    Image atom to primary atom index pointer for the atom
-                    pair indices in a supercluster
-                'ml_idx_jp': torch.Tensor(n_pairs)
-                    Atom j pair index pointer from image atom to repsective
-                    primary atom index in a supercluster
         no_derivation: bool, optional, default False
             If True, only predict non-derived properties.
             Else, predict all properties even if backwards derivation is
@@ -658,9 +632,13 @@ class Model_AMP(model.BaseModel):
         """
 
         # Activate back propagation if derivatives with regard to
-        # atom positions is requested.
+        # atom positions are requested.
         if self.model_forces and not no_derivation:
-            batch['positions'].requires_grad_(True)
+            if batch['fragmented']:
+                batch['mlmm_positions'].requires_grad_(True)
+                batch['positions'] = batch['mlmm_positions'][batch['ml_sys_p']]
+            else:
+                batch['positions'].requires_grad_(True)
 
         # Run modules
         for module in self.module_dict.values():

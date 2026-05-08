@@ -32,7 +32,7 @@ sampler = MetaSampler(
         'directory': 'orca'},
     sample_num_threads=1,
     sample_save_trajectory=True,
-    meta_cv=[[0, 1], [0, 2], [0, 3]],
+    meta_cv=[[0, 1], [0, 2], [0, 3], [1, 0, 2]],
     meta_gaussian_height=0.05,
     meta_gaussian_widths=0.1,
     meta_gaussian_interval=10,

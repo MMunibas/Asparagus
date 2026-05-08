@@ -35,6 +35,8 @@ class BaseModel(torch.nn.Module):
         'atomic_energies',
         'forces']
 
+    _required_input_properties = []
+
     def __init__(
         self,
         config: Optional[Union[str, dict, object]] = None,
@@ -730,12 +732,6 @@ class BaseModel(torch.nn.Module):
             atoms,
             charge=charge)
 
-        # TODO
-        atoms_batch['reference'] = {}
-        atoms_batch['reference']['atomic_charges'] = torch.tensor(
-            atoms.arrays['atomic_charges'],
-            device=self.device, dtype=self.dtype)
-
         return self.forward(atoms_batch, **kwargs)
 
     def create_batch(
@@ -778,72 +774,92 @@ class BaseModel(torch.nn.Module):
         batch = {}
 
         # First, check for atomic fragments and consider if number is larger 1
+        batch['fragmented'] = torch.tensor(
+            False, device=self.device, dtype=torch.bool
+        )
         if 'fragment' in atoms[0].arrays:
+            
+            # Combine fragment numbers
             fragment_numbers = torch.cat(
                 [
                     torch.tensor(image.arrays['fragment'], dtype=torch.int64)
                     for image in atoms
-                ], 0).to(
-                    device=self.device, dtype=torch.int64)
+                ], 
+                dim=0
+            ).to(
+                device=self.device, dtype=torch.int64
+            )
+            
+            # If more than one fragment, add fragment numbers and set
+            # 'fragmented' flag
             if torch.unique(fragment_numbers).shape[0] > 1:
                 batch['fragment_numbers'] = fragment_numbers
+                batch['fragmented'] = torch.tensor(
+                    True, device=self.device, dtype=torch.bool
+                )
 
-            # Due to Torch-Script issues, do a reference atomic charges copy
-            # with key 'mlmm_atomic_charges'
-            if 'atomic_charges' in atoms[0].arrays:
-                batch['mlmm_atomic_charges'] = torch.cat(
-                    [
-                        torch.tensor(
-                            image.arrays['atomic_charges'],
-                            dtype=self.dtype)
-                        for image in atoms
-                    ], 0).to(
-                        device=self.device, dtype=self.dtype)
+                # Due to Torch-Script issues, do a reference atomic charges
+                # copy with key 'mlmm_atomic_charges'
+                if 'atomic_charges' in atoms[0].arrays:
+                    batch['mlmm_atomic_charges'] = torch.cat(
+                        [
+                            torch.tensor(
+                                image.arrays['atomic_charges'],
+                                dtype=self.dtype)
+                            for image in atoms
+                        ],
+                        dim=0
+                    ).to(
+                        device=self.device, dtype=self.dtype
+                    )
 
-        # Number of atoms
+        # Number of every atoms object
         batch['atoms_number'] = torch.tensor(
             [len(image) for image in atoms],
-            device=self.device, dtype=torch.int64)
+            device=self.device, dtype=torch.int64
+        )
+
+        # Atoms segment index
+        Nsys = len(atoms)
+        batch['sys_i'] = torch.repeat_interleave(
+            torch.arange(Nsys, device=self.device, dtype=torch.int64),
+            repeats=batch['atoms_number'],
+            dim=0,
+        ).to(
+            device=self.device, dtype=torch.int64
+        )
 
         # Atomic numbers properties
         batch['atomic_numbers'] = torch.cat(
             [
                 torch.tensor(image.get_atomic_numbers(), dtype=torch.int64)
                 for image in atoms
-            ], 0).to(
-                device=self.device, dtype=torch.int64)
+            ],
+            dim=0,
+        ).to(
+            device=self.device, dtype=torch.int64
+        )
 
         # Atom positions
         if conversion.get('positions') is None:
-            fconv = 1.0
+            fconv_p = 1.0
         else:
-            fconv = conversion['positions']
+            fconv_p = conversion['positions']
         batch['positions'] = torch.cat(
             [
-                torch.tensor(image.get_positions()*fconv, dtype=self.dtype)
+                torch.tensor(image.get_positions()*fconv_p, dtype=self.dtype)
                 for image in atoms
-            ], 0).to(
-                device=self.device, dtype=self.dtype)
+            ],
+            dim=0
+        ).to(
+            device=self.device, dtype=self.dtype
+        )
 
-        # Atom periodic boundary conditions
-        batch['pbc'] = torch.tensor(
-            np.array([image.get_pbc() for image in atoms]),
-            dtype=torch.bool, device=self.device)
-
-        # Atom cell information
-        if conversion.get('positions') is None:
-            fconv = 1.0
-        else:
-            fconv = conversion['positions']
-        batch['cell'] = torch.tensor(
-            np.array([image.get_cell()[:]*fconv for image in atoms]),
-            dtype=self.dtype, device=self.device)
-
-        # Total atomic system charge
+        # System charge
         if conversion.get('charge') is None:
-            fconv = 1.0
+            fconv_c = 1.0
         else:
-            fconv = conversion['charge']
+            fconv_c = conversion['charge']
         if charge is None:
             if 'fragment_numbers' in batch:
                 selection = (
@@ -856,25 +872,48 @@ class BaseModel(torch.nn.Module):
                 ).cpu().detach().numpy()
             if 'atomic_charges' in atoms[0].arrays:
                 charge = [
-                    np.sum(image.arrays['atomic_charges'][selection])*fconv
-                    for image in atoms]
+                    np.sum(image.arrays['atomic_charges'][selection])*fconv_c
+                    for image in atoms
+                ]
             else:
                 try:
                     charge = [
-                        np.sum(image.get_charges()[selection])*fconv
-                        for image in atoms]
+                        np.sum(image.get_charges()[selection])*fconv_c
+                        for image in atoms
+                    ]
                 except RuntimeError:
                     charge = [
-                        np.sum(image.get_initial_charges()[selection])*fconv
-                        for image in atoms]
+                        np.sum(image.get_initial_charges()[selection])*fconv_c
+                        for image in atoms
+                    ]
         elif utils.is_numeric(charge):
-            charge = [charge*fconv]*len(atoms)
+            charge = [charge*fconv_c]*Nsys
         elif utils.is_numeric_array(charge):
-            charge = np.array(charge)*fconv
+            charge = np.array(charge)*fconv_c
         else:
             raise ValueError("Input 'charge' is not a numeric value or array!")
         batch['charge'] = torch.tensor(
-            charge, dtype=self.dtype, device=self.device)
+            charge,
+            dtype=self.dtype,
+            device=self.device
+        )
+
+        # Periodic boundary conditions
+        batch['pbc'] = torch.tensor(
+            [image.get_pbc() for image in atoms],
+            dtype=torch.bool, device=self.device
+        )
+
+        # Unit cell sizes
+        batch['cell'] = torch.tensor(
+            [image.get_cell()[:]*fconv_p for image in atoms],
+            dtype=self.dtype, device=self.device
+        )
+
+        # Rearrange system properties to match fragmented system properties
+        # convention
+        if batch['fragmented']:
+            batch = utils.check_fragmented_properties(batch)
 
         # Compute atom pair indices
         batch = self.compute_neighborlist(batch)
@@ -923,6 +962,10 @@ class BaseModel(torch.nn.Module):
 
         """
 
+        # Check ASE Atoms input
+        if not utils.is_ase_atoms(atoms):
+            raise ValueError("Input 'atoms' is not an ASE Atoms object!")
+
         # Get number of copies
         if ncopies is None and positions is None and cell is None:
             ncopies = 1
@@ -944,104 +987,154 @@ class BaseModel(torch.nn.Module):
         # Initialize atoms batch
         batch = {}
 
+        # First, check for atomic fragments and consider if number is larger 1
+        if 'fragment' in atoms.arrays:
+            
+            # Combine fragment numbers
+            fragment_numbers = torch.cat(
+                [torch.tensor(atoms.arrays['fragment'], dtype=torch.int64)
+                    for _ in range(ncopies)
+                ], 
+                dim=0
+            ).to(
+                device=self.device, dtype=torch.int64
+            )
+            
+            # If more than one fragment, add fragment numbers and set
+            # 'fragmented' flag
+            if torch.unique(fragment_numbers).shape[0] > 1:
+                batch['fragment_numbers'] = fragment_numbers
+                batch['fragmented'] = torch.tensor(
+                    True, device=self.device, dtype=torch.bool
+                )
+
+            # Due to Torch-Script issues, do a reference atomic charges copy
+            # with key 'mlmm_atomic_charges'
+            if 'atomic_charges' in atoms[0].arrays:
+                batch['mlmm_atomic_charges'] = torch.cat(
+                    [
+                        torch.tensor(
+                            image.arrays['atomic_charges'],
+                            dtype=self.dtype)
+                        for _ in range(ncopies)
+                    ],
+                    dim=0
+                ).to(
+                    device=self.device, dtype=self.dtype
+                )
+
         # Number of atoms
         batch['atoms_number'] = torch.tensor(
-            [len(atoms)]*ncopies, device=self.device, dtype=torch.int64)
+            [len(atoms)]*ncopies,
+            device=self.device, dtype=torch.int64
+        )
 
         # System segment index of atom i
         batch['sys_i'] = torch.repeat_interleave(
             torch.arange(ncopies, device=self.device, dtype=torch.int64),
-            repeats=len(atoms), dim=0).to(
-                device=self.device, dtype=torch.int64)
+            repeats=len(atoms),
+            dim=0
+        ).to(
+            device=self.device, dtype=torch.int64
+        )
 
         # Atomic numbers properties
         batch['atomic_numbers'] = torch.cat(
             [
                 torch.tensor(atoms.get_atomic_numbers(), dtype=torch.int64)
                 for _ in range(ncopies)
-            ], 0).to(
-                device=self.device, dtype=torch.int64)
+            ],
+            dim= 0
+        ).to(
+            device=self.device, dtype=torch.int64
+        )
 
         # Atom positions
         if conversion.get('positions') is None:
-            fconv = 1.0
+            fconv_p = 1.0
         else:
-            fconv = conversion['positions']
+            fconv_p = conversion['positions']
         if positions is None:
             batch['positions'] = torch.cat(
                 [
-                    torch.tensor(atoms.get_positions()*fconv, dtype=self.dtype)
+                    torch.tensor(
+                        atoms.get_positions()*fconv_p,
+                        dtype=self.dtype
+                    )
                     for _ in range(ncopies)
-                ], 0).to(
-                    device=self.device, dtype=self.dtype)
+                ],
+                dim=0
+            ).to(
+                device=self.device, dtype=self.dtype
+            )
         else:
             batch['positions'] = torch.cat(
                 [
-                    torch.tensor(positions_i, dtype=self.dtype)*fconv
+                    torch.tensor(positions_i, dtype=self.dtype)*fconv_p
                     for positions_i in positions
-                ], 0).to(
-                    device=self.device, dtype=self.dtype)
+                ],
+                dim=0
+            ).to(
+                device=self.device, dtype=self.dtype
+            )
+
+        # Total atomic system charge
+        if conversion.get('charge') is None:
+            fconv_c = 1.0
+        else:
+            fconv_c = conversion['charge']
+        if charge is None:
+            try:
+                charge = [
+                    np.sum(atoms.get_charges())*fconv_c
+                    for _ in range(ncopies)
+                ]
+            except RuntimeError:
+                charge = [
+                    np.sum(atoms.get_initial_charges())*fconv_c
+                    for _ in range(ncopies)
+                ]
+        elif utils.is_numeric(charge):
+            charge = [charge*fconv_c]*ncopies
+        elif utils.is_numeric_array(charge):
+            charge = np.array(charge)*fconv_c
+        else:
+            charge = [0.0]*ncopies
+        batch['charge'] = torch.tensor(
+            charge,
+            dtype=self.dtype,
+            device=self.device
+        )
+
 
         # Atom periodic boundary conditions
         batch['pbc'] = torch.tensor(
             atoms.get_pbc().repeat(ncopies).reshape(ncopies, 3),
-            dtype=torch.bool, device=self.device)
+            dtype=torch.bool, device=self.device
+        )
 
         # Atom cell information
-        if conversion.get('positions') is None:
-            fconv = 1.0
-        else:
-            fconv = conversion['positions']
         if cell is None:
             batch['cell'] = torch.tensor(
-                (atoms.get_cell()[:]*fconv).repeat(ncopies).reshape(
-                    ncopies, 3, 3),
-                dtype=self.dtype, device=self.device)
+                (atoms.get_cell()[:]*fconv_p).repeat(ncopies).reshape(
+                    ncopies, 3, 3
+                ),
+                dtype=self.dtype,
+                device=self.device
+            )
         else:
             batch['cell'] = torch.tensor(
                 [cell_i for cell_i in cell],
-                dtype=self.dtype, device=self.device)*fconv
+                dtype=self.dtype, device=self.device
+            )*fconv_p
 
-        # Total atomic system charge
-        if conversion.get('charge') is None:
-            fconv = 1.0
-        else:
-            fconv = conversion['charge']
-        if charge is None:
-            try:
-                charge = [
-                    np.sum(atoms.get_charges())*fconv for _ in range(ncopies)]
-            except RuntimeError:
-                charge = [
-                    np.sum(atoms.get_initial_charges())*fconv
-                    for _ in range(ncopies)]
-        elif utils.is_numeric(charge):
-            charge = [charge*fconv]*ncopies
-        elif utils.is_numeric_array(charge):
-            charge = np.array(charge)*fconv
-        else:
-            charge = [0.0]*ncopies
-        batch['charge'] = torch.tensor(
-            charge, dtype=self.dtype, device=self.device)
-
-        # Check for fragment definition
-        if 'fragment' in atoms.arrays:
-            fragment_numbers = torch.cat(
-                [
-                    torch.tensor(atoms.arrays['fragment'], dtype=torch.int64)
-                    for _ in range(ncopies)
-                ], 0).to(
-                    device=self.device, dtype=torch.int64)
-            if torch.unique(fragment_numbers).shape[0] > 1:
-                batch['fragment_numbers'] = fragment_numbers
+        # Rearrange system properties to match fragmented system properties
+        # convention
+        if batch['fragmented']:
+            batch = utils.check_fragmented_properties(batch)
 
         # Compute atom pair indices
-        if not hasattr(self, 'neighbor_list'):
-            self.neighbor_list = module.TorchNeighborListRangeSeparated(
-                self.get_cutoff_ranges(),
-                self.device,
-                self.dtype)
-        batch = self.neighbor_list(batch)
+        batch = self.compute_neighborlist(batch)
 
         return batch
 
@@ -1134,14 +1227,6 @@ class BaseModel(torch.nn.Module):
             Data batch including neighbor list data
 
         """
-        
-        # System segment index of atom i
-        batch['sys_i'] = torch.repeat_interleave(
-            torch.arange(
-                batch['atoms_number'].shape[0],
-                device=self.device, dtype=torch.int64),
-            repeats=batch['atoms_number'], dim=0).to(
-                device=self.device, dtype=torch.int64)
 
         # Compute neighbor list
         if not hasattr(self, 'neighbor_list'):
@@ -1273,23 +1358,42 @@ class BaseModel(torch.nn.Module):
             Model property predictions
 
         """
-        
-        # Compute energy gradient, keep backpropagation graph only if model
+
+        # Compute energy gradient, keep back-propagation graph only if model
         # is in training mode or Hessian is demanded
-        gradient = torch.autograd.grad(
-            [torch.sum(batch['energy']),],
-            [batch['positions'],],
-            create_graph=(
-                create_graph
-                or self.training
-                or self.model_hessian
-                or self.model_dipole_derivative
-            )
-        )[0]
-        
-        # Provoke crashing if forces are none
-        assert gradient is not None
-        batch['forces'] = -gradient
+        if batch['fragmented']:
+
+            mlmm_gradient = torch.autograd.grad(
+                [torch.sum(batch['energy']),],
+                [batch['mlmm_positions'],],
+                create_graph=(
+                    create_graph
+                    or self.training
+                    or self.model_hessian
+                    or self.model_dipole_derivative
+                )
+            )[0]
+
+            # Provoke crashing if MLMM forces are none
+            assert mlmm_gradient is not None
+            batch['forces'] = -mlmm_gradient
+
+        else:
+
+            gradient = torch.autograd.grad(
+                [torch.sum(batch['energy']),],
+                [batch['positions'],],
+                create_graph=(
+                    create_graph
+                    or self.training
+                    or self.model_hessian
+                    or self.model_dipole_derivative
+                )
+            )[0]
+            
+            # Provoke crashing if forces are none
+            assert gradient is not None
+            batch['forces'] = -gradient
 
         return batch
 
@@ -1340,6 +1444,7 @@ class BaseModel(torch.nn.Module):
         self,
         batch: Dict[str, torch.Tensor],
         no_derivation: bool = False,
+        create_graph: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """
         Compute the molecular dipole moment from atom-centred charges and
@@ -1363,12 +1468,6 @@ class BaseModel(torch.nn.Module):
             be computed from the results.
 
         """
-        
-        # For supercluster method, just use primary cell atom positions
-        if 'ml_idx' in batch:
-            positions_dipole = batch['positions'][batch['ml_idx']]
-        else:
-            positions_dipole = batch['positions']
 
         # In case of non-zero system charges (and even for neutral systems),
         # shift origin to center of mass
@@ -1391,13 +1490,13 @@ class BaseModel(torch.nn.Module):
             system_com = (
                 system_com.scatter_add_(
                     0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-                    atomic_masses.unsqueeze(-1)*positions_dipole
+                    atomic_masses.unsqueeze(-1)*batch['positions']
                     ).reshape(-1, 3)
                 / system_mass.unsqueeze(-1)
                 )
 
             # Shift positions origin into center of mass
-            positions_com = positions_dipole - system_com[batch['sys_i']]
+            positions_com = batch['positions'] - system_com[batch['sys_i']]
 
             # Store centered atom positions for potential subsequent use
             batch['positions_com'] = positions_com
@@ -1426,19 +1525,19 @@ class BaseModel(torch.nn.Module):
                     device=self.device,
                     dtype=self.dtype,
                 )
-                
+
+                # Iterate over Cartesian components
                 for ii in range(3):
 
+                    # Compute dipole derivative
                     dipole_component = batch['dipole'][:, ii]
-                    grad_outputs = torch.ones_like(dipole_component)
-                    
                     g = torch.autograd.grad(
                         outputs=dipole_component,
                         inputs=batch['positions'],
-                        grad_outputs=grad_outputs,
-                        retain_graph=True,
+                        grad_outputs=torch.ones_like(dipole_component),
+                        retain_graph=(ii < 2),
                         create_graph=create_graph,
-                        allow_unused=True
+                        allow_unused=True,
                     )[0]
                     
                     if g is not None:
@@ -1467,12 +1566,6 @@ class BaseModel(torch.nn.Module):
             Dictionary with additional molecular quadrupole prediction
 
         """
-        
-        # For supercluster method, just use primary cell atom positions
-        if 'ml_idx' in batch:
-            positions_quadrupole = batch['positions'][batch['ml_idx']]
-        else:
-            positions_quadrupole = batch['positions']
 
         # In case of non-zero system charges (and even for neutral systems),
         # shift origin to center of mass
@@ -1495,13 +1588,13 @@ class BaseModel(torch.nn.Module):
             system_com = (
                 system_com.scatter_add_(
                     0, batch['sys_i'].unsqueeze(-1).repeat(1, 3),
-                    atomic_masses.unsqueeze(-1)*positions_quadrupole
+                    atomic_masses.unsqueeze(-1)*batch['positions']
                     ).reshape(-1, 3)
                 / system_mass.unsqueeze(-1)
                 )
 
             # Shift positions origin into center of mass
-            positions_com = positions_quadrupole - system_com[batch['sys_i']]
+            positions_com = batch['positions'] - system_com[batch['sys_i']]
 
             # Store centered atom positions for potential subsequent use
             batch['positions_com'] = positions_com
@@ -1535,7 +1628,9 @@ class BaseModel(torch.nn.Module):
         # Refine molecular quadrupole moment with atomic quadrupole moments
         if self.model_atomic_quadrupoles:
             batch['quadrupole'] = batch['quadrupole'].scatter_add_(
-                0, batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
-                batch['atomic_quadrupoles'])
+                0,
+                batch['sys_i'].unsqueeze(-1).unsqueeze(-1).repeat(1, 3, 3),
+                batch['atomic_quadrupoles']
+            )
 
         return batch

@@ -160,6 +160,7 @@ if flag_database_sql:
         )
     except SyntaxError:
         print("\nSyntaxError as expected\n")
+        os.remove('test/nms_nh3_test.db')
 
     # Get DataContainer (Reset data source)
     model = asparagus.Asparagus(

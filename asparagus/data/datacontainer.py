@@ -93,7 +93,7 @@ class DataContainer():
     _default_args = {
         'data_file':                    ('data.db', 'sql.db'),
         'data_source':                  None,
-        'data_properties':              ['energy', 'forces', 'dipole'],
+        'data_properties':              None,#['energy', 'forces', 'dipole'],
         'data_unit_properties':         {'energy': 'eV',
                                         'forces': 'eV/Ang',
                                         'dipole': 'e*Ang'},
@@ -115,7 +115,7 @@ class DataContainer():
         'data_source':                  [
             utils.is_string, utils.is_string_array_inhomogeneous,
             utils.is_None],
-        'data_properties':              [utils.is_string_array],
+        'data_properties':              [utils.is_string_array, utils.is_None],
         'data_unit_properties':         [utils.is_dictionary],
         'data_source_unit_properties':  [utils.is_dictionary, utils.is_None],
         #'data_source_property_filter':  [utils.is_dictionary, utils.is_None],
@@ -228,6 +228,26 @@ class DataContainer():
                 self.data_alt_property_labels,
                 )
             )
+
+        # If data properties are still not defined manually or via metadata of
+        # the previously existing database 'data_file' or just an empty list,
+        # get a data properties list from valid properties of the first data
+        # source
+        if data_properties is None or not data_properties:
+
+            data_properties = self.get_valid_properties(
+                self.data_source,
+                data_alt_property_labels
+            )
+            
+            # Again, check and prepare data property input
+            data_properties, data_unit_properties, data_alt_property_labels = (
+                self.check_data_properties(
+                    data_properties,
+                    self.data_unit_properties,
+                    data_alt_property_labels,
+                    )
+                )
 
         # Reassign data properties
         self.data_properties = data_properties
@@ -382,7 +402,7 @@ class DataContainer():
             file_format = data.check_data_format(
                 files, is_source_format=is_source)
             files_formats.append([files, file_format])
-            files_input.append(f" <- {files:s}")
+            files_input.append(f"{files:s}")
 
         # Files is string list
         elif utils.is_string_array(files, inhomogeneity=True):
@@ -402,7 +422,7 @@ class DataContainer():
                         + f"('{file_format:s}' != '{format_format:s}')!")
 
                 files_formats.append([files[0], format_format])
-                files_input.append(f" <- ({files[0]:s}, {files[1]:s})")
+                files_input.append(f"({files[0]:s}, {files[1]:s})")
 
             # If source files, multiple definitions can be expected
             else:
@@ -433,7 +453,7 @@ class DataContainer():
 
                         files_formats.append([file_i[0], format_format])
                         files_input.append(
-                            f" <- ({file_i[0]:s}, {file_i[1]:s})")
+                            f"({file_i[0]:s}, {file_i[1]:s})")
 
                     elif utils.is_string(file_i):
 
@@ -452,22 +472,26 @@ class DataContainer():
                         else:
 
                             files_formats.append([file_i, file_format])
-                            files_input.append(f" <- {file_i:s}")
+                            files_input.append(f"{file_i:s}")
 
         # Prepare check info
         msg = ""
         for file_output, file_input in zip(files_formats, files_input):
-            msg += (
-                f" ({file_output[0]:s}, {file_output[1]:s}) {file_input:s}\n")
+            file_o = f"({file_output[0]:s}, {file_output[1]:s})"
+            file_i = f"{file_input:s}"
+            if file_o != file_i:
+                msg += (f"{file_o:s}  <- {file_i:s}\n")
 
         # Return either tuple or list of tuples
         if is_source:
-            self.logger.info(
-                f"Data source files and formats detected:\n{msg:s}")
+            if msg:
+                self.logger.info(
+                    f"Data source files and formats detected:\n{msg:s}")
             return files_formats
         else:
-            self.logger.info(
-                f"Data file and format detected:\n{msg:s}")
+            if msg:
+                self.logger.info(
+                    f"Data file and format detected:\n{msg:s}")
             if len(files_formats) > 1:
                 self.logger.warning(
                     "Multiple files were defined as data files, but only one "
@@ -608,6 +632,10 @@ class DataContainer():
         data_alt_property_labels = utils.merge_dictionary_lists(
             data_alt_property_labels, settings._alt_property_labels)
 
+        # Skip if data properties are not defined yet
+        if data_properties is None:
+            return None, {}, data_alt_property_labels
+
         # Check for unknown property labels in data_properties
         # and replace if possible with internally used property label in
         # *data_alt_property_labels'
@@ -697,6 +725,60 @@ class DataContainer():
         return (
             data_properties, checked_data_unit_properties,
             data_alt_property_labels)
+
+    def get_valid_properties(
+        self,
+        data_source: Union[str, List[str]],
+        data_alt_property_labels: Dict[str, List[str]],
+    ) -> List[str]:
+        """
+        Load source data to reference DataSet.
+
+        Parameters
+        ----------
+        data_source: (str, list(str))
+            List (or string) of paths to reference data files. Each entry can
+            be either a string for the file path or a tuple with the filename
+            first and the file format label second.
+        data_alt_property_labels: dict
+            Alternative property labels to detect common mismatches.
+
+        Returns
+        -------
+        list(str)
+            List of valid data properties.
+
+        """
+        # Check data source input
+        if data_source is None:
+            data_source = []
+        data_source = self.check_data_files(data_source, is_source=True)
+
+        # Initialize DataReader instance without database file path
+        datareader = data.DataReader(
+            data_file=None,
+            data_properties=None,
+            data_unit_properties={},
+            data_alt_property_labels=data_alt_property_labels
+        )
+
+        # Search for valid data properties available in all data sources
+        data_properties = None
+        for source in data_source:
+            properties = datareader.get_valid_properties(
+                source,
+                data_alt_property_labels,
+            )
+            if data_properties is None:
+                data_properties = properties
+            else:
+                data_properties = [
+                    prop 
+                    for prop in data_properties
+                    if prop in properties
+                ]
+
+        return data_properties
 
     def load_data_source(
         self,
@@ -1525,5 +1607,5 @@ class DataContainer():
 
         # Print updated data set and subset information
         self.print_data_info()
-        print(self.test_dataset.subset_idx)
+
         return

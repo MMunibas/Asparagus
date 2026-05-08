@@ -288,6 +288,7 @@ class EnsembleTrainer:
         reset_energy_shift: Optional[bool] = False,
         skip_property_scaling: Optional[bool] = False,
         skip_initial_testing: Optional[bool] = False,
+        mlmm_inf_cutoff: Optional[bool] = True,
         **kwargs,
     ):
         """
@@ -327,6 +328,13 @@ class EnsembleTrainer:
             Skip for each model  the initial model evaluation on the reference
             test set, if the model evaluation is enabled anyways (see
             trainer_evaluate_testset).
+        mlmm_inf_cutoff: bool, optional, default True
+            For training purpose, set the ML-MM (electrostatic) interaction
+            cutoff to infinity, as usually the case in reference QM-MM
+            calculation (e.g. ORCA). 
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
 
         """
 
@@ -370,7 +378,9 @@ class EnsembleTrainer:
                 reset_best_loss,
                 reset_energy_shift,
                 skip_property_scaling,
-                skip_initial_testing)
+                skip_initial_testing,
+                mlmm_inf_cutoff=mlmm_inf_cutoff,
+            )
         
         else:
 
@@ -384,11 +394,15 @@ class EnsembleTrainer:
                         reset_best_loss,
                         reset_energy_shift,
                         skip_property_scaling,
-                        skip_initial_testing, ),
+                        skip_initial_testing,
+                    ),
                     kwargs={
-                        'ithread': ithread}
-                    )
-                for ithread in range(self.trainer_num_threads)]
+                        'mlmm_inf_cutoff': mlmm_inf_cutoff,
+                        'ithread': ithread,
+                    }
+                )
+                for ithread in range(self.trainer_num_threads)
+            ]
 
             # Start threads
             for thread in threads:
@@ -408,7 +422,9 @@ class EnsembleTrainer:
         reset_energy_shift: bool,
         skip_property_scaling: bool,
         skip_initial_testing: bool,
+        mlmm_inf_cutoff: Optional[bool] = True,
         ithread: Optional[int] = None,
+        **kwargs,
     ):
         """
         Run training step for one model calculator in ensemble queue.
@@ -433,6 +449,13 @@ class EnsembleTrainer:
         skip_initial_testing: bool
             Skip initial testing option only for the first training step of 
             each model. For later steps, parameter is True.
+        mlmm_inf_cutoff: bool, optional, default True
+            For training purpose, set the ML-MM (electrostatic) interaction
+            cutoff to infinity, as usually the case in reference QM-MM
+            calculation (e.g. ORCA). 
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
         ithread: int, optional, default None
             Thread number
 
@@ -486,7 +509,8 @@ class EnsembleTrainer:
                     trainer_max_epochs=self.trainer_epoch_steps_list[istep],
                     trainer_evaluate_testset=False,
                     trainer_print_progress_bar=False,
-                    verbose=False)
+                    verbose=False,
+                )
 
             # Run test if requested
             if flag_test:
@@ -501,16 +525,20 @@ class EnsembleTrainer:
                 self.model_calculator.load(
                     checkpoint,
                     checkpoint_file=checkpoint_file,
-                    verbose=False)
+                    verbose=False
+                )
 
                 # Run test
                 self.tester.test(
                     self.model_calculator,
                     model_conversion=trainer.model_conversion,
+                    mlmm_inf_cutoff=mlmm_inf_cutoff,
                     test_directory=os.path.join(self.model_directory, 'best'),
                     test_plot_correlation=True,
-                    test_plot_histogram=True,
-                    test_plot_residual=True)
+                    test_plot_histogram=False,
+                    test_plot_residual=False,
+                    **kwargs
+                )
 
             # Run training
             if istep:
@@ -521,6 +549,7 @@ class EnsembleTrainer:
                     reset_energy_shift=False,
                     skip_property_scaling=True,
                     skip_initial_testing=True,
+                    mlmm_inf_cutoff=mlmm_inf_cutoff,
                     ithread=ithread,
                     verbose=False)
             else:
@@ -531,6 +560,7 @@ class EnsembleTrainer:
                     reset_energy_shift=reset_energy_shift,
                     skip_property_scaling=skip_property_scaling,
                     skip_initial_testing=skip_initial_testing,
+                    mlmm_inf_cutoff=mlmm_inf_cutoff,
                     ithread=ithread,
                     verbose=False)
 

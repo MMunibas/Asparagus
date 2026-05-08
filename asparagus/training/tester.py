@@ -372,6 +372,16 @@ class Tester:
                 test_properties,
                 self.data_properties)
 
+        # TODO For now, remove atomic charges as there is currently still an
+        # overlap that MM atomic charges and reference atomic charges from
+        # population analysis methods are both labeled 'atomic_charges' in the
+        # database.
+        if 'atomic_charges' in test_properties:
+            test_properties = [
+                prop for prop in test_properties
+                if prop != 'atomic_charges'
+            ]
+
         # Check the model for additional required reference properties
         additional_properties = []
         if hasattr(model_calculator, '_required_input_properties'):
@@ -431,6 +441,9 @@ class Tester:
 
         # Loop over all requested data set
         for label, datasubset in self.test_data.items():
+
+            #
+            datasubset.set_fragments(model_calculator.model_mlmm_embedding)
 
             # Get model cutoffs
             cutoffs = model_calculator.get_cutoff_ranges()
@@ -516,18 +529,7 @@ class Tester:
 
                 # Detach back-propagation graph from tensors and send to
                 # CPU memory to save, potentially, GPU memory
-                for key, item in batch.items():
-                    if key == 'reference':
-                        for key_ref, item_ref in batch[key].items():
-                            batch[key][key_ref] = item_ref.detach().cpu()
-                    else:
-                        batch[key] = item.detach().cpu()
-                if model_ensemble:
-                    for imodel in range(model_ensemble_num):
-                        for key, item in batch[imodel].items():
-                            batch[imodel][key] = (
-                                batch[imodel][key].detach().cpu()
-                            )
+                batch = self.detach_all(batch)
 
                 # Compute metrics for test properties
                 metrics_batch = self.compute_metrics(
@@ -554,12 +556,8 @@ class Tester:
 
                 # Store prediction and reference data system resolved
                 Nsys = batch['atoms_number'].shape[0]
-                if 'ml_idx' in batch:
-                    Natoms = batch['mlmm_sys_i'].shape[0]
-                    sys_i = batch['mlmm_sys_i'].numpy()
-                else:
-                    Natoms = batch['sys_i'].shape[0]
-                    sys_i = batch['sys_i'].numpy()
+                Natoms = batch['sys_i'].shape[0]
+                sys_i = batch['sys_i'].numpy()
                 Npairs = len(batch['idx_i'])
                 for prop in test_properties:
                     
@@ -695,7 +693,7 @@ class Tester:
                             data_prediction = (
                                 batch[imodel][prop].numpy()
                                 )
-                            
+
                             # Ensure same prediction data shape
                             data_prediction = data_prediction.reshape(
                                 data_shape
@@ -729,12 +727,11 @@ class Tester:
                                     data_prediction,
                                     dtype=float
                                 ).reshape(Natoms, -1)
-                            
-                            
+
                             # Assign prediction data
                             if imodel not in test_prediction:
                                 test_prediction[imodel] = {}
-                            if prop not in test_prediction:
+                            if prop not in test_prediction[imodel]:
                                 test_prediction[imodel][prop] = np.empty(
                                     (0, data_prediction.shape[1]),
                                     dtype=float
@@ -1301,6 +1298,21 @@ class Tester:
 
         return module in sys.modules
 
+    def detach_all(
+        self,
+        batch: Dict[Any, Any],
+    ):
+        """
+        Detach everything! Everything? EEEEvveerryyythinnggg!!!
+
+        """
+        for key, item in batch.items():
+            if utils.is_dictionary(item):
+                batch[key] = self.detach_all(batch[key])
+            else:
+                batch[key] = item.detach().cpu()
+        return batch
+
     def save_npz(
         self,
         prediction: Dict[str, np.ndarray],
@@ -1687,7 +1699,7 @@ class Tester:
                             device=prediction[prop].device,
                             dtype=prediction[prop].dtype,
                             ).scatter_add_(
-                                0, 
+                                0,
                                 torch.arange(
                                     Nsys, device='cpu', dtype=torch.int64
                                     ).repeat(prediction[prop].shape[1:].numel()
@@ -1893,17 +1905,6 @@ class Tester:
 
         # Update metrics
         for prop in test_properties:
-
-            # Skip if metric is not available
-            # print(prop, metrics[prop]['mae'])
-            # print(prop, metrics[prop]['mse'])
-            # if torch.any(
-            #     [
-            #         torch.isnan(metrics[prop][metric])
-            #         for metric in ['mae', 'mse']
-            #     ]
-            # ):
-            #     continue
 
             for metric in ['mae', 'mse']:
                 metrics[prop][metric] = (

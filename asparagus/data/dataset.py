@@ -491,6 +491,7 @@ class DataSet():
             and data_properties is None
         ):
             metadata['load_properties'] = []
+            data_properties = []
         elif metadata.get('load_properties') is None:
             metadata['load_properties'] = data_properties
         elif data_properties is None:
@@ -517,9 +518,13 @@ class DataSet():
                     "Mismatch between DataSet 'load_properties' "
                     + f"input and metadata in '{self.data_file[0]:s}'!\n")
                 for prop in mismatch_metadata:
-                    message += f"Property '{prop:s}' in metadata not in input."
+                    message += (
+                        f"Property '{prop:s}' in metadata not in input.\n"
+                    )
                 for prop in mismatch_input:
-                    message += f"Property '{prop:s}' in input not in metadata."
+                    message += (
+                        f"Property '{prop:s}' in input not in metadata.\n"
+                    )
                 self.logger.error(message)
                 raise SyntaxError(message)
 

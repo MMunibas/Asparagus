@@ -161,7 +161,8 @@ class DataReader():
             self.data_file = data_file
 
         # Get reference database connect function
-        self.connect = data.get_connect(self.data_file[1])
+        if self.data_file is not None:
+            self.connect = data.get_connect(self.data_file[1])
 
         # Assign property list and units
         self.data_properties = data_properties
@@ -312,6 +313,77 @@ class DataReader():
 
         return metadata
 
+    def get_valid_properties(
+        self,
+        data_source: List[str],
+        data_alt_property_labels: Optional[Dict[str, str]] = None,
+    ):
+        """
+        Load data from asparagus dataset format.
+
+        Parameters
+        ----------
+        data_source: list(str)
+            Tuple of file path and file format label of data source to file.
+        data_alt_property_labels: dict, optional, default None
+            Dictionary of alternative property labeling to replace
+            non-valid property labels with the valid one if possible.
+
+        Returns
+        -------
+        list(str)
+            Valid reference data properties to load
+
+        """
+
+        # Get source property labels
+        if self.data_file_format_load.get(data_source[1]) is None:
+            raise SyntaxError(
+                f"Data format '{data_source[1]:s}' of data source file "
+                + f"'{data_source[0]:s}' is unknown!\n"
+                + "Supported data formats are: "
+                + f"{self.data_file_format_load.keys()}"
+                )
+        else:
+            source_properties = self.data_file_format_load[data_source[1]](
+                data_source,
+                data_properties=None,
+                data_unit_properties=None,
+                data_alt_property_labels=data_alt_property_labels,
+                data_source_unit_properties=None,
+                get_source_properties=True,
+            )
+
+        # Return empty list if source properties are None due to empty source
+        # file
+        if source_properties is None:
+            return []
+
+        # Iterate over all source labels and check for validity
+        reference_properties = []
+        for source_label in source_properties:
+
+            # Skip source labels with a prefix
+            if 'std_' in source_label:
+                continue
+            else:
+                label = source_label
+
+            # Check for valid labels
+            match, modified, valid_label = utils.check_property_label(
+                label,
+                valid_property_labels=settings._valid_properties,
+                alt_property_labels=data_alt_property_labels)
+
+            # Add only non-default property labels
+            if (
+                match
+                and valid_label not in self.default_property_labels
+            ):
+                reference_properties.append(valid_label)
+
+        return reference_properties
+
     def load_db(
         self,
         data_source: List[str],
@@ -319,6 +391,7 @@ class DataReader():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_skip_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
+        get_source_properties: Optional[bool] = False,
         **kwargs,
     ) -> Union[str, List[Dict[str, Any]]]:
         """
@@ -340,6 +413,8 @@ class DataReader():
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        get_source_properties: bool, optional, default False
+            If True, just return source property labels.
 
         Returns
         -------
@@ -373,6 +448,10 @@ class DataReader():
         # Get data sample property labels for label to comparison
         with data.connect(data_source[0], data_source[1], mode='r') as db:
             source_properties = db.get(1)[0].keys()
+
+        # Return source properties if requested
+        if get_source_properties:
+            return source_properties
 
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
@@ -478,6 +557,7 @@ class DataReader():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
+        get_source_properties: Optional[bool] = False,
         **kwargs,
     ) -> Union[str, List[Dict[str, Any]]]:
         """
@@ -499,6 +579,8 @@ class DataReader():
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        get_source_properties: bool, optional, default False
+            If True, just return source property labels.
 
         Returns
         -------
@@ -540,6 +622,10 @@ class DataReader():
         # Get data sample property labels for label to comparison
         with data.connect(data_source[0], data_source[1], mode='r') as db:
             source_properties = db.get(1)[0].keys()
+
+        # Return source properties if requested
+        if get_source_properties:
+            return source_properties
 
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
@@ -644,6 +730,7 @@ class DataReader():
         data_skip_properties: Optional[Dict[str, str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
         data_source_unit_properties: Optional[Dict[str, str]] = None,
+        get_source_properties: Optional[bool] = False,
         **kwargs,
     ):
         """
@@ -668,6 +755,8 @@ class DataReader():
         data_source_unit_properties: dictionary, optional, default None
             Dictionary from properties (keys) to corresponding unit as a 
             string (item) in the source data files.
+        get_source_properties: bool, optional, default False
+            If True, just return source property labels.
 
         Returns
         -------
@@ -701,6 +790,10 @@ class DataReader():
 
         # Get data sample property labels for label to comparison
         source_properties = source.keys()
+
+        # Return source properties if requested
+        if get_source_properties:
+            return source_properties
 
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
@@ -858,6 +951,7 @@ class DataReader():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
+        get_source_properties: Optional[bool] = False,
         **kwargs,
     ):
         """
@@ -879,6 +973,8 @@ class DataReader():
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        get_source_properties: bool, optional, default False
+            If True, just return source property labels.
 
         Returns
         -------
@@ -910,7 +1006,9 @@ class DataReader():
 
         # Check list of properties to skip
         default_skip_properties = [
-            'atoms_number', 'atomic_numbers', 'cell', 'pbc', 'fragment_numbers']
+            'atoms_number', 'atomic_numbers', 'cell', 'pbc',
+            'fragment_numbers'
+        ]
         if data_skip_properties is None:
             data_skip_properties = default_skip_properties
         else:
@@ -938,7 +1036,11 @@ class DataReader():
         source_properties += list(data_sample.calc.results)
         source_properties += list(data_sample.info.keys())
         source_properties += list(data_sample.arrays.keys())
-        
+
+        # Return source properties if requested
+        if get_source_properties:
+            return source_properties
+
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
             data_source,
@@ -1038,6 +1140,7 @@ class DataReader():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
+        get_source_properties: Optional[bool] = False,
         **kwargs,
     ):
         """
@@ -1059,6 +1162,8 @@ class DataReader():
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        get_source_properties: bool, optional, default False
+            If True, just return source property labels.
 
         Returns
         -------
@@ -1118,6 +1223,10 @@ class DataReader():
         source_properties += list(data_sample.calc.results)
         source_properties += list(data_sample.info.keys())
         source_properties += list(data_sample.arrays.keys())
+
+        # Return source properties if requested
+        if get_source_properties:
+            return source_properties
 
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(
@@ -1218,6 +1327,7 @@ class DataReader():
         data_unit_properties: Optional[Dict[str, str]] = None,
         data_skip_properties: Optional[List[str]] = None,
         data_alt_property_labels: Optional[Dict[str, str]] = None,
+        get_source_properties: Optional[bool] = False,
     ) -> Union[str, List[Dict[str, Any]]]:
         """
         Load atoms object with properties to dataset format.
@@ -1240,6 +1350,8 @@ class DataReader():
         data_alt_property_labels: dict, optional, default None
             Dictionary of alternative property labeling to replace
             non-valid property labels with the valid one if possible.
+        get_source_properties: bool, optional, default False
+            If True, just return source property labels.
 
         Returns
         -------
@@ -1269,6 +1381,10 @@ class DataReader():
 
         # Get data sample property labels for label to comparison
         source_properties = atoms_properties.keys()
+
+        # Return source properties if requested
+        if get_source_properties:
+            return source_properties
 
         # Assign data source property labels to valid property labels.
         assigned_properties = self.assign_property_labels(

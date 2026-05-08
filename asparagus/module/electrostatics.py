@@ -294,7 +294,7 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
         if not self.atomic_dipoles and self.atomic_quadrupoles:
             raise SyntaxError(
                 "Electrostatic interaction including atomic quadrupoles also "
-                "requires the inclusion of atomic dipoles!")
+                + "requires the inclusion of atomic dipoles!")
 
         return
 
@@ -368,8 +368,12 @@ class Damped_electrostatics_NoShift(torch.nn.Module):
             # Here, only the charge-quadrupole interaction is included!
 
             # Gather atomic quadrupole pairs
-            # atomic_quadrupoles_u = batch['atomic_quadrupoles'][batch['idx_u']]
-            atomic_quadrupoles_v = batch['atomic_quadrupoles'][batch['idx_v']]
+            # atomic_quadrupoles_u = (
+            #     batch['atomic_quadrupoles'][batch['ml_idx_u']]
+            # )
+            atomic_quadrupoles_v = (
+                batch['atomic_quadrupoles'][batch['idx_v']]
+            )
 
             # Compute traceless outer product
             outer_product = (
@@ -739,7 +743,7 @@ class Damped_electrostatics_ShiftedForce(torch.nn.Module):
         if not self.atomic_dipoles and self.atomic_quadrupoles:
             raise SyntaxError(
                 "Electrostatic interaction including atomic quadrupoles also "
-                "requires the inclusion of atomic dipoles!")
+                + "requires the inclusion of atomic dipoles!")
 
         return
 
@@ -1116,12 +1120,16 @@ class MLMM_electrostatics(torch.nn.Module):
         """
 
         # Compute damped Coulomb potential
-        Eelec_pair = self.potential_fn(batch)
+        mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
+        Eelec_pair = self.potential_fn(
+            batch,
+            mlmm_ml_idx_u=mlmm_ml_idx_u,
+        )
 
         # Sum up electrostatic atom pair contribution of each atom
         Eelec_atom = torch.zeros_like(batch['atomic_energies']).scatter_add_(
             0,
-            batch['mlmm_idx_u'],
+            mlmm_ml_idx_u,
             Eelec_pair)
 
         # Add electrostatic atomic energy contributions
@@ -1183,6 +1191,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
     def forward(
         self,
         batch: Dict[str, torch.Tensor],
+        mlmm_ml_idx_u: torch.Tensor = None
     ) -> torch.Tensor:
         """
         Damped & shifted forces Coulomb interaction
@@ -1204,7 +1213,9 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         mlmm_distances2 = torch.square(mlmm_distances)
 
         # Gather atomic pair charges
-        ml_atomic_charges_u = batch['atomic_charges'][batch['mlmm_idx_u']]
+        if mlmm_ml_idx_u is None:
+            mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
+        ml_atomic_charges_u = batch['atomic_charges'][mlmm_ml_idx_u]
         mm_atomic_charges_v = batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
 
         # Compute B terms, G terms and MLMM electrostatic interaction potential
@@ -1219,7 +1230,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
             B1 = B0/mlmm_distances2
             G1 = torch.sum(
                 (
-                    batch['atomic_dipoles'][batch['mlmm_idx_u']]
+                    batch['atomic_dipoles'][mlmm_ml_idx_u]
                     * batch['mlmm_vectors_uv']
                 ),
                 dim=1,
@@ -1248,7 +1259,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
                 B2 = 3.*B1/mlmm_distances2
                 G2 = torch.sum(
                     (
-                        batch['atomic_quadrupoles'][batch['mlmm_idx_u']]
+                        batch['atomic_quadrupoles'][mlmm_ml_idx_u]
                         * mlmm_traceless_outer_product
                     ),
                     dim=(1, 2)

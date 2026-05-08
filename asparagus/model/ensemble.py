@@ -245,6 +245,21 @@ class EnsembleModel(torch.nn.Module):
             model_calculator.model_mlmm_embedding
             for model_calculator in self.model_calculator_list])
 
+    @property
+    def _default_model_properties(self):
+        return self.model_calculator_list[0]._default_model_properties
+
+    @property
+    def _supported_model_properties(self):
+        return self.model_calculator_list[0]._supported_model_properties
+
+    @property
+    def _required_input_properties(self):
+        if hasattr(
+            self.model_calculator_list[0], '_required_input_properties'
+        ):
+            return self.model_calculator_list[0]._required_input_properties
+
     def load(
         self,
         checkpoint: List[Dict[str, Any]],
@@ -345,19 +360,35 @@ class EnsembleModel(torch.nn.Module):
         """
         return self.model_calculator_list[0].get_cutoff_ranges()
 
-    def get_mlmm_cutoff_ranges(self) -> List[float]:
+    def get_mlmm_cutoff_ranges(
+        self,
+        mlmm_inf_cutoff: Optional[bool] = False,
+    ) -> List[float]:
         """
         Get model ML and MM atom pair cutoff or, eventually, short range 
         descriptor and long range cutoff list.
 
+        Parameters
+        ----------
+        mlmm_inf_cutoff: bool, optional, default False
+            If True such as in model training, the ML-MM long range cutoff is
+            set to infinity, as usually the case in reference QM-MM calculation
+            (e.g. ORCA).
+            Note that in case of an infinite cutoff, the periodic boundary
+            conditions are ignored and only atom pairs within the primary
+            cell (if one is defined) are considered.
+
         Return
+        ------
         list(float)
             List of ML and MM atom pair long range model and, eventually, short
             range descriptor cutoff (if defined and not short range equal long
             range cutoff).
 
         """
-        return self.model_calculator_list[0].get_mlmm_cutoff_ranges()
+        return self.model_calculator_list[0].get_mlmm_cutoff_ranges(
+            mlmm_inf_cutoff=mlmm_inf_cutoff
+        )
 
     # @torch.compile # Not supporting backwards propagation with torch.float64
     def forward(
@@ -373,32 +404,6 @@ class EnsembleModel(torch.nn.Module):
         ----------
         batch: dict(str, torch.Tensor)
             Dictionary of input data tensors for forward pass.
-            Basic keys are:
-                'atoms_number': torch.Tensor(n_systems)
-                    Number of atoms per molecule in batch
-                'atomic_numbers': torch.Tensor(n_atoms)
-                    Atomic numbers of the batch of molecules
-                'positions': torch.Tensor(n_atoms, 3)
-                    Atomic positions of the batch of molecules
-                'charge': torch.Tensor(n_systems)
-                    Total charge of molecules in batch
-                'idx_i': torch.Tensor(n_pairs)
-                    Atom i pair index
-                'idx_j': torch.Tensor(n_pairs)
-                    Atom j pair index
-                'sys_i': torch.Tensor(n_atoms)
-                    System indices of atoms in batch
-            Extra keys are:
-                'pbc_offset': torch.Tensor(n_pairs)
-                    Periodic boundary atom pair vector offset
-                'ml_idx': torch.Tensor(n_atoms)
-                    Primary atom indices for the supercluster approach
-                'ml_idx_p': torch.Tensor(n_pairs)
-                    Image atom to primary atom index pointer for the atom
-                    pair indices in a supercluster
-                'ml_idx_jp': torch.Tensor(n_pairs)
-                    Atom j pair index pointer from image atom to respective
-                    primary atom index in a supercluster
         no_derivation: bool, optional, default False
             If True, only predict non-derived properties.
             Else, predict all properties even if backwards derivation is
@@ -415,14 +420,13 @@ class EnsembleModel(torch.nn.Module):
 
         """
 
-        # Initialize model and model ensemble result dictionaries
-        model_results = {}
-        ensemble_results = {}
+        # Get a copy of the batch dictionary for repeating model runs
+        batch_i = {key: item for key, item in batch.items()}
 
         # Iterate over ensemble models
         for ic, model_calculator in enumerate(self.model_calculator_list):
             batch[ic] = model_calculator(
-                batch,
+                batch_i,
                 no_derivation=no_derivation,
                 verbose_results=verbose_results).copy()
 

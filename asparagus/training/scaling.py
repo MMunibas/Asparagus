@@ -302,11 +302,11 @@ def get_model_prediction_and_reference_properties(
                 batch[prop].cpu().detach())
         for prop in properties:
             if (
-                'ml_idx' in batch
+                'ml_sys_p' in batch
                 and batch[prop].shape[0] != batch['reference'][prop].shape[0] 
             ):
                 properties_reference[prop].append(
-                    batch['reference'][prop][batch['ml_idx']].cpu().detach())
+                    batch['reference'][prop][batch['ml_sys_p']].cpu().detach())
             else:
                 properties_reference[prop].append(
                     batch['reference'][prop].cpu().detach())
