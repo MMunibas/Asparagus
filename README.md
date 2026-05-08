@@ -4,7 +4,7 @@
 
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
-## Current Remarks?
+## Current Remarks:
  - PyCHARMM interfaces currently out of order
 
 ## What is this?
