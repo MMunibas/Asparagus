@@ -4,9 +4,13 @@
 
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
+## Current Remarks?
+ - PyCHARMM interfaces currently out of order
+
 ## What is this?
  - A refined implementation of PhysNet and PainNN (and more atomistic NN to come) in PyTorch. 
  - A Suit for the automatic construction of Potential Energy Surface (PES) from sampling to production.
+ - Provides interfaces for trained PES for use with ASE, PyCHARMM, OpenMM
 
 ## How to use? 
 
