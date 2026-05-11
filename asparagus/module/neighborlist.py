@@ -532,10 +532,16 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
         # Check and set cutoffs
         if utils.is_numeric(cutoffs):
             self.cutoffs = torch.tensor(
-                [cutoffs], device=self.device, dtype=self.dtype)
+                [cutoffs],
+                device=self.device,
+                dtype=self.dtype
+            )
         else:
             self.cutoffs = torch.tensor(
-                cutoffs, device=self.device, dtype=self.dtype)
+                cutoffs,
+                device=self.device,
+                dtype=self.dtype
+            )
 
         self.max_cutoff = torch.max(self.cutoffs)
 

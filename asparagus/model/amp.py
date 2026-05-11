@@ -298,7 +298,7 @@ class Model_AMP(model.BaseModel):
             'graph': graph_module,
             'output': output_module,
             })
-
+        
         # If electrostatic energy contribution is undefined, activate 
         # contribution if atomic charges are predicted.
         if self.model_electrostatic is None:
@@ -306,7 +306,7 @@ class Model_AMP(model.BaseModel):
                 self.model_electrostatic = True
             else:
                 self.model_electrostatic = False
-
+        
         # If ML/MM embedding contribution is undefined, activate 
         # contribution if atomic charges are predicted.
         if self.model_mlmm_embedding is None:
@@ -314,7 +314,7 @@ class Model_AMP(model.BaseModel):
                 self.model_mlmm_embedding = True
             else:
                 self.model_mlmm_embedding = False
-
+        
         # Check repulsion, electrostatic and dispersion module requirement
         if self.model_repulsion and not self.model_energy:
             raise SyntaxError(
@@ -345,7 +345,7 @@ class Model_AMP(model.BaseModel):
 
         # Assign atom repulsion module
         if self.model_repulsion:
-
+        
             # Check nuclear repulsion cutoff
             input_radial_cutoff = config.get('input_radial_cutoff')
             if (
@@ -355,7 +355,7 @@ class Model_AMP(model.BaseModel):
                 raise SyntaxError(
                     "Nuclear repulsion cutoff radii is larger than the "
                     + "input module radial cutoff!")
-
+        
             # Assign Ziegler-Biersack-Littmark style nuclear repulsion
             # potential
             repulsion_module = module.ZBL_repulsion(
@@ -367,10 +367,10 @@ class Model_AMP(model.BaseModel):
                 unit_properties=self.model_unit_properties,
                 **kwargs)
             self.module_dict['repulsion'] = repulsion_module
-
+        
         # Assign ML/ML electrostatic interaction module
         if self.model_electrostatic:
-
+        
             electrostatic_module = module.Damped_electrostatics(
                 self.model_cutoff,
                 config.get('input_radial_cutoff'),
@@ -382,16 +382,16 @@ class Model_AMP(model.BaseModel):
                 atomic_quadrupoles=self.model_atomic_quadrupoles,
                 **kwargs)
             self.module_dict['electrostatic'] = electrostatic_module
-
+        
         # Assign dispersion interaction module
         if self.model_dispersion:
-
+        
             # Grep dispersion correction parameters
             d3_s6 = config.get("model_dispersion_d3_s6")
             d3_s8 = config.get("model_dispersion_d3_s8")
             d3_a1 = config.get("model_dispersion_d3_a1")
             d3_a2 = config.get("model_dispersion_d3_a2")
-
+        
             # Get Grimme's D3 dispersion model calculator
             dispersion_module = module.D3_dispersion(
                 self.model_cutoff,
@@ -407,10 +407,10 @@ class Model_AMP(model.BaseModel):
                 d3_a2=d3_a2,
             )
             self.module_dict['dispersion'] = dispersion_module
-
+        
         # Assign ML/MM electrostatic interaction module
         if self.model_mlmm_embedding:
-
+        
             mlmm_electrostatic_module = module.MLMM_electrostatics(
                 self.model_mlmm_cutoff,
                 self.device,
@@ -643,19 +643,19 @@ class Model_AMP(model.BaseModel):
         # Run modules
         for module in self.module_dict.values():
             batch = module(batch, verbose=verbose_results)
-
+        
         # Compute property - Energy
         if self.model_energy:
             batch = self.compute_energy(batch, verbose=verbose_results)
-
+        
         # Compute gradients and Hessian if demanded
         if self.model_forces and not no_derivation:
             batch = self.compute_derivatives(batch, create_graph=create_graph)
-
+        
         # Compute molecular dipole
         if self.model_dipole:
             batch = self.compute_dipole(batch)
-
+        
         # Compute molecular quadrupole
         if self.model_quadrupole:
             batch = self.compute_quadrupole(batch)

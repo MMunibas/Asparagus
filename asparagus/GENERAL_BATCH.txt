@@ -1,0 +1,223 @@
+
+BATCH PROPERTIES
+
+Motivation:
+
+The 'batch' dictionary is an instance of system properties that is generated
+with the basic system informations (atom types, positions, charge, pbc etc.),
+added by atom pair neighbor list information and later by the model
+predictions.
+
+Depending on the requested job or settings, it will also contains reference
+properties during model training, or with the verbose flag also single 
+contributions to the property prediction from the single modules such as
+dispersion, electrostatic or the NN output blocks.
+
+As this batch can be passed multiple times through the model, it is important
+to keep essential system information in the batch as they are when passing
+through the model at the first time to prevent errors.
+
+However, different systems (e.g. ML/MM mixed systems) may need different forms,
+in particular Torch tensor shapes, of the stored information. Thus, it is
+beneficial to have a systematic naming and prefix/suffix convention for the
+batch properties.
+
+Symbol/Abbreviation/Term Explanation:
+
+batch, b:               Dictionary of a batch if system information.
+Nsys:                   Number of systems stored in the batch.
+Natoms:                 Number of the sum of all atoms of the stored systems.
+Npairs:                 Number of the sum of all atom pairs of a particular
+                        neighbor list.
+ML atoms, MM atoms:     Systems can contains atoms for which poperties are
+                        predicted by a ML model (-> ML atoms), and MM atoms
+                        which have assigned properties (e.g. atomic charges)
+                        to interact with the ML system.
+Natoms_ml:              Number of the sum of all ML atoms of the stored
+                        systems, it can only differ with Natoms in mixed ML/MM
+                        systems.
+Npairs_mlml:            Number of the sum of all atom pairs between ML-ML
+                        atoms.
+Npairs_mlmm:            Number of the sum of all atom pairs between ML-MM
+                        atoms.
+Nrbfs:                  Number of 'radial basis function' (RBF) values per atom
+                        pair. RBFs can also include be Bessel function or other
+                        angular dependent function but are (historically) all
+                        stored as 'rbf'.
+
+
+Basic Properties:
+
+Basic properties are system properties that do not change by the prediction
+method or further custom settings. This does not include reference properties
+their addition is controlled by multiple variables.
+
+Property                Details
+
+'atoms_number'          List (shape=(Nsys), dtype=int) with the numbers of
+                        ML atoms per system stored in the batch.
+'atomic_numbers'        List (shape=(Natoms_ml), dtype=int) of the atom type
+                        number of each ML atom per system stored in the batch.
+'positions'             List (shape=(Natoms_ml, 3), dtype=float) of ML atom
+                        positions per system stored in the batch.
+'cell'                  List (shape=(Nsys, 3, 3), dtype=float) of cell
+                        parameter in form of x, y, z Cartesian vectors.
+'pbc'                   List (shape=(Nsys, 3), dtype=bool) of periodic boundary
+                        conditions in each Cartesian x, y, z direction.
+                        If True, periodic conditions along the respective
+                        coordinate is considered.
+'charge'                List (shape=(Nsys), dtype=float) of total system
+                        charges. Here, only the total charge of ML atoms is
+                        considered.
+'sys_i'                 Consecutive list (shape=(Natoms_ml), dtype=int) of
+                        system indices per ML atom to assign the atom to its
+                        individual system.
+'fragment_numbers'      List (shape=(Natoms), dtype=int) of fragment indices
+                        per atom to mark it either as ML atom (index 0 by
+                        default) or as MM atom (index 1 by default). Which
+                        index belong to which class (ML or MM) shall be not
+                        hard coded for the modules operating with these types
+                        individually, rather with an optional parameter for
+                        which fragment indes is which type.
+'row_ids'               When system data are collected from the database, the
+                        row id is the entry number of the system in the
+                        database.
+
+
+Parameter Setting Depending Properties:
+
+Still system properties but the shape of such batch properties depends on
+parameter such as the cutoff range for atom pair indices or the assignment
+of atoms as an ML or MM atom (currently supported are just ML = 0 and MM = 1).
+
+Property                Details
+
+'mlmm_atoms_number'     List (shape=(Nsys), dtype=int) with the numbers of all
+                        ML and MM atoms per system stored in the batch.
+'mlmm_atomic_numbers'   List (shape=(Natoms), dtype=int) of the atom type
+                        number of each ML and MM atom stored in the batch.
+'mlmm_positions'        List (shape=(Natoms, 3), dtype=float) of all ML and MM
+                        atom positions per system stored in the batch.
+'mlmm_sys_i'            Consecutive list (shape=(Natoms), dtype=int) of system
+                        indices per ML and MM atom to assign the atom to its
+                        individual system.
+'ml_sys_p':             List (shape=(Natoms_ml), dtype=int) of pointer indices
+                        pointing to ML atoms in full Natoms property lists of
+                        all ML and MM atoms.
+                        E.g. b['sys_i'] = b['mlmm_sys_i'][b['ml_sys_p']]
+                             (Natoms_ml)  (Natoms)        (Natoms_ml)
+'ml_idx_p':             List (shape=(Natoms_ml), dtype=int) of pointer indices
+                        shifting the atom indices with respect to Natoms
+                        property lists of all ML and MM atoms to the respective
+                        atom indices in reduced Natoms_ml property lists of
+                        only ML atoms.
+                        E.g. ml_idx_i = b['idx_i'][b['ml_idx_p']]
+                             (Npairs_mlml)   (Npairs_mlml) (Npairs_mlml)
+                        with
+                             b['atomic_numbers'][ml_idx_i] works,
+                             b['atomic_numbers'][b['idx_i']] does not work
+                             because b['atomic_numbers'] has the length of
+                             Natoms_ml but b['idx_i'] points to atoms in lists
+                             of max length Natoms (ML + MM atoms).
+'idx_i', 'idx_j'        Lists (shape=(Npairs_mlml), dtype=int) of atom pair
+                        indices i and j (bidirectional by default, meaning e.g.
+                        idx_i=[0,0,1,1,2,2], idx_j=[1,2,0,2,0,1] versus not
+                        bidirectional idx_i=[0,0,1], idx_j=[1,2,0]) between
+                        ML-ML atoms.
+                        The lists depend on the 'shorter' cutoff value for the
+                        NN interaction range.
+'pbc_offset_ij'         Optional list (shape=(Npairs_mlml, 3), dtype=float) of
+                        offset vectors added to the ML(i)-ML(j) connection
+                        vectors due to periodic boundary conditions.
+                        If all periodic boundary conditions are False, not
+                        offsets are added to the batch.
+'idx_u', 'idx_v'        Lists (shape=(Natoms_ml), dtype=int) of atom pair
+                        indices u and v depending on the 'longer' cutoff range
+                        for long range interaction such as dispersion
+                        correction.
+                        In case of only one cutoff range, 'idx_u' and 'idx_v'
+                        just points to the 'idx_i' and 'idx_j' lists,
+                        respectively.
+'pbc_offset_uv'         Optional list (shape=(Npairs_mlml, 3), dtype=float) of
+                        offset vectors added to the ML(u)-ML(v) connection
+                        vectors due to periodic boundary conditions.
+                        If all periodic boundary conditions are False, not
+                        offsets are added to the batch.
+'mlmm_idx_i',           Lists (shape=(Npairs_mlmm), dtype=int) of atom pair
+'mlmm_idx_j'            indices i and j (monodirectional) between ML(i) and
+                        MM(j) atoms.
+                        The lists depend on the 'shorter' cutoff value for the
+                        ML-MM interaction range (e.g. ML polarization by MM).
+'mlmm_pbc_offset_ij'    Optional list (shape=(Npairs_mlmm, 3), dtype=float) of
+                        offset vectors added to the ML(i)-MM(j) connection
+                        vectors due to periodic boundary conditions.
+                        If all periodic boundary conditions are False, not
+                        offsets are added to the batch.
+'mlmm_idx_u',           Lists (shape=(Npairs_mlmm), dtype=int) of atom pair
+'mlmm_idx_v'            indices u and v (monodirectional) between ML(u) and
+                        MM(v) atoms.
+                        The lists depend on the 'longer' cutoff value for the
+                        ML-MM interaction range (e.g. ML-MM electrostatic).
+                        In case of only one cutoff range, 'mlmm_idx_u' and
+                        'mlmm_idx_v' just points to the 'mlmm_idx_i' and
+                        'mlmm_idx_j' lists, respectively.
+'mlmm_pbc_offset_ij'    Optional list (shape=(Npairs_mlmm, 3), dtype=float) of
+                        offset vectors added to the ML(u)-MM(v) connection
+                        vectors due to periodic boundary conditions.
+                        If all periodic boundary conditions are False, not
+                        offsets are added to the batch.
+
+
+Structural Properties:
+
+Structural properties are computed from the system information to encode
+the structure of the systems to serve as input for the subsequent model
+prediction.
+
+Property                Details
+
+'distances'             List (shape=(Npairs_mlml), dtype=float) of ML(i)-ML(j)
+                        atom pair distances.
+'vectors'               List (shape=(Npairs_mlml, 3), dtype=float) of
+                        ML(i)-ML(j) atom pair connection vectors. Points always
+                        from atom ML(i) to atom ML(j).
+'vectors_normalized'    List (shape=(Npairs_mlml, 3), dtype=float) of
+                        ML(i)-ML(j) normalized atom pair connection vectors.
+'outer_product'         List (shape=(Npairs_mlml, 3, 3), dtype=float) of
+                        outer matrix products of the normalized ML(i)-ML(j)
+                        atom pair connection vectors.
+'traceless_outer_product' List (shape=(Npairs_mlml, 3, 3), dtype=float) of
+                        detraced outer matrix products of the normalized
+                        ML(i)-ML(j) atom pair connection vectors.
+'rbfs'                  List (shape=(Npairs_mlml, Nrbfs), dtype=float) of
+                        ML(i)-ML(j) atom pair 'radial distribution function',
+                        which can also be other, even angular-dependent
+                        functions to describe local atom environment.
+'cutoffs'               List (shape=(Npairs_mlml), dtype=float) of cutoff
+                        values from 1 (distance = 0) to 0 (distance > 'short'
+                        cutoff range) computed by a switch-off function.
+'distances_uv'          List (shape=(Npairs_mlml), dtype=float) of ML(u)-ML(v)
+                        atom pair distances.
+'vectors_uv'            List (shape=(Npairs_mlml, 3), dtype=float) of
+                        ML(u)-ML(v) atom pair connection vectors. Points always
+                        from atom ML(u) to atom ML(v)
+...
+'mlmm_distances'        List (shape=(Npairs_mlmm), dtype=float) of ML(i)-MM(j)
+                        atom pair distances.
+'mlmm_vectors'          List (shape=(Npairs_mlmm, 3), dtype=float) of
+                        ML(i)-MM(j) atom pair connection vectors. Points always
+                        from atom ML(i) to atom MM(j).
+'mlmm_vectors_normalized' List (shape=(Npairs_mlmm, 3), dtype=float) of
+                        ML(i)-MM(j) normalized atom pair connection vectors.
+'mlmm_outer_product'    List (shape=(Npairs_mlmm, 3, 3), dtype=float) of
+                        outer matrix products of the normalized ML(i)-MM(j)
+                        atom pair connection vectors.
+'mlmm_traceless_outer_product' List (shape=(Npairs_mlmm, 3, 3), dtype=float) of
+                        detraced outer matrix products of the normalized
+                        ML(i)-MM(j) atom pair connection vectors.
+...
+
+
+
+
+

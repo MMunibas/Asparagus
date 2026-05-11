@@ -1532,9 +1532,9 @@ class BaseModel(torch.nn.Module):
                     # Compute dipole derivative
                     dipole_component = batch['dipole'][:, ii]
                     g = torch.autograd.grad(
-                        outputs=dipole_component,
-                        inputs=batch['positions'],
-                        grad_outputs=torch.ones_like(dipole_component),
+                        [torch.sum(dipole_component),],
+                        [batch['positions'],],
+                        # grad_outputs=torch.ones_like(dipole_component),
                         retain_graph=(ii < 2),
                         create_graph=create_graph,
                         allow_unused=True,

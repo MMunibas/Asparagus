@@ -1123,7 +1123,6 @@ class MLMM_electrostatics(torch.nn.Module):
         mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
         Eelec_pair = self.potential_fn(
             batch,
-            mlmm_ml_idx_u=mlmm_ml_idx_u,
         )
 
         # Sum up electrostatic atom pair contribution of each atom
@@ -1191,7 +1190,6 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
     def forward(
         self,
         batch: Dict[str, torch.Tensor],
-        mlmm_ml_idx_u: torch.Tensor = None
     ) -> torch.Tensor:
         """
         Damped & shifted forces Coulomb interaction
@@ -1213,8 +1211,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         mlmm_distances2 = torch.square(mlmm_distances)
 
         # Gather atomic pair charges
-        if mlmm_ml_idx_u is None:
-            mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
+        mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
         ml_atomic_charges_u = batch['atomic_charges'][mlmm_ml_idx_u]
         mm_atomic_charges_v = batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
 
