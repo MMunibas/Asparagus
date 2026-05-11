@@ -67,7 +67,6 @@ class EnsembleModel(torch.nn.Module):
         """
         Initialize EnsembleModel Calculator
 
-
         """
 
         super(EnsembleModel, self).__init__()
@@ -156,11 +155,22 @@ class EnsembleModel(torch.nn.Module):
             self.model_calculator_list[0].model_properties.copy())
         self.model_unit_properties = (
             self.model_calculator_list[0].model_unit_properties.copy())
-        # for prop in self.model_calculator_list[0].model_properties:
-        #     prop_std = f"std_{prop:s}"
-        #     self.model_properties.append(prop_std)
-        #     self.model_unit_properties[prop_std] = (
-        #         self.model_calculator_list[0].model_unit_properties[prop])
+
+        # Model hidden parameter
+        self._default_model_properties = (
+            self.model_calculator_list[0]._default_model_properties
+        )
+        self._supported_model_properties = (
+            self.model_calculator_list[0]._supported_model_properties
+        )
+        if hasattr(
+            self.model_calculator_list[0], '_required_input_properties'
+        ):
+            self._required_input_properties = (
+                self.model_calculator_list[0]._required_input_properties
+            )
+        else:
+            self._required_input_properties = []
 
         # Model cutoff ranges
         if hasattr(self.model_calculator_list[0], 'model_cutoff'):
@@ -244,21 +254,6 @@ class EnsembleModel(torch.nn.Module):
         return any([
             model_calculator.model_mlmm_embedding
             for model_calculator in self.model_calculator_list])
-
-    @property
-    def _default_model_properties(self):
-        return self.model_calculator_list[0]._default_model_properties
-
-    @property
-    def _supported_model_properties(self):
-        return self.model_calculator_list[0]._supported_model_properties
-
-    @property
-    def _required_input_properties(self):
-        if hasattr(
-            self.model_calculator_list[0], '_required_input_properties'
-        ):
-            return self.model_calculator_list[0]._required_input_properties
 
     def load(
         self,
@@ -394,8 +389,9 @@ class EnsembleModel(torch.nn.Module):
     def forward(
         self,
         batch: Dict[str, torch.Tensor],
-        no_derivation: Optional[bool] = False,
-        verbose_results: Optional[bool] = False,
+        no_derivation: bool = False,
+        create_graph: bool = False,
+        verbose_results: bool = False,
     ) -> Dict[str, torch.Tensor]:
         """
         Forward pass of the model ensemble calculator.
@@ -408,9 +404,13 @@ class EnsembleModel(torch.nn.Module):
             If True, only predict non-derived properties.
             Else, predict all properties even if backwards derivation is
             required (e.g. forces).
+        create_graph: bool, optional, default False
+            Parameter for 'torch.autograd.grad' to force keeping derivative
+            graph if set to true. Necessary when further derivatives needs to
+            be computed from the results.
         verbose_results: bool, optional, default False
-            If True, store single model property predictions and extended model
-            property contributions.
+            If True, store extended model property contributions in the result
+            dictionary.
 
         Returns
         -------
@@ -421,27 +421,33 @@ class EnsembleModel(torch.nn.Module):
         """
 
         # Get a copy of the batch dictionary for repeating model runs
-        batch_i = {key: item for key, item in batch.items()}
+        batch_i = [
+            {}
+            for _ in self.model_calculator_list
+        ]
 
         # Iterate over ensemble models
         for ic, model_calculator in enumerate(self.model_calculator_list):
-            batch[ic] = model_calculator(
-                batch_i,
+            batch_i[ic] = model_calculator(
+                batch,
                 no_derivation=no_derivation,
-                verbose_results=verbose_results).copy()
+                create_graph=create_graph,
+                verbose_results=verbose_results,
+            )#.copy()
 
         # Accumulate model results
         for prop in self.model_properties:
-            prop_std = f"std_{prop:s}"
-            batch[prop_std], batch[prop] = (
-                torch.std_mean(
-                    torch.stack(
-                        [
-                            batch[ic][prop]
-                            for ic in range(self.model_ensemble_num)
-                        ]),
-                    dim=0)
-                )
+            if prop in batch_i[0]:
+                prop_std = "std_" + prop
+                batch[prop_std], batch[prop] = (
+                    torch.std_mean(
+                        torch.stack(
+                            [
+                                batch_i[ic][prop]
+                                for ic in range(self.model_ensemble_num)
+                            ]),
+                        dim=0)
+                    )
 
         return batch
 
