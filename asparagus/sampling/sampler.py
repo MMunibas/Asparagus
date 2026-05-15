@@ -335,8 +335,8 @@ class Sampler:
         if self.sample_systems_optimize:
 
             # Assign ASE optimizer
-            self.optimizer_tag = 'bfgs'
-            self.ase_optimizer = optimize.BFGS
+            self.optimizer_tag = 'fire'
+            self.ase_optimizer = optimize.FIRE
 
         #####################################
         # # # Initialize Sample DataSet # # #
@@ -1067,7 +1067,7 @@ class Sampler:
         # Check sample system input
         if sample_system is None and sample_systems_queue is None:
             return None
-        
+
         # Optimize sample system
         if sample_system is not None:
             
@@ -1114,7 +1114,7 @@ class Sampler:
                 
                 # Get sample parameters or wait
                 sample = sample_systems_queue.get()
-                
+
                 # Check for stop flag
                 if sample == 'stop':
                     self.thread_keep_going[ithread] = False

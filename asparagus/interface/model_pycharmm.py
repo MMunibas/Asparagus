@@ -629,9 +629,9 @@ class MLMM_electrostatics(torch.nn.Module):
         """
 
         # Assign variables
-        positions = batch['positions']
-        ml_idxu = batch['mlmm_idxu']
-        mm_idxv = batch['mlmm_idxv']
+        positions = batch['mlmm_positions']
+        ml_idxu = batch['mlmm_idx_u']
+        mm_idxv = batch['mlmm_idx_v']
         ml_idxup = batch['mlmm_idxup']
         mm_idxvp = batch['mlmm_idxvp']
         ml_idxtp = batch['mlmm_idxvp']
@@ -723,12 +723,12 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         """
 
         # Compute reciprocal distances and cutoff shifts
-        distances = batch['mlmm_distances']
+        distances = batch['mlmm_distances_uv']
         chi = 1.0/distances
 
         # Gather atomic charge pairs
-        atomic_charges_i = batch['mlmm_atomic_charges'][batch['mlmm_idxu']]
-        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idxv']]
+        atomic_charges_i = batch['mlmm_atomic_charges'][batch['mlmm_idx_u']]
+        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
 
         # Compute damped charge-charge electrostatics
         Eelec = atomic_charges_i*atomic_charges_j*chi
@@ -740,10 +740,10 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
             chi2 = chi**2
 
             # Adjust atom pair vectors
-            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+            chi_vectors = batch['mlmm_vectors_uv']/distances.unsqueeze(-1)
 
             # Gather atomic dipole pairs
-            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idxu']]
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_u']]
 
             # Compute dot products of atom pair vector and atomic dipole
             dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
@@ -820,13 +820,13 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
         """
 
         # Compute damped reciprocal distances and cutoff shifts
-        distances = batch['mlmm_distances']
+        distances = batch['mlmm_distances_uv']
         chi = 1.0/distances
         chi_shift = 1.0/self.cutoff
 
         # Gather atomic charge pairs
-        atomic_charges_i = batch['atomic_charges'][batch['mlmm_idxu']]
-        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idxv']]
+        atomic_charges_i = batch['atomic_charges'][batch['mlmm_idx_u']]
+        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
 
         # Compute damped charge-charge electrostatics
         Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
@@ -842,7 +842,7 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
             chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
 
             # Gather atomic dipole pairs
-            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idxu']]
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_u']]
 
             # Compute dot products of atom pair vector and atomic dipole
             dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)
@@ -920,13 +920,13 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
         """
 
         # Compute damped reciprocal distances and cutoff shifts
-        distances = batch['mlmm_distances']
+        distances = batch['mlmm_distances_uv']
         chi = 1.0/distances
         chi_shift = 2.0/self.cutoff - distances/self.cutoff2
 
         # Gather atomic charge pairs
-        atomic_charges_i = batch['mlmm_atomic_charges'][batch['mlmm_idxu']]
-        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idxv']]
+        atomic_charges_i = batch['mlmm_atomic_charges'][batch['mlmm_idx_u']]
+        atomic_charges_j = batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
 
         # Compute damped charge-charge electrostatics
         Eelec = atomic_charges_i*atomic_charges_j*(chi - chi_shift)
@@ -944,10 +944,10 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
             chi2_shift = chi_shift**2
 
             # Adjust atom pair vectors
-            chi_vectors = batch['mlmm_vectors']/distances.unsqueeze(-1)
+            chi_vectors = batch['mlmm_vectors_uv']/distances.unsqueeze(-1)
 
             # Gather atomic dipole pairs
-            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idxu']]
+            atomic_dipoles_i = batch['atomic_dipoles'][batch['mlmm_idx_u']]
 
             # Compute dot products of atom pair vector and atomic dipole
             dot_ji = torch.sum(chi_vectors*atomic_dipoles_i, dim=1)

@@ -209,7 +209,7 @@ class NormalModeScanner(sampling.Sampler):
             in {sample_directory}/vib_{isample} will be deleted.
             Else, results from available  checkpoint files will be used.
         """
-        
+
         # Check sample system queue
         if sample_systems_queue is None:
             sample_systems_queue = queue.Queue()
@@ -229,7 +229,7 @@ class NormalModeScanner(sampling.Sampler):
 
             # Initialize optimized sample system into queue
             sample_input_queue = queue.Queue()
-            
+
             if self.sample_num_threads == 1:
 
                 # Run sample system optimization
@@ -282,7 +282,6 @@ class NormalModeScanner(sampling.Sampler):
         nms_exclude_modes: List[int],
         nms_frequency_range: List[Tuple[str, float]],
         nms_clean: bool,
-        reset_com: Optional[bool] = True,
         **kwargs
     ):
         """
@@ -318,7 +317,7 @@ class NormalModeScanner(sampling.Sampler):
                     idx for idx in atom_indices
                     if idx not in constraint.index]
         atom_indices = np.array(atom_indices)
-        
+
         # Prepare system parameter
         Natoms = len(atom_indices)
         Nmodes = 3*Natoms
@@ -419,18 +418,7 @@ class NormalModeScanner(sampling.Sampler):
         # Compute and store equilibrium positions and center of mass,
         # moments of inertia and principle axis of inertia
         system_init_positions = system.get_positions()
-        if reset_com and nms_indices is not None:
-            self.logger.warning(
-                "The center of mass of the system would be recalculated!\n" 
-                + f"The new COM is on atoms: '{atom_indices}'\n" 
-                + "This might lead to identifying vibrations as "
-                + "translations")
-            system_init_com = system[atom_indices].get_center_of_mass()
-        else:
-            self.logger.warning(
-                "The Center of Mass to use would be the same for the "
-                + "complete molecule")
-            system_init_com = system.get_center_of_mass()
+        system_init_com = system[atom_indices].get_center_of_mass()
 
         # Compute and compare same quantities for displaced system
         system_com_shift = np.zeros(Nmodes, dtype=float)

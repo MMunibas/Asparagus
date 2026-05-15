@@ -20,6 +20,11 @@ from .model_ase import(
     ASE_Calculator
 )
 
+from .openmm_ase import(
+    ASE_OpenMM_Calculator
+)
+
+
 from .model_pycharmm import (
     PyCharmm_Calculator
 )

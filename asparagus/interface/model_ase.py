@@ -15,7 +15,7 @@ __all__ = ['ASE_Calculator']
 
 class ASE_Calculator(ase_calc.Calculator):
     """
-    ASE calculator interface for a Asparagus model potential.
+    ASE calculator interface for an Asparagus model potential.
 
     Parameters
     ----------
@@ -38,7 +38,8 @@ class ASE_Calculator(ase_calc.Calculator):
 
     # ASE specific calculator information
     default_parameters = {
-        "method": "Asparagus"}
+        "method": "Asparagus",
+    }
 
     def __init__(
         self,
@@ -260,7 +261,7 @@ class ASE_Calculator(ase_calc.Calculator):
         # Collect atoms object
         if atoms is None and self.atoms is None:
             raise ase_calc.CalculatorSetupError(
-                "ASE atoms object is not defined!")
+                "ASE Atoms object is not defined!")
         elif atoms is None:
             atoms = self.atoms
         elif self.atoms is None:
