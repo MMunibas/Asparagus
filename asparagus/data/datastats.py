@@ -230,6 +230,7 @@ def compute_atomic_energies_scaling(
 
 def get_energy_properties_from_dataset(
     dataset: Union[data.DataSet, data.DataSubSet],
+    ml_fragment: int = 0,
 ) -> (List[float], List[float], List[float], List[float]):
     """
     Collect energy data together with other system data from a dataset
@@ -238,7 +239,9 @@ def get_energy_properties_from_dataset(
     ----------
     dataset: (data.DataSet, data.DataSubSet)
         Dataset or subset object containing data to collect data from.
-    
+    ml_fragment: int, optional, default 0
+        Atomic fragment number for ML atoms
+
     Return
     ------
     np.ndarray(float)
@@ -262,10 +265,17 @@ def get_energy_properties_from_dataset(
     # Iterate over data samples and collect
     # system and energy properties
     for ismpl, sample in enumerate(dataset):
-        atoms_number[ismpl] = sample['atoms_number']
-        energies[ismpl] = sample['energy']
-        atomic_numbers += list(sample['atomic_numbers'])
-        sys_i += [ismpl]*sample['atoms_number']
+        if sample.get('fragment_numbers') is None:
+            atoms_number[ismpl] = sample['atoms_number']
+            energies[ismpl] = sample['energy']
+            atomic_numbers += list(sample['atomic_numbers'])
+            sys_i += [ismpl]*sample['atoms_number']
+        else:
+            selection = sample.get('fragment_numbers') == ml_fragment
+            atoms_number[ismpl] = sum(selection)
+            energies[ismpl] = sample['energy']
+            atomic_numbers += list(sample['atomic_numbers'][selection])
+            sys_i += [ismpl]*atoms_number[ismpl]
     atomic_numbers = np.array(atomic_numbers, dtype=int)
     sys_i = np.array(sys_i, dtype=int)
     Natoms = atomic_numbers.shape[0]

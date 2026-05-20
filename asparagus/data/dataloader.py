@@ -293,28 +293,32 @@ class DataLoader(torch.utils.data.DataLoader):
 
         # Atom positions
         coll_batch['positions'] = torch.cat(
-            [b['positions'] for b in batch], 0
+            [b['positions'] for b in batch],
+            dim=0,
         ).to(
             device=self.device, dtype=self.dtype
         )
 
         # System charge
         coll_batch['charge'] = torch.cat(
-            [b['charge'] for b in batch], 0
+            [b['charge'] for b in batch],
+            dim=0,
         ).to(
             device=self.device, dtype=self.dtype
         )
 
         # Periodic boundary conditions
         coll_batch['pbc'] = torch.cat(
-            [b['pbc'] for b in batch], 0
+            [b['pbc'] for b in batch],
+            dim=0,
         ).to(
             device=self.device, dtype=torch.bool
         ).reshape(Nsys, 3)
 
         # Unit cell sizes
         coll_batch['cell'] = torch.cat(
-            [b['cell'] for b in batch], 0
+            [b['cell'] for b in batch],
+            dim=0,
         ).to(
             device=self.device, dtype=self.dtype
         ).reshape(Nsys, -1)
@@ -327,7 +331,8 @@ class DataLoader(torch.utils.data.DataLoader):
 
             # Combine fragment numbers
             fragment_numbers = torch.cat(
-                [b['fragment_numbers'] for b in batch], 0
+                [b['fragment_numbers'] for b in batch],
+                dim=0,
             ).to(
                 device=self.device, dtype=torch.int64
             )
@@ -357,7 +362,8 @@ class DataLoader(torch.utils.data.DataLoader):
                 # copy with key 'mlmm_atomic_charges' if available.
                 if 'atomic_charges' in self.reference_properties:
                     coll_batch['mlmm_atomic_charges'] = torch.cat(
-                        [b['atomic_charges'] for b in batch]
+                        [b['atomic_charges'] for b in batch],
+                        dim=0,
                     ).to(
                         device=self.device, dtype=self.dtype
                     )
@@ -375,30 +381,76 @@ class DataLoader(torch.utils.data.DataLoader):
             # if defined
             if self.atomic_energies_shift is not None and prop == 'energy':
 
-                coll_batch['reference'][prop] = torch.tensor(
-                    [
-                        b[prop]
-                        - torch.sum(
-                            self.atomic_energies_shift[b['atomic_numbers']]
+                if coll_batch['fragmented']:
+
+                    coll_batch['reference'][prop] = torch.tensor(
+                        [
+                            b[prop]
+                            - torch.sum(
+                                self.atomic_energies_shift[b['atomic_numbers']]
+                            )
+                            for b in batch
+                        ],
+                        device=self.device,
+                        dtype=self.dtype
+                    )
+
+                else:
+                    
+                    coll_batch['reference'][prop] = torch.tensor(
+                        [b[prop] for b in batch],
+                        device=self.device,
+                        dtype=self.dtype
+                    )
+                    atomic_energies_shift = self.atomic_energies_shift.to(
+                        device=self.device, dtype=self.dtype
+                    )
+                    coll_batch['reference'][prop] = (
+                        coll_batch['reference'][prop]
+                        - torch.zeros_like(
+                            coll_batch['reference'][prop],
+                            device=self.device,
+                            dtype=self.dtype,
+                        ).scatter_add_(
+                            0,
+                            coll_batch['sys_i'],
+                            atomic_energies_shift[coll_batch['atomic_numbers']]
                         )
-                        for b in batch
-                    ],
-                    device=self.device,
-                    dtype=self.dtype
-                )
-        
+                    )
+
             elif (
                 self.atomic_energies_shift is not None
                 and prop == 'atomic_energies'
             ):
 
-                coll_batch['reference'][prop] = torch.cat(
-                    [
-                        b[prop]
-                        - self.atomic_energies_shift[b['atomic_numbers']]
-                        for b in batch
-                    ],
-                    0).to(device=self.device, dtype=self.dtype)
+                if coll_batch['fragmented']:
+
+                    coll_batch['reference'][prop] = torch.cat(
+                        [
+                            b[prop]
+                            - self.atomic_energies_shift[b['atomic_numbers']]
+                            for b in batch
+                        ],
+                        dim=0,
+                    ).to(
+                        device=self.device, dtype=self.dtype
+                    )
+
+                else:
+
+                    coll_batch['reference'][prop] = torch.cat(
+                        [b[prop] for b in batch],
+                        dim=0,
+                    ).to(
+                        device=self.device, dtype=self.dtype
+                    )
+                    atomic_energies_shift = self.atomic_energies_shift.to(
+                        device=self.device, dtype=self.dtype
+                    )
+                    coll_batch['reference'][prop] = (
+                        coll_batch['reference'][prop]
+                        - atomic_energies_shift[coll_batch['atomic_numbers']]
+                    )
 
             else:
 
