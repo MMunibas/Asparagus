@@ -384,20 +384,6 @@ class DataLoader(torch.utils.data.DataLoader):
                 if coll_batch['fragmented']:
 
                     coll_batch['reference'][prop] = torch.tensor(
-                        [
-                            b[prop]
-                            - torch.sum(
-                                self.atomic_energies_shift[b['atomic_numbers']]
-                            )
-                            for b in batch
-                        ],
-                        device=self.device,
-                        dtype=self.dtype
-                    )
-
-                else:
-                    
-                    coll_batch['reference'][prop] = torch.tensor(
                         [b[prop] for b in batch],
                         device=self.device,
                         dtype=self.dtype
@@ -418,25 +404,26 @@ class DataLoader(torch.utils.data.DataLoader):
                         )
                     )
 
+                else:
+                    
+                    coll_batch['reference'][prop] = torch.tensor(
+                        [
+                            b[prop]
+                            - torch.sum(
+                                self.atomic_energies_shift[b['atomic_numbers']]
+                            )
+                            for b in batch
+                        ],
+                        device=self.device,
+                        dtype=self.dtype
+                    )
+
             elif (
                 self.atomic_energies_shift is not None
                 and prop == 'atomic_energies'
             ):
 
                 if coll_batch['fragmented']:
-
-                    coll_batch['reference'][prop] = torch.cat(
-                        [
-                            b[prop]
-                            - self.atomic_energies_shift[b['atomic_numbers']]
-                            for b in batch
-                        ],
-                        dim=0,
-                    ).to(
-                        device=self.device, dtype=self.dtype
-                    )
-
-                else:
 
                     coll_batch['reference'][prop] = torch.cat(
                         [b[prop] for b in batch],
@@ -450,6 +437,19 @@ class DataLoader(torch.utils.data.DataLoader):
                     coll_batch['reference'][prop] = (
                         coll_batch['reference'][prop]
                         - atomic_energies_shift[coll_batch['atomic_numbers']]
+                    )
+
+                else:
+
+                    coll_batch['reference'][prop] = torch.cat(
+                        [
+                            b[prop]
+                            - self.atomic_energies_shift[b['atomic_numbers']]
+                            for b in batch
+                        ],
+                        dim=0,
+                    ).to(
+                        device=self.device, dtype=self.dtype
                     )
 
             else:
