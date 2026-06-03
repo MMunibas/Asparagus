@@ -5,7 +5,7 @@
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
 ## Current Remarks:
- - PyCHARMM interfaces currently out of order
+ - PyCHARMM interfaces currently out of order (scheduled to be fixed: 12th of July 2026)
 
 ## What is this?
  - A refined implementation of PhysNet and PainNN (and more atomistic NN to come) in PyTorch. 
