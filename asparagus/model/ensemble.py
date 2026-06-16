@@ -436,8 +436,9 @@ class EnsembleModel(torch.nn.Module):
             ).copy()
 
         # Accumulate model results
-        for ic in range(self.model_ensemble_num):
-            batch[ic] = batch_i[ic]
+        # if verbose_results:
+        #     for ic in range(self.model_ensemble_num):
+        #         batch[ic] = batch_i[ic]
         for prop in self.model_properties:
             if prop in batch_i[0]:
                 prop_std = "std_" + prop

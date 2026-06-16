@@ -84,14 +84,6 @@ def check_fragmented_properties(
         batch['mlmm_sys_i'] = batch['sys_i'].clone()
         batch['sys_i'] = batch['sys_i'][ml_sys_p]
         batch['mlmm_positions'] = batch['positions'].clone()
-        # ML positions needs to be re-assigned when forces via back-propagation
-        # are requested and 'requires_grad' is set True. E.g. in 
-        # model.forward():
-        # if batch['fragmented']:
-        #     batch['mlmm_positions'].requires_grad_(True)
-        #     batch['positions'] = batch['mlmm_positions'][batch['ml_sys_p']]
-        # else:
-        #     batch['positions'].requires_grad_(True)
         batch['positions'] = batch['mlmm_positions'][ml_sys_p]
 
     else:

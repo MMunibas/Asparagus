@@ -131,7 +131,7 @@ Property                Details
                         vectors due to periodic boundary conditions.
                         If all periodic boundary conditions are False, not
                         offsets are added to the batch.
-'idx_u', 'idx_v'        Lists (shape=(Natoms_ml), dtype=int) of atom pair
+'idx_u', 'idx_v'        Lists (shape=(Npairs_mlml), dtype=int) of atom pair
                         indices u and v depending on the 'longer' cutoff range
                         for long range interaction such as dispersion
                         correction.
