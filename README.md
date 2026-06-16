@@ -5,7 +5,7 @@
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
 ## Current Remarks:
- - PyCHARMM interfaces currently out of order (fixed, 16th of July 2026, but no atomic multipoles ML to MM charges yet)
+ - PyCHARMM fixed, 16th of July 2026, but no atomic multipoles ML to MM charges yet
 
 ## What is this?
  - A refined implementation of PhysNet and PainNN (and more atomistic NN to come) in PyTorch. 
