@@ -1261,12 +1261,10 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
 
             # Compute reciprocal distances and cutoff shifts
             chi2 = chi**2
-            chi3 = chi2*chi
             chi2_shift = chi_shift**2
-            chi3_shift = chi2_shift*chi_shift
 
             # Compute B terms, G terms and MLMM interaction potential
-            B1 = chi3 - chi3_shift
+            B1 = chi2 - chi2_shift
             G1 = torch.sum(
                 (
                     batch['atomic_dipoles'][mlmm_ml_idx_u]
@@ -1274,11 +1272,15 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
                 ),
                 dim=1,
                 keepdim=False
-            )*atomic_charges_v
+            )*chi*atomic_charges_v
                 
             Eelec = Eelec + B1*G1
 
             if self.atomic_quadrupoles:
+                
+                # Compute reciprocal distances and cutoff shifts
+                chi3 = chi2*chi
+                chi3_shift = chi2_shift*chi_shift
 
                 # Compute detraced outer product of not-normalized atom pair
                 # connection vectors

@@ -255,19 +255,6 @@ class Input_PaiNN(torch.nn.Module):
         # Compute pair distances
         distances = torch.norm(vectors, dim=-1)
 
-        # # ML/MM approach - Point ML atom pair indices from full ML/MM system to
-        # # the ML system indices (ML/MM index number of, e.g., 41 for the first
-        # # ML atom in the ML/MM system becomes index 0 for the ML system).
-        # if 'ml_idx_p' in batch:
-        #     batch['idx_i'] = batch['ml_idx_p'][idx_i]
-        #     batch['idx_j'] = batch['ml_idx_p'][idx_j]
-        # 
-        #     # PBC supercluster approach - Point from ML atom pair index j of
-        #     # atoms in the image cell to the respective primary cell ML
-        #     # atom index.
-        #     if 'ml_idx_jp' in batch:
-        #         batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
-
         # Compute distances and vectors for long-range atom pairs
         if 'idx_u' in batch:
 
@@ -283,18 +270,6 @@ class Input_PaiNN(torch.nn.Module):
             else:
                 vectors_uv = positions[idx_v] - positions[idx_u]
             distances_uv = torch.norm(vectors_uv, dim=-1)
-            
-            # # ML/MM approach - Point ML atom pair indices from full ML/MM
-            # # system to the ML system indices 
-            # if 'ml_idx_p' in batch:
-            #     batch['idx_u'] = batch['ml_idx_p'][idx_u]
-            #     batch['idx_v'] = batch['ml_idx_p'][idx_v]
-            #     
-            #     # PBC supercluster approach - Point from ML atom pair index j
-            #     # of atoms in the image cell to the respective primary cell
-            #     # ML atom index.
-            #     if 'ml_idx_vp' in batch:
-            #         batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
 
         else:
             
@@ -306,7 +281,7 @@ class Input_PaiNN(torch.nn.Module):
 
         # Compute distance cutoff values
         cutoffs = self.cutoff(distances)
-        
+
         # Compute radial basis functions
         rbfs = self.radial_fn(distances)
 

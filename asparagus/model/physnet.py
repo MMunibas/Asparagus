@@ -557,12 +557,15 @@ class Model_PhysNet(model.BaseModel):
 
         # Activate back propagation if derivatives with regard to
         # atom positions are requested.
-        if self.model_forces and not no_derivation:
-            if batch['fragmented']:
-                batch['mlmm_positions'].requires_grad_(True)
-                batch['positions'] = batch['mlmm_positions'][batch['ml_sys_p']]
-            else:
-                batch['positions'].requires_grad_(True)
+        if batch['fragmented']:
+            batch['mlmm_positions'].requires_grad_(
+                self.model_forces and not no_derivation
+            )
+            batch['positions'] = batch['mlmm_positions'][batch['ml_sys_p']]
+        else:
+            batch['positions'].requires_grad_(
+                self.model_forces and not no_derivation
+            )
 
         # Run modules
         for module in self.module_dict.values():

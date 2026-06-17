@@ -317,20 +317,6 @@ class Input_AMP(torch.nn.Module):
         # Compute ML atom pair radial basis functions
         rbfs = self.radial_fn(distances)
 
-        # # ML/MM approach - Point ML atom pair indices from full ML/MM system to
-        # # the ML system indices (ML/MM index number of, e.g., 41 for the first
-        # # ML atom in the ML/MM system becomes index 0 for the ML system).
-        # if 'ml_idx_p' in batch:
-        # 
-        #     batch['idx_i'] = batch['ml_idx_p'][idx_i]
-        #     batch['idx_j'] = batch['ml_idx_p'][idx_j]
-        # 
-        #     # PBC supercluster approach - Point from ML atom pair index j of
-        #     # atoms in the image cell to the respective primary cell ML
-        #     # atom index.
-        #     if 'ml_idx_jp' in batch:
-        #         batch['idx_j'] = batch['ml_idx_p'][batch['ml_idx_jp']]
-
         # Compute distances and vectors for long-range ML atom pairs
         if 'idx_u' in batch:
 
@@ -352,18 +338,6 @@ class Input_AMP(torch.nn.Module):
             
             # Compute long-range ML atom pair vectors outer product
             vectors_uv_normalized = vectors_uv/distances_uv.unsqueeze(-1)
-
-            # # ML/MM approach - Point ML atom pair indices from full ML/MM
-            # system to the ML system indices 
-            # if 'ml_idx_p' in batch:
-            #     batch['idx_u'] = batch['ml_idx_p'][idx_u]
-            #     batch['idx_v'] = batch['ml_idx_p'][idx_v]
-            #     
-            #     PBC supercluster approach - Point from ML atom pair index v
-            #     of atoms in the image cell to the respective primary cell
-            #     ML atom index.
-            #     if 'ml_idx_vp' in batch:
-            #         batch['idx_v'] = batch['ml_idx_p'][batch['ml_idx_vp']]
 
         else:
             
@@ -431,17 +405,6 @@ class Input_AMP(torch.nn.Module):
         # Compute ML-MM atom pair radial basis functions
         mlmm_rbfs = self.mlmm_radial_fn(mlmm_distances)
 
-        # # ML/MM approach - Point ML/MM atom pair indices i (ML atom) from full
-        # # ML/MM system to the ML system indices and store as additional entry.
-        # if 'ml_idx_p' in batch:
-        #     batch['mlmm_idx_i'] = batch['ml_idx_p'][mlmm_idx_i]
-
-        # # PBC supercluster approach - Point from ML/MM atom pair index j 
-        # # (MM atom) of atoms in the image cell to the respective primary cell
-        # # MM atom index, while keeping structure data to image atom.
-        # if 'mlmm_idx_jp' in batch:
-        #     batch['mlmm_idx_j'] = batch['mlmm_idx_jp']
-
         # Compute distances and vectors for long-range ML-MM atom pairs
         if 'mlmm_idx_u' in batch:
 
@@ -462,23 +425,6 @@ class Input_AMP(torch.nn.Module):
             
             # Compute long-range  ML-MM atom pair distances
             mlmm_distances_uv = torch.norm(mlmm_vectors_uv, dim=-1)
-
-            # Compute long-range ML-MM atom pair vectors outer product
-            mlmm_vectors_uv_normalized = (
-                mlmm_vectors_uv/mlmm_distances_uv.unsqueeze(-1)
-            )
-            
-            # # ML/MM approach - Point ML/MM atom pair indices u (ML atom) from
-            # # full ML/MM system to the ML system indices and store as 
-            # # additional entry.
-            # if 'ml_idx_p' in batch:
-            #     batch['mlmm_idx_u'] = batch['ml_idx_p'][mlmm_idx_u]
-
-            # # PBC supercluster approach - Point from ML/MM atom pair index v 
-            # # (MM atom) of atoms in the image cell to the respective primary
-            # # cell MM atom index, while keeping structure data to image atom.
-            # if 'mlmm_idx_vp' in batch:
-            #     batch['mlmm_idx_v'] = batch['mlmm_idx_vp']
 
         else:
             
