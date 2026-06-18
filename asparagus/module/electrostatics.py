@@ -1261,7 +1261,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
                     ),
                     dim=(1, 2)
                 )*mm_atomic_charges_v
-                Eelec = Eelec - B2*G2
+                Eelec = Eelec + B2*G2
 
         # Weight electrostatic contributions by prefactor
         Eelec = self.ke*Eelec
