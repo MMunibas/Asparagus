@@ -1102,9 +1102,11 @@ class Tester:
                     sys_prop_metric_mean = (
                         metrics_test[test_outlier_property][outlier_metric]
                     )
+
                 sys_prop_metric_sorted, sys_prop_metric_sorted_idx = (
                     torch.sort(sys_prop_metric)
                 )
+
                 sys_prop_metric_sorted = sys_prop_metric_sorted[
                     torch.logical_not(torch.isnan(sys_prop_metric))].flip(0)
                 sys_prop_metric_sorted_idx = sys_prop_metric_sorted_idx[
@@ -1182,7 +1184,7 @@ class Tester:
                         outlier_reference = (
                             test_reference[prop][outlier_selection]
                         )
-                    
+
                         # Plot correlation with highlighted outliers
                         prop_sys = f"sys_{prop:s}"
                         outlier_metrics = {
@@ -1633,7 +1635,7 @@ class Tester:
         if test_outlier:
             metrics['row_ids'] = prediction['row_ids']
             Nsys = prediction['atoms_number'].size()[0]
-            if 'ml_idx' in prediction:
+            if prediction['fragmented']:
                 Natoms = prediction['mlmm_sys_i'].size()[0]
                 sys_i = prediction['mlmm_sys_i']
                 atoms_number = prediction['mlmm_atoms_number']
@@ -1670,9 +1672,8 @@ class Tester:
 
                     # Compute element-wise property metrics
                     metrics[prop_sys][metric] = metric_fn(
-                        torch.flatten(prediction[prop])
-                        * test_conversion[prop],
-                        torch.flatten(reference[prop])
+                        prediction[prop]*test_conversion[prop],
+                        reference[prop].reshape(prediction[prop].shape)
                     ).detach()
 
                     # Compute mean property metrics
@@ -1682,6 +1683,11 @@ class Tester:
 
                     # Reduce atom-wise property metric to system-wise metric
                     if prediction[prop].shape[0] == Natoms:
+                        while metrics[prop_sys][metric].dim() > sys_i.dim():
+                            metrics[prop_sys][metric] = torch.sum(
+                                metrics[prop_sys][metric],
+                                dim=-1
+                            )
                         metrics[prop_sys][metric] = torch.zeros(
                             Nsys,
                             device=prediction[prop].device,
@@ -1694,18 +1700,19 @@ class Tester:
                         prediction[prop].shape[0] == Nsys
                         and prediction[prop].dim() > 1
                     ):
-                        metrics[prop_sys][metric] = torch.zeros(
-                            Nsys,
-                            device=prediction[prop].device,
-                            dtype=prediction[prop].dtype,
-                            ).scatter_add_(
-                                0,
-                                torch.arange(
-                                    Nsys, device='cpu', dtype=torch.int64
-                                    ).repeat(prediction[prop].shape[1:].numel()
-                                ),
-                                metrics[prop_sys][metric]
-                            )/prediction[prop].shape[1:].numel()
+                        while metrics[prop_sys][metric].dim() > sys_i.dim():
+                            metrics[prop_sys][metric] = torch.mean(
+                                metrics[prop_sys][metric],
+                                dim=-1
+                            )
+                        # metrics[prop_sys][metric] = torch.zeros(
+                        #     Nsys,
+                        #     device=prediction[prop].device,
+                        #     dtype=prediction[prop].dtype,
+                        #     ).scatter_add_(
+                        #         0, sys_i,
+                        #         metrics[prop_sys][metric]
+                        #     )/prediction[prop].shape[1:].numel()
 
                 else:
 
