@@ -18,7 +18,7 @@ setup(
     packages=find_packages(include=['asparagus']),
     include_package_data=True,
     install_requires=[
-        'ase==3.22.1',
+        'ase',
         'numpy',
         'scipy',
         'ctype',
@@ -32,5 +32,4 @@ setup(
         'matplotlib',
         'seaborn',
         'pytest']
-    #TODO: Add more dependencies and option to be read from a file
 )

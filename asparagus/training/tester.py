@@ -689,9 +689,12 @@ class Tester:
 
                         for imodel in range(model_ensemble_num):
 
+                            # Single model result key
+                            prop_i = str(imodel) + "_" + prop
+
                             # Detach prediction and reference data
                             data_prediction = (
-                                batch[imodel][prop].numpy()
+                                batch[prop_i].numpy()
                                 )
 
                             # Ensure same prediction data shape
@@ -729,16 +732,14 @@ class Tester:
                                 ).reshape(Natoms, -1)
 
                             # Assign prediction data
-                            if imodel not in test_prediction:
-                                test_prediction[imodel] = {}
-                            if prop not in test_prediction[imodel]:
-                                test_prediction[imodel][prop] = np.empty(
+                            if prop_i not in test_prediction:
+                                test_prediction[prop_i] = np.empty(
                                     (0, data_prediction.shape[1]),
                                     dtype=float
                                 )
-                            test_prediction[imodel][prop] = np.concatenate(
+                            test_prediction[prop_i] = np.concatenate(
                                 (
-                                    test_prediction[imodel][prop],
+                                    test_prediction[prop_i],
                                     data_prediction
                                 ),
                                 axis=0
@@ -833,13 +834,14 @@ class Tester:
                         if not os.path.exists(test_directory_model):
                             os.makedirs(test_directory_model)
                         self.save_csv(
-                            test_prediction[imodel],
+                            test_prediction,
                             test_reference,
                             test_shifts,
                             label,
                             test_directory_model,
                             test_csv_file,
-                            imodel=imodel)
+                            imodel=imodel,
+                        )
 
             if test_save_npz:
                 self.save_npz(
@@ -856,13 +858,14 @@ class Tester:
                         if not os.path.exists(test_directory_model):
                             os.makedirs(test_directory_model)
                         self.save_npz(
-                            test_prediction[imodel],
+                            test_prediction,
                             test_reference,
                             test_shifts,
                             label,
                             test_directory_model,
                             test_npz_file,
-                            imodel=imodel)
+                            imodel=imodel,
+                        )
 
             ###########################
             # # # Plot Properties # # #
@@ -901,10 +904,11 @@ class Tester:
                                 test_directory, f"{imodel:d}")
                             if not os.path.exists(test_directory_model):
                                 os.makedirs(test_directory_model)
+                            prop_i = str(imodel) + "_" + prop
                             self.plot_correlation(
                                 label,
                                 prop,
-                                self.plain_data(test_prediction[imodel][prop]),
+                                self.plain_data(test_prediction[prop_i]),
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
@@ -965,10 +969,11 @@ class Tester:
                                 test_directory, f"{imodel:d}")
                             if not os.path.exists(test_directory_model):
                                 os.makedirs(test_directory_model)
+                            prop_i = str(imodel) + "_" + prop
                             self.plot_histogram(
                                 label,
                                 prop,
-                                self.plain_data(test_prediction[imodel][prop]),
+                                self.plain_data(test_prediction[prop_i]),
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
@@ -1027,10 +1032,11 @@ class Tester:
                                 test_directory, f"{imodel:d}")
                             if not os.path.exists(test_directory_model):
                                 os.makedirs(test_directory_model)
+                            prop_i = str(imodel) + "_" + prop
                             self.plot_residual(
                                 label,
                                 prop,
-                                self.plain_data(test_prediction[imodel][prop]),
+                                self.plain_data(test_prediction[prop_i]),
                                 self.plain_data(test_reference[prop]),
                                 self.data_units[prop],
                                 metrics_test[prop][imodel],
@@ -1352,11 +1358,19 @@ class Tester:
             npz_file += '.npz'
 
         # Iterate over properties
-        for prop, pred in prediction.items():
+        for prop in prediction:
             
             # Check property in reference data, if not skip
             if not prop in reference:
                 continue
+
+            # Get model prediction, or for model ensembles either the
+            # average model or single model results
+            if imodel is None:
+                prop_i = str(imodel) + "_" + prop
+                pred = prediction[prop_i]
+            else:
+                pred = prediction[prop]
 
             # Prepare npz file name
             npz_file_prop = os.path.join(
@@ -1406,7 +1420,7 @@ class Tester:
         ----------
         prediction: dict
             Dictionary of the property predictions to save.
-        prediction: dict
+        reference: dict
             Dictionary of the reference property values to save.
         shifts: dict
             Dictionary of the reference property shifts.
@@ -1426,12 +1440,20 @@ class Tester:
             csv_file += '.csv'
 
         # Iterate over properties
-        for prop, pred in prediction.items():
+        for prop in prediction:
             
             # Check property in reference data, if not skip
             if not prop in reference:
                 continue
-            
+
+            # Get model prediction, or for model ensembles either the
+            # average model or single model results
+            if imodel is None:
+                prop_i = str(imodel) + "_" + prop
+                pred = prediction[prop_i]
+            else:
+                pred = prediction[prop]
+
             # Prepare csv file name
             csv_file_prop = os.path.join(
                 test_directory, f"{label:s}_{prop:s}_{csv_file:s}")
@@ -1705,14 +1727,6 @@ class Tester:
                                 metrics[prop_sys][metric],
                                 dim=-1
                             )
-                        # metrics[prop_sys][metric] = torch.zeros(
-                        #     Nsys,
-                        #     device=prediction[prop].device,
-                        #     dtype=prediction[prop].dtype,
-                        #     ).scatter_add_(
-                        #         0, sys_i,
-                        #         metrics[prop_sys][metric]
-                        #     )/prediction[prop].shape[1:].numel()
 
                 else:
 
@@ -1738,8 +1752,9 @@ class Tester:
                             metrics[prop][imodel] = {}
                         
                         # Compute mean property metrics
+                        prop_i = str(imodel) + "_" + prop
                         metrics[prop][imodel][metric] = metric_fn(
-                            torch.flatten(prediction[imodel][prop])
+                            torch.flatten(prediction[prop_i])
                             * test_conversion[prop],
                             torch.flatten(reference[prop]))
 

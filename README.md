@@ -4,9 +4,6 @@
 
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
-## Current Remarks:
- - PyCHARMM Interface fixed, 17th of July 2026
-
 ## What is this?
  - A refined implementation of PhysNet and PainNN (and more atomistic NN to come) in PyTorch. 
  - A Suit for the automatic construction of Potential Energy Surface (PES) from sampling to production.
@@ -18,7 +15,7 @@
 - Requirements:
   - Python <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.8
   - PyTorch <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 1.10
-  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " == 3.22.1 ( 3.23.0, 3.24.0 is broken when using ORCA calculator)
+  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " == 3.22.1
   - Torch-ema <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 0.3
   - TensorBoardX <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 2.4
   - numpy, scipy, pandas, ...

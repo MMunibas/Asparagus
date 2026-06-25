@@ -5,13 +5,13 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "asparagus"
 version = "0.7.0"
-authors = [{name="K. Toepfer", email="kai.toepfer@unibas.ch"},
+authors = [{name="K. Toepfer", email="kai.toepfer@fu-berlin.de"},
            {name="L.I.Vazquez-Salazar", email="luisitza.vazquezsalazar@unibas.ch"},
            {name="Valerii Andreichev", email="valerii.andreichev@unibas.ch"},
            {name="Silvan Kaeser", email="silvan.kaeser@unibas.ch"},]
 dynamic = ["description"]
 dependencies = [
-        'ase==3.22.1',
+        'ase',
         'numpy',
         'scipy',
         'ctype',

@@ -427,8 +427,8 @@ class EnsembleModel(torch.nn.Module):
         ]
 
         # Iterate over ensemble models
-        for ic, model_calculator in enumerate(self.model_calculator_list):
-            batch_i[ic] = model_calculator(
+        for imodel, model_calculator in enumerate(self.model_calculator_list):
+            batch_i[imodel] = model_calculator(
                 batch,
                 no_derivation=no_derivation,
                 create_graph=create_graph,
@@ -436,9 +436,6 @@ class EnsembleModel(torch.nn.Module):
             ).copy()
 
         # Accumulate model results
-        # if verbose_results:
-        #     for ic in range(self.model_ensemble_num):
-        #         batch[ic] = batch_i[ic]
         for prop in self.model_properties:
             if prop in batch_i[0]:
                 prop_std = "std_" + prop
@@ -446,11 +443,19 @@ class EnsembleModel(torch.nn.Module):
                     torch.std_mean(
                         torch.stack(
                             [
-                                batch_i[ic][prop]
-                                for ic in range(self.model_ensemble_num)
+                                batch_i[imodel][prop]
+                                for imodel in range(self.model_ensemble_num)
                             ]),
                         dim=0)
                     )
+
+        # If requested, add single model results
+        if verbose_results:
+            for prop in self.model_properties:
+                for imodel in range(self.model_ensemble_num):
+                    if prop in batch_i[imodel]:
+                        prop_i = str(imodel) + "_" + prop
+                        batch[prop_i] = batch_i[imodel][prop]
 
         return batch
 
