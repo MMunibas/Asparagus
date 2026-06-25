@@ -18,7 +18,7 @@ flag_database_hdf5 = False
 
 flag_datareader = True
 
-flag_sampler_all = True
+flag_sampler_all = False
 flag_sampler_shell = True
 flag_sampler_slurm = False
 flag_sampler_shell_case = True
@@ -847,9 +847,9 @@ if flag_sampler_shell:
         sample_calculator='shell',
         sample_calculator_args = {
             'files': [
-                'asparagus/templates/shell/run_orca.sh',
-                'asparagus/templates/shell/run_orca.inp',
-                'asparagus/templates/shell/run_orca.py',
+                '../asparagus/templates/shell/run_orca.sh',
+                '../asparagus/templates/shell/run_orca.inp',
+                '../asparagus/templates/shell/run_orca.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
@@ -877,16 +877,16 @@ if flag_sampler_shell:
         sample_calculator='shell',
         sample_calculator_args = {
             'files': [
-                'asparagus/templates/shell/run_orca.sh',
-                'asparagus/templates/shell/run_orca.inp',
-                'asparagus/templates/shell/run_orca.py',
+                '../asparagus/templates/shell/run_orca.sh',
+                '../asparagus/templates/shell/run_orca.inp',
+                '../asparagus/templates/shell/run_orca.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
                 '%charge%': '$charge',
                 '%multiplicity%': '$multiplicity',
                 },
-            'execute_file': 'asparagus/templates/shell/run_orca.sh',
+            'execute_file': '../asparagus/templates/shell/run_orca.sh',
             'charge': 0,
             'multiplicity': 1,
             'directory': 'test/shell',
@@ -914,9 +914,9 @@ if flag_sampler_slurm:
         sample_calculator_args = {
             'remote_client': 'pc-beethoven',
             'files': [
-                'asparagus/templates/slurm/run_molpro.sh',
-                'asparagus/templates/slurm/run_molpro.inp',
-                'asparagus/templates/slurm/run_molpro.py',
+                '../asparagus/templates/slurm/run_molpro.sh',
+                '../asparagus/templates/slurm/run_molpro.inp',
+                '../asparagus/templates/slurm/run_molpro.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
@@ -969,9 +969,9 @@ if flag_sampler_slurm:
         sample_calculator_args = {
             'remote_client': 'pc-beethoven',
             'files': [
-                'asparagus/templates/slurm/run_molpro.sh',
-                'asparagus/templates/slurm/run_molpro.inp',
-                'asparagus/templates/slurm/run_molpro.py',
+                '../asparagus/templates/slurm/run_molpro.sh',
+                '../asparagus/templates/slurm/run_molpro.inp',
+                '../asparagus/templates/slurm/run_molpro.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
@@ -1003,9 +1003,9 @@ if flag_sampler_slurm:
         sample_calculator_args = {
             'remote_client': 'pc-beethoven',
             'files': [
-                'asparagus/templates/slurm/run_molpro.sh',
-                'asparagus/templates/slurm/run_molpro.inp',
-                'asparagus/templates/slurm/run_molpro.py',
+                '../asparagus/templates/slurm/run_molpro.sh',
+                '../asparagus/templates/slurm/run_molpro.inp',
+                '../asparagus/templates/slurm/run_molpro.py',
                 ],
             'files_replace': {
                 '%xyz%': '$xyz',
