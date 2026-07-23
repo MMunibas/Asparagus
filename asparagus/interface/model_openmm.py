@@ -404,17 +404,52 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         # # # Prepare Modules # # #
         ###########################
 
-        # If fluctuating charge option is enabled, initialize the 
-        # ML-MM electrostatic interaction calculator if not already covered
-        # by the model potential
-        if (
-            self.ml_fluctuating_charges
-            and self.model_calculator.model_mlmm_embedding
-        ):
-            
-            self.mlmm_electrostatics_calc = None
-        
-        elif self.ml_fluctuating_charges:
+#         # If fluctuating charge option is enabled, initialize the 
+#         # ML-MM electrostatic interaction calculator if not already covered
+#         # by the model potential
+#         if (
+#             self.ml_fluctuating_charges
+#             and self.model_calculator.model_mlmm_embedding
+#         ):
+#             
+#             self.mlmm_electrostatics_calc = None
+#         
+#         elif self.ml_fluctuating_charges:
+# 
+#             self.mlmm_electrostatics_calc = MLMM_electrostatics(
+#                 self.mlmm_cutoff,
+#                 self.mlmm_cuton,
+#                 self.device,
+#                 self.dtype,
+#                 self.model_unit_properties,
+#                 self.mlmm_lambda,
+#                 atomic_dipoles=self.model_calculator.model_atomic_dipoles,
+#                 atomic_quadrupoles=(
+#                     self.model_calculator.model_atomic_quadrupoles),
+#                 **kwargs
+#             )
+# 
+#         else:
+# 
+#             self.mlmm_electrostatics_calc = None
+
+        # If fluctuating charge option is enabled, initialize the OpenMM
+        # ML-MM electrostatic interaction calculator.
+        # If ML-MM electrostatic interaction is already covered by the model
+        # calculator, disable it there by replacing the module with 
+        # torch.nn.Identity.
+        if self.model_calculator.model_mlmm_embedding:
+            if self.model_calculator.model_ensemble:
+                for model_calculator in self.model_calculator.model_calculator_list:
+                    model_calculator.module_dict['mlmm_electrostatic'] = (
+                        module.MLMM_identity()
+                    )
+            else:
+                self.model_calculator.module_dict['mlmm_electrostatic'] = (
+                    module.MLMM_identity()
+                )
+
+        if self.ml_fluctuating_charges:
 
             self.mlmm_electrostatics_calc = MLMM_electrostatics(
                 self.mlmm_cutoff,
@@ -553,7 +588,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.ml_neighbor_list_calc = ml_neighbor_list_calc
                 self.mlmm_neighbor_list_calc = mlmm_neighbor_list_calc
                 self.mlmm_electrostatics_calc = mlmm_electrostatics_calc
-                
+
                 # Get ML and ML/MM atom numbers
                 ml_atoms_number = len(ml_atom_indices)
                 self.ml_atoms_number = torch.tensor(
@@ -575,7 +610,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.mlmm_atomic_numbers[self.ml_atom_indices] = (
                     self.ml_atomic_numbers
                 )
-                
+
                 # Define ML and ML/MM system index
                 self.ml_sys_i = torch.zeros(
                     ml_atoms_number,
@@ -585,7 +620,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     mlmm_atoms_number,
                     device=self.device,
                     dtype=torch.int64)
-                
+
                 # Define fragments and get ML atoms mask
                 fragment_numbers = torch.full(
                     (mlmm_atoms_number, ),
@@ -602,7 +637,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                         False, device=self.device, dtype=torch.bool
                     )
                 self.ml_mask = (fragment_numbers == self.ml_fragment)
-                
+
                 # If multiple fragments are defined, create index pointer from
                 # full ML/MM system to fragment ML system
                 ml_sys_p = torch.arange(
@@ -617,7 +652,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     dtype=fragment_numbers.dtype)
                 for ia, ai in enumerate(ml_sys_p):
                     ml_idx_p[ai] = ia
-                
+
                 # Create model calculator batch
                 self.batch = {
                     'atoms_number': self.ml_atoms_number,
@@ -642,7 +677,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     'ml_sys_p': ml_sys_p,
                     'ml_idx_p': ml_idx_p,
                 }
-                
+
                 # Previous ML atom positions and ML/MM atom positions for
                 # determining neighbor list update requirements
                 self.ml_old_positions = torch.zeros(
@@ -898,6 +933,7 @@ class MLMM_electrostatics(torch.nn.Module):
                 atomic_quadrupoles,
             )
         elif truncation.lower() == 'potential':
+
             self.potential_fn = MLMM_electrostatics_ShiftedPotential(
                 self.cutoff,
                 self.ke,

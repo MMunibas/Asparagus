@@ -106,7 +106,7 @@ Property                Details
                         all ML and MM atoms.
                         E.g. b['sys_i'] = b['mlmm_sys_i'][b['ml_sys_p']]
                              (Natoms_ml)  (Natoms)        (Natoms_ml)
-'ml_idx_p':             List (shape=(Natoms_ml), dtype=int) of pointer indices
+'ml_idx_p':             List (shape=(Natoms), dtype=int) of pointer indices
                         shifting the atom indices with respect to Natoms
                         property lists of all ML and MM atoms to the respective
                         atom indices in reduced Natoms_ml property lists of

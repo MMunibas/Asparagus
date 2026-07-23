@@ -380,6 +380,7 @@ class EnsembleTrainer:
                 skip_property_scaling,
                 skip_initial_testing,
                 mlmm_inf_cutoff=mlmm_inf_cutoff,
+                **kwargs
             )
         
         else:
@@ -513,7 +514,7 @@ class EnsembleTrainer:
                 )
 
             # Run test if requested
-            if flag_test:
+            if flag_test and self.trainer_evaluate_testset:
                 
                 # Get best model checkpoint
                 checkpoint, checkpoint_file = self.filemanager.load_checkpoint(
@@ -551,7 +552,8 @@ class EnsembleTrainer:
                     skip_initial_testing=True,
                     mlmm_inf_cutoff=mlmm_inf_cutoff,
                     ithread=ithread,
-                    verbose=False)
+                    verbose=False
+                )
             else:
                 trainer.run(
                     checkpoint=checkpoint_list[imodel],
@@ -562,7 +564,8 @@ class EnsembleTrainer:
                     skip_initial_testing=skip_initial_testing,
                     mlmm_inf_cutoff=mlmm_inf_cutoff,
                     ithread=ithread,
-                    verbose=False)
+                    verbose=False
+                )
 
             # Set model training status to idle and increment model step
             with self.lock:

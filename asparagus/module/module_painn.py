@@ -1300,12 +1300,12 @@ class Output_PaiNN(torch.nn.Module):
         # If verbose, store a copy of the output block prediction
         if verbose:
             for prop in self.output_property_scalar_block:
-                verbose_prop = 'output_{:s}'.format(prop)
+                verbose_prop = 'output_' + prop
                 batch[verbose_prop] = batch[prop].detach()
             for vprop in self.output_property_tensor_block:
                 sprop = self.output_tensor_scalar[vprop]
-                verbose_sprop = 'output_{:s}'.format(sprop)
-                verbose_vprop = 'output_{:s}'.format(vprop)
+                verbose_sprop = 'output_' + sprop
+                verbose_vprop = 'output_' + vprop
                 batch[verbose_sprop] = batch[sprop].detach()
                 batch[verbose_vprop] = batch[vprop].detach()
 

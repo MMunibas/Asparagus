@@ -1132,7 +1132,6 @@ class DataReader():
 
         return all_atoms_properties
 
-
     def load_xyz(
         self,
         data_source: List[str],
@@ -2209,8 +2208,12 @@ class DataReader():
 
         """
         atoms_properties['quadrupole'] = (
-            atoms_properties['quadrupole']
-            - np.diag(np.diag(atoms_properties['quadrupole']).mean().repeat(3))
+            atoms_properties['quadrupole'].reshape(3, 3)
+            - np.diag(
+                np.diag(
+                    atoms_properties['quadrupole'].reshape(3, 3)
+                ).mean().repeat(3)
+            )
         )
         return atoms_properties
 

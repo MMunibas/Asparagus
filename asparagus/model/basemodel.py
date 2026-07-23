@@ -18,7 +18,7 @@ __all__ = ['BaseModel']
 # Calculator Models
 #======================================
 
-class BaseModel(torch.nn.Module): 
+class BaseModel(torch.nn.Module):
     """
     Asparagus calculator base model
 
@@ -78,6 +78,7 @@ class BaseModel(torch.nn.Module):
         self.model_dipole_derivative = False
         self.model_atomic_quadrupoles = False
         self.model_quadrupole = False
+        self.model_ensemble = False
         
         # Initialize ML/MM embedding flags
         self.model_mlmm_embedding = False
@@ -395,7 +396,7 @@ class BaseModel(torch.nn.Module):
 
     def get_mlmm_cutoff_ranges(
         self,
-        mlmm_inf_cutoff: Optional[bool] = False,
+        mlmm_inf_cutoff: bool = False,
     ) -> List[float]:
         """
         Get model ML and MM atom pair cutoff or, eventually, short range 
@@ -835,31 +836,31 @@ class BaseModel(torch.nn.Module):
         else:
             fconv_c = conversion['charge']
         if charge is None:
-            if 'fragment_numbers' in batch:
-                selection = (
-                    batch['fragment_numbers'] == self.model_ml_fragment
-                ).cpu().detach().numpy()
-            else:
-                selection = torch.ones_like(
-                    batch['atomic_numbers'],
-                    dtype=torch.bool
-                ).cpu().detach().numpy()
-            if 'atomic_charges' in atoms[0].arrays:
-                charge = [
-                    np.sum(image.arrays['atomic_charges'][selection])*fconv_c
-                    for image in atoms
-                ]
-            else:
-                try:
-                    charge = [
-                        np.sum(image.get_charges()[selection])*fconv_c
-                        for image in atoms
-                    ]
-                except RuntimeError:
-                    charge = [
-                        np.sum(image.get_initial_charges()[selection])*fconv_c
-                        for image in atoms
-                    ]
+            charge = []
+            for image in atoms:
+                if 'fragment' in image.arrays:
+                    selection = (
+                        image.arrays['fragment'] == self.model_ml_fragment
+                    )
+                else:
+                    selection = np.ones(len(image), dtype=bool)
+                if 'atomic_charges' in image.arrays:
+                    charge.append(
+                        np.sum(
+                            image.arrays['atomic_charges'][selection]
+                        )*fconv_c
+                    )
+                else:
+                    try:
+                        charge.append(
+                            np.sum(image.get_charges()[selection])*fconv_c
+                        )
+                    except RuntimeError:
+                        charge.append(
+                            np.sum(
+                                image.get_initial_charges()[selection]
+                            )*fconv_c
+                        )
         elif utils.is_numeric(charge):
             charge = [charge*fconv_c]*Nsys
         elif utils.is_numeric_array(charge):
@@ -1129,8 +1130,8 @@ class BaseModel(torch.nn.Module):
             Asparagus DataContainer or DataSet object
         batch_size: int, optional, default 32
             Data loader batch size
-        num_workers: int, optional, default 1
-            Number of data loader workers
+        num_workers: int, optional, default 0
+            Number of data loader workers (0 means serial processing)
 
         Returns
         -------
@@ -1173,7 +1174,8 @@ class BaseModel(torch.nn.Module):
                 results[prop] = torch.cat(results[prop])
             elif ib:
                 results[prop] = torch.cat(
-                    [result.reshape(1) for result in results[prop]], dim=0)
+                    [result.reshape(1) for result in results[prop]], dim=0
+                )
             else:
                 results[prop] = results[prop][0]
 
@@ -1259,12 +1261,13 @@ class BaseModel(torch.nn.Module):
                 'output',
                 'repulsion',
                 'dispersion',
-                'electrostatic'
+                'electrostatic',
+                'mlmm_electrostatic',
                 ]
             for prop in verbose_properties:
-                verbose_prop = '{:s}_atomic_energies'.format(prop)
+                verbose_prop = prop + '_atomic_energies'
                 if verbose_prop in batch:
-                    verbose_prop_energy = '{:s}_energy'.format(prop)
+                    verbose_prop_energy = prop + '_energy'
                     batch[verbose_prop_energy] = torch.zeros_like(
                         batch['energy']
                         ).scatter_add_(

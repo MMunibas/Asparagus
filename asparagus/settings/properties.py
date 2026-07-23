@@ -16,6 +16,7 @@ _valid_properties = [
     'positions',
     'cell',
     'pbc',
+    'fragment_numbers',
     'energy',
     'atomic_energies',
     'forces',
@@ -48,7 +49,7 @@ _alt_property_labels = {
     ],
     'forces':               ['F', 'force'],
     'hessian':              ['H', 'hessians'],
-    'charge':               ['Q', 'charges', 'total_charge', 'total_charges'],
+    'charge':               ['Q', 'total_charge'],
     'atomic_charges':       [
         'Qa', 'Qi', 'atom_charge', 'atom_charges', 'atomic_charge'
     ],

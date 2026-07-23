@@ -536,6 +536,11 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
                 device=self.device,
                 dtype=self.dtype
             )
+        elif isinstance(cutoffs, torch.Tensor):
+            self.cutoffs = cutoffs.cpu().clone().detach().to(                
+                device=self.device,
+                dtype=self.dtype
+            )
         else:
             self.cutoffs = torch.tensor(
                 cutoffs,

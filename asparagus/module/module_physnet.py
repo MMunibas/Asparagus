@@ -992,7 +992,7 @@ class Output_PhysNet(torch.nn.Module):
                     batch['output_atomic_charges'] = (
                         batch['atomic_charges'].detach())
                 else:
-                    verbose_prop = 'output_{:s}'.format(prop)
+                    verbose_prop = 'output_' + prop
                     batch[verbose_prop] = batch[prop].detach()
 
         return batch

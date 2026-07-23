@@ -357,7 +357,10 @@ class Tester:
         else:
             raise AttributeError(
                 "Model calculator has no 'model_properties' attribute")
-        if hasattr(model_calculator, "model_ensemble"):
+        if (
+            hasattr(model_calculator, "model_ensemble")
+            and model_calculator.model_ensemble
+        ):
             model_ensemble = model_calculator.model_ensemble
             model_ensemble_num = model_calculator.model_ensemble_num
         else:
@@ -1367,10 +1370,10 @@ class Tester:
             # Get model prediction, or for model ensembles either the
             # average model or single model results
             if imodel is None:
+                pred = prediction[prop]
+            else:
                 prop_i = str(imodel) + "_" + prop
                 pred = prediction[prop_i]
-            else:
-                pred = prediction[prop]
 
             # Prepare npz file name
             npz_file_prop = os.path.join(
@@ -1449,10 +1452,10 @@ class Tester:
             # Get model prediction, or for model ensembles either the
             # average model or single model results
             if imodel is None:
+                pred = prediction[prop]
+            else:
                 prop_i = str(imodel) + "_" + prop
                 pred = prediction[prop_i]
-            else:
-                pred = prediction[prop]
 
             # Prepare csv file name
             csv_file_prop = os.path.join(

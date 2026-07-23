@@ -4,13 +4,19 @@ from typing import Optional, List, Dict, Callable, Tuple, Union, Any
 import ase
 import ase.calculators.calculator as ase_calc
 
-import openmm
-from openmm import app
-from openmm import unit
-
 import torch
 
 from asparagus import utils
+
+# Import OpenMM modules if possible
+try:
+    import openmm
+    from openmm import app
+    from openmm import unit
+except ModuleNotFoundError as e:
+    raise ImportError(
+        "OpenMM is not installed. Install it before continuing."
+    ) from e
 
 __all__ = ['ASE_OpenMM_Calculator']
 

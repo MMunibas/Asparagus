@@ -522,7 +522,8 @@ class Trainer:
 
             # Assign model parameters
             self.model_calculator.load_state_dict(
-                loaded_checkpoint['model_state_dict'])
+                loaded_checkpoint['model_state_dict']
+            )
 
             self.model_calculator.checkpoint_loaded = True
             self.model_calculator.checkpoint_file = checkpoint_file
@@ -581,6 +582,15 @@ class Trainer:
                     f" Optimizer state: {optimizer_state:s}\n"
                     + f" Scheduler state: {scheduler_state:s}")
                 self.logger.info(message)
+
+        else:
+            
+            if verbose and self.model_calculator.checkpoint_loaded:
+                self.logger.info(
+                    "Checkpoint file "
+                    + f"'{self.model_calculator.checkpoint_file:s}'"
+                    + "already loaded."
+                )
 
         ################################
         # # # Prepare Model Cutoff # # #

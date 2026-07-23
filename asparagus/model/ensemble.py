@@ -156,6 +156,29 @@ class EnsembleModel(torch.nn.Module):
         self.model_unit_properties = (
             self.model_calculator_list[0].model_unit_properties.copy())
 
+        # Model general flags # TODO CHECK!!!
+        self.model_energy = self.model_calculator_list[0].model_energy
+        self.model_forces = self.model_calculator_list[0].model_forces
+        self.model_repulsion = self.model_calculator_list[0].model_repulsion
+        self.model_electrostatic = (
+            self.model_calculator_list[0].model_electrostatic
+        )
+        self.model_dispersion = self.model_calculator_list[0].model_dispersion
+        self.model_atomic_charges = (
+            self.model_calculator_list[0].model_atomic_charges
+        )
+        self.model_atomic_dipoles = (
+            self.model_calculator_list[0].model_atomic_dipoles
+        )
+        self.model_dipole = self.model_calculator_list[0].model_dipole
+        self.model_dipole_derivative = (
+            self.model_calculator_list[0].model_dipole_derivative
+        )
+        self.model_atomic_quadrupoles = (
+            self.model_calculator_list[0].model_atomic_quadrupoles
+        )
+        self.model_quadrupole = self.model_calculator_list[0].model_quadrupole
+
         # Model hidden parameter
         self._default_model_properties = (
             self.model_calculator_list[0]._default_model_properties
@@ -357,7 +380,7 @@ class EnsembleModel(torch.nn.Module):
 
     def get_mlmm_cutoff_ranges(
         self,
-        mlmm_inf_cutoff: Optional[bool] = False,
+        mlmm_inf_cutoff: bool = False,
     ) -> List[float]:
         """
         Get model ML and MM atom pair cutoff or, eventually, short range 
@@ -461,8 +484,9 @@ class EnsembleModel(torch.nn.Module):
 
     def calculate(
         self,
-        atoms: ase.Atoms,
-        charge: Optional[float] = 0.0,
+        atoms: Union[ase.Atoms, List[ase.Atoms]],
+        charge: Optional[float] = None,
+        **kwargs
     ) -> Dict[str, torch.Tensor]:
 
         """
@@ -471,8 +495,9 @@ class EnsembleModel(torch.nn.Module):
 
         Parameters
         ----------
-        atoms: ase.Atoms
-            ASE Atoms object to calculate properties
+        atoms: (ase.Atoms, list(ase.Atoms))
+            ASE Atoms object or list of ASE Atoms object to calculate 
+            properties
         charge: float, optional, default 0.0
             Total system charge
 
@@ -488,7 +513,7 @@ class EnsembleModel(torch.nn.Module):
             atoms,
             charge=charge)
 
-        return self.forward(atoms_batch)
+        return self.forward(atoms_batch, **kwargs)
 
     def create_batch(
         self,
@@ -577,7 +602,7 @@ class EnsembleModel(torch.nn.Module):
         self,
         dataset: Union[data.DataContainer, data.DataSet, data.DataSubSet],
         batch_size: Optional[int] = 32,
-        num_workers: Optional[int] = 1,
+        num_workers: Optional[int] = 0,
         verbose_results: Optional[bool] = False,
         **kwargs
     ) -> Dict[str, torch.Tensor]:
@@ -591,8 +616,8 @@ class EnsembleModel(torch.nn.Module):
             Asparagus DataContainer or DataSet object
         batch_size: int, optional, default 32
             Data loader batch size
-        num_workers: int, optional, default 1
-            Number of data loader workers
+        num_workers: int, optional, default 0
+            Number of data loader workers (0 means serial processing)
         verbose_results: bool, optional, default False
             If True, store single model property predictions and extended model
             property contributions.
@@ -608,12 +633,12 @@ class EnsembleModel(torch.nn.Module):
         dataloader = data.DataLoader(
             dataset,
             batch_size,
-            [],
+            dataset.get_metadata()['load_properties'],
             False,
             num_workers,
             self.device,
             self.dtype,
-            data_fragments=model_calculator_list[0].model_mlmm_embedding,
+            data_fragments=self.model_calculator_list[0].model_mlmm_embedding,
         )
 
         # Initialize model ensemble result dictionary
@@ -621,12 +646,13 @@ class EnsembleModel(torch.nn.Module):
 
         # Iterate over data batches
         for ib, batch in enumerate(dataloader):
-            
+
             # Predict model properties from data batch
             prediction = self.forward(
                 batch, 
                 verbose_results=verbose_results,
-                **kwargs)
+                **kwargs
+            )
 
             # Append prediction to result dictionary
             for prop in self.model_properties:
@@ -657,12 +683,13 @@ class EnsembleModel(torch.nn.Module):
                             dim=0)
                     else:
                         results[prop][sub_prop] = sub_result[0]
-            elif ib and prediction[prop][0].shape:
-                results[prop] = torch.cat(prediction[prop])
+            elif ib and results[prop][0].shape:
+                results[prop] = torch.cat(results[prop])
             elif ib:
                 results[prop] = torch.cat(
-                    [result.reshape(1) for result in prediction[prop]], dim=0)
+                    [result.reshape(1) for result in results[prop]], dim=0
+                )
             else:
-                results[prop] = prediction[prop][0]
+                results[prop] = results[prop][0]
 
         return results

@@ -9,6 +9,7 @@ import numpy as np
 # Test Parameter
 #==============================================================================
 
+directory_test = 'temp'
 
 flag_dictionary_initialization = True
 
@@ -47,7 +48,7 @@ except ImportError:
 #  Test Asparagus Main Class Initialization
 # ==============================================================================
 
-config_file = 'test/init.json'
+config_file = os.path.join(directory_test, 'init.json')
 config = {
     'config_file': config_file}
 device = 'cpu'
@@ -73,7 +74,7 @@ if flag_dictionary_initialization:
 #  Test Asparagus DataContainer Class Initialization
 # ==============================================================================
 
-config_file = 'test/data.json'
+config_file = os.path.join(directory_test, 'data.json')
 config = {
     'config_file': config_file}
 
@@ -86,7 +87,7 @@ if flag_database_sql:
     # Open DataBase file
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source=[
             'data/nms_nh3.db',
             'data/h2co_B3LYP_cc-pVDZ_4001.npz',
@@ -101,7 +102,7 @@ if flag_database_sql:
     # Create new DataBase file
     model.set_data_container(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source='data/nms_nh3.db',
         data_overwrite=True,
     )
@@ -109,7 +110,7 @@ if flag_database_sql:
     # Add same source to DataBase file, should be skipped
     model.set_data_container(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source='data/nms_nh3.db',
         data_overwrite=False,
     )
@@ -117,7 +118,7 @@ if flag_database_sql:
     # Load new DataBase with different source property units
     model.set_data_container(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
         data_source_unit_properties={
             'positions': 'Bohr',
@@ -132,7 +133,7 @@ if flag_database_sql:
     # Load new DataBase with different source property units
     model.set_data_container(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
         data_unit_properties={
             'positions': 'Ang',
@@ -154,18 +155,18 @@ if flag_database_sql:
     try:
         model.set_data_container(
             config=config_file,
-            data_file='test/nms_nh3_test.db',
-            data_source='test/nms_nh3_test.db',
+            data_file=os.path.join(directory_test, 'nms_nh3_test.db'),
+            data_source=os.path.join(directory_test, 'nms_nh3_test.db'),
             data_overwrite=True,
         )
     except SyntaxError:
         print("\nSyntaxError as expected\n")
-        os.remove('test/nms_nh3_test.db')
+        os.remove(os.path.join(directory_test, 'nms_nh3_test.db'))
 
     # Get DataContainer (Reset data source)
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/nms_nh3_test.db',
+        data_file=os.path.join(directory_test, 'nms_nh3_test.db'),
         data_source='data/nms_nh3.db',
         )
     data = model.get_data_container()
@@ -186,11 +187,13 @@ if flag_database_sql:
     # Load Numpy .npz files
     model.set_data_container(
         config=config_file,
-        data_file='test/h2co_test.db',
+        data_file=os.path.join(directory_test, 'h2co_test.db'),
         data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
         data_overwrite=True,
     )
-    data = model.get_data_container(data_file='test/h2co_test.db')
+    data = model.get_data_container(
+        data_file=os.path.join(directory_test, 'h2co_test.db')
+    )
     print("\nDatabase path: ", data, "\n")
     print("\nDatabase entry '0': ", data[0]['energy'])
     print("\nDatabase Train entry '1': ", data.get_train(1)['atomic_numbers'])
@@ -205,7 +208,7 @@ if flag_database_sql:
     # Load multiple source files files
     model.set_data_container(
         config=config_file,
-        data_file='test/nh3_h2co_test.db',
+        data_file=os.path.join(directory_test, 'nh3_h2co_test.db'),
         data_source=['data/h2co_B3LYP_cc-pVDZ_4001.npz', 'data/nms_nh3.db'],
         data_overwrite=True,
     )
@@ -213,7 +216,7 @@ if flag_database_sql:
     # Check if repeated data source is skipped
     model.set_data_container(
         config=config_file,
-        data_file='test/nh3_h2co_test.db',
+        data_file=os.path.join(directory_test, 'nh3_h2co_test.db'),
         data_source=['data/nms_nh3.db'],
         data_overwrite=False,
     )
@@ -221,7 +224,7 @@ if flag_database_sql:
     # Load ASE trajectory file
     model.set_data_container(
         config=config_file,
-        data_file='test/meta_nh3_test.db',
+        data_file=os.path.join(directory_test, 'meta_nh3_test.db'),
         data_source='data/meta_nh3.traj',
         data_overwrite=True,
     )
@@ -229,7 +232,7 @@ if flag_database_sql:
     # Load ASE trajectory file with different property units
     model.set_data_container(
         config=config_file,
-        data_file='test/meta_nh3_test_unit.db',
+        data_file=os.path.join(directory_test, 'meta_nh3_test_unit.db'),
         data_source='data/meta_nh3.traj',
         data_properties=['energy', 'forces'],
         data_unit_properties={
@@ -242,14 +245,15 @@ if flag_database_sql:
     # Test training initialization
     model.train(
         trainer_max_epochs=0,
-        model_directory='test/test_model')
+        model_directory=os.path.join(directory_test, 'test_model')
+    )
 
     # Check automatic model property assignment from data properties
     if os.path.exists(config_file):
         os.remove(config_file)
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/meta_nh3_test_unit.db',
+        data_file=os.path.join(directory_test, 'meta_nh3_test_unit.db'),
         data_source='data/meta_nh3.traj',
         data_properties=['energy', 'forces'],
         data_unit_properties={
@@ -262,14 +266,15 @@ if flag_database_sql:
     # Test training initialization
     model.train(
         trainer_max_epochs=0,
-        model_directory='test/test_model')
+        model_directory=os.path.join(directory_test, 'test_model')
+    )
 
 # Numpy npz
 if flag_database_npz:
 
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/nms_nh3_test.db.npz',
+        data_file=os.path.join(directory_test, 'nms_nh3_test.db.npz'),
         data_source='data/nms_nh3.db',
         data_overwrite=True,
         )
@@ -277,7 +282,7 @@ if flag_database_npz:
     # Create new DataBase file
     data = model.get_data_container(
         config=config_file,
-        data_file='test/nms_nh3_test.db.npz',
+        data_file=os.path.join(directory_test, 'nms_nh3_test.db.npz'),
         data_source='data/nms_nh3.db',
         data_overwrite=False,
     )
@@ -292,12 +297,12 @@ if flag_database_npz:
     # Test training initialization
     model.train(
         trainer_max_epochs=0,
-        model_directory='test/test_model')
+        model_directory=os.path.join(directory_test, 'test_model'))
 
     # Open DataBase file
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/test.db.npz',
+        data_file=os.path.join(directory_test, 'test.db.npz'),
         data_source=[
             'data/nms_nh3.db',
             'data/h2co_B3LYP_cc-pVDZ_4001.npz',
@@ -317,7 +322,7 @@ if flag_database_npz:
     # Load with different property units
     model.set_data_container(
         config=config_file,
-        data_file='test/test.db.npz',
+        data_file=os.path.join(directory_test, 'test.db.npz'),
         data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
         data_properties=['energy', 'forces'],
         data_unit_properties={
@@ -338,7 +343,7 @@ if flag_database_hdf5:
     # Create new DataBase file
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/nms_nh3_test.db.h5',
+        data_file=os.path.join(directory_test, 'nms_nh3_test.db.h5'),
         data_file_format='hdf5',
         data_source='data/nms_nh3.db',
         data_source_format='sql',
@@ -349,7 +354,7 @@ if flag_database_hdf5:
     # Test training initialization
     model.train(
         trainer_max_epochs=0,
-        model_directory='test/test_model')
+        model_directory=os.path.join(directory_test, 'test_model'))
 
 #==============================================================================
 # Test Asparagus DataReader
@@ -358,12 +363,12 @@ if flag_database_hdf5:
 # Check DataReader functions for consistency
 if flag_datareader:
 
-    config_file = 'test/read.json'
+    config_file = os.path.join(directory_test, 'read.json')
 
     # Read from Asparagus data file
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source='data/nms_nh3.db',
         data_overwrite=True,
         )
@@ -373,7 +378,7 @@ if flag_datareader:
     # Read from npz data file
     model = asparagus.Asparagus(
         config=config_file,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source='data/h2co_B3LYP_cc-pVDZ_4001.npz',
         data_overwrite=True,
         )
@@ -401,15 +406,15 @@ if flag_sampler_all:
         # Load single system from xyz file and compute properties using XTB default
         # calculator
         sampler = Sampler(
-            config='test/smpl_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/smpl_nh3.db',
+            config=os.path.join(directory_test, 'smpl_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',
             sample_calculator_args = {
                 'charge': 0,
-                'directory': 'test/xtb'},
+                'directory': os.path.join(directory_test, 'xtb')},
             sample_num_threads=1,
             )
         sampler.run()
@@ -417,15 +422,15 @@ if flag_sampler_all:
         # Load two system from xyz file and compute properties using XTB default
         # calculator in parallel (still works without using other ASE functions)
         sampler = Sampler(
-            config='test/smpl_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/smpl_nh3.db',
+            config=os.path.join(directory_test, 'smpl_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
             sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
             sample_systems_format='xyz',
             sample_calculator='XTB',
             sample_calculator_args = {
                 'charge': 0,
-                'directory': 'test/xtb'},
+                'directory': os.path.join(directory_test, 'xtb')},
             sample_num_threads=2,
             )
         sampler.run()
@@ -433,14 +438,14 @@ if flag_sampler_all:
         # Load two systems from xyz file and a ASE trajectory file and compute
         # properties using XTB default calculator
         sampler = Sampler(
-            config='test/smpl_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/smpl_nh3.db',
+            config=os.path.join(directory_test, 'smpl_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
             sample_systems=['data/nh3_c3v.xyz', 'data/meta_nh3.traj'],
             sample_calculator='XTB',
             sample_calculator_args = {
                 'charge': 0,
-                'directory': 'test/xtb'},
+                'directory': os.path.join(directory_test, 'xtb')},
             sample_num_threads=1,
             )
         sampler.run()
@@ -448,16 +453,16 @@ if flag_sampler_all:
         # Load a selection of sample system from an Asparagus data file and compute
         # properties using XTB default calculator
         sampler = Sampler(
-            config='test/smpl_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/smpl_nh3.db',
+            config=os.path.join(directory_test, 'smpl_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
             sample_systems='data/nms_nh3.db',
             sample_systems_format='db',
             sample_systems_indices=[0, 1, 2, 3, -4, -3, -2, -1],
             sample_calculator='XTB',
             sample_calculator_args = {
                 'charge': 0,
-                'directory': 'test/xtb'},
+                'directory': os.path.join(directory_test, 'xtb')},
             sample_num_threads=1,
             )
         sampler.run()
@@ -465,9 +470,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Monte-Carlo
         # sampling method with the XTB calculator
         sampler = MCSampler(
-            config='test/mc_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/mc_nh3.db',
+            config=os.path.join(directory_test, 'mc_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'mc_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -484,9 +489,9 @@ if flag_sampler_all:
     # Sample two systems loaded from a xyz files in parallel using the
     # Monte-Carlo sampling method and the ORCA calculator (thread safe)
     sampler = MCSampler(
-        config='test/mc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/mc_nh3.db',
+        config=os.path.join(directory_test, 'mc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'mc_nh3.db'),
         sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
         sample_systems_format='xyz',
         sample_calculator='ORCA',
@@ -495,7 +500,7 @@ if flag_sampler_all:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 1 end',
-            'directory': 'test/orca'},
+            'directory': os.path.join(directory_test, 'orca')},
         sample_save_trajectory=True,
         sample_num_threads=1,
         sample_systems_optimize=True,
@@ -512,9 +517,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Molecular
         # Dynamics sampling method with the XTB calculator
         sampler = MDSampler(
-            config='test/md_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/md_nh3.db',
+            config=os.path.join(directory_test, 'md_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'md_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -534,9 +539,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Molecular
         # Dynamics sampling method with the XTB calculator
         sampler = MDSampler(
-            config='test/md_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/md_nh3.db',
+            config=os.path.join(directory_test, 'md_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'md_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -559,9 +564,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Molecular
         # Dynamics sampling method with the XTB calculator
         sampler = MDSampler(
-            config='test/md_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/md_nh3.db',
+            config=os.path.join(directory_test, 'md_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'md_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -582,9 +587,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Molecular
         # Dynamics sampling method with the XTB calculator
         sampler = MDSampler(
-            config='test/md_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/md_nh3.db',
+            config=os.path.join(directory_test, 'md_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'md_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -606,9 +611,9 @@ if flag_sampler_all:
     # Sample two systems loaded from a xyz files in parallel using the 
     # Molecular Dynamics sampling method and the ORCA calculator (thread safe)
     sampler = MDSampler(
-        config='test/md_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/md_nh3.db',
+        config=os.path.join(directory_test, 'md_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'md_nh3.db'),
         sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
         sample_systems_format='xyz',
         sample_calculator='ORCA',
@@ -617,7 +622,7 @@ if flag_sampler_all:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 1 end',
-            'directory': 'test/orca'},
+            'directory': os.path.join(directory_test, 'orca')},
         sample_save_trajectory=True,
         sample_num_threads=2,
         sample_systems_optimize=True,
@@ -638,9 +643,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Meta Dynamics
         # sampling method with the XTB calculator
         sampler = MetaSampler(
-            config='test/meta_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/meta_nh3.db',
+            config=os.path.join(directory_test, 'meta_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'meta_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -667,9 +672,9 @@ if flag_sampler_all:
     # sample steps to reach higher potential areas.
     # Not yet working as planned
     sampler = MetaSampler(
-        config='test/meta_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/meta_nh3.db',
+        config=os.path.join(directory_test, 'meta_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'meta_nh3.db'),
         sample_systems='data/nh3_c3v.xyz',
         sample_systems_format='xyz',
         sample_calculator='ORCA',
@@ -678,7 +683,7 @@ if flag_sampler_all:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 1 end',
-            'directory': 'test/orca'},
+            'directory': os.path.join(directory_test, 'orca')},
         sample_save_trajectory=True,
         sample_num_threads=4,
         sample_systems_optimize=True,
@@ -699,9 +704,9 @@ if flag_sampler_all:
     # Sample two system loaded from a xyz files in parallel using the Meta
     # Dynamics sampling method and the ORCA calculator (thread safe)
     sampler = MetaSampler(
-        config='test/meta_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/meta_nh3.db',
+        config=os.path.join(directory_test, 'meta_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'meta_nh3.db'),
         sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
         sample_systems_format='xyz',
         sample_calculator='ORCA',
@@ -710,7 +715,7 @@ if flag_sampler_all:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 1 end',
-            'directory': 'test/orca'},
+            'directory': os.path.join(directory_test, 'orca')},
         sample_save_trajectory=True,
         sample_num_threads=2,
         sample_systems_optimize=True,
@@ -732,9 +737,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Normal Mode
         # Scanner sampling method with the XTB calculator
         sampler = NormalModeScanner(
-            config='test/nms_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/nms_nh3.db',
+            config=os.path.join(directory_test, 'nms_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'nms_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -757,9 +762,9 @@ if flag_sampler_all:
     # scans along single or combinations of normal modes. Step (2) and (3) will
     # run in serial for each sample system.
     sampler = NormalModeScanner(
-        config='test/nms_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/nms_nh3.db',
+        config=os.path.join(directory_test, 'nms_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'nms_nh3.db'),
         sample_systems=['data/nh3_c3v.xyz', 'data/nh3_d3h.xyz'],
         sample_systems_format='xyz',
         sample_calculator='ORCA',
@@ -768,7 +773,7 @@ if flag_sampler_all:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 1 end',
-            'directory': 'test/orca'},
+            'directory': os.path.join(directory_test, 'orca')},
         sample_num_threads=4,
         sample_systems_optimize=True,
         sample_systems_optimize_fmax=0.001,
@@ -786,9 +791,9 @@ if flag_sampler_all:
         # Sample a single system loaded from a xyz file using the Normal Mode
         # Sampler sampling method with the XTB calculator
         sampler = NormalModeSampler(
-            config='test/nms_nh3.json',
-            sample_directory='test',
-            sample_data_file='test/nms_nh3.db',
+            config=os.path.join(directory_test, 'nms_nh3.json'),
+            sample_directory=directory_test,
+            sample_data_file=os.path.join(directory_test, 'nms_nh3.db'),
             sample_systems='data/nh3_c3v.xyz',
             sample_systems_format='xyz',
             sample_calculator='XTB',   # Not thread save when using ASE modules
@@ -807,9 +812,9 @@ if flag_sampler_all:
     # number of randomly sampled system conformations. Step (2) and (3) will
     # run in serial for each potential sample system.
     sampler = NormalModeSampler(
-        config='test/nms_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/nms_nh3.db',
+        config=os.path.join(directory_test, 'nms_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'nms_nh3.db'),
         sample_systems='data/nh3_d3h.xyz',
         sample_systems_format='xyz',
         sample_calculator='ORCA',
@@ -818,7 +823,7 @@ if flag_sampler_all:
             'mult': 1,
             'orcasimpleinput': 'RI PBE D3BJ def2-SVP def2/J TightSCF',
             'orcablocks': '%pal nprocs 1 end',
-            'directory': 'test/orca'},
+            'directory': os.path.join(directory_test, 'orca')},
         sample_num_threads=4,
         sample_systems_optimize=True,
         sample_systems_optimize_fmax=0.001,
@@ -839,9 +844,9 @@ if flag_sampler_shell:
     # Calculate properties of a sample system with multiple conformations
     # using the Shell calculator with template files for an ORCA calculation.
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/nh3_c3v.xyz',
         sample_systems_format='xyz',
         sample_calculator='shell',
@@ -859,7 +864,7 @@ if flag_sampler_shell:
             'execute_file': 'run_orca.sh',
             'charge': 0,
             'multiplicity': 1,
-            'directory': 'test/shell',
+            'directory': os.path.join(directory_test, 'shell'),
             'result_properties': ['energy', 'forces', 'dipole']
             },
         sample_num_threads=1,
@@ -870,9 +875,9 @@ if flag_sampler_shell:
     # using the Shell calculator with template files for an ORCA calculation
     # and in parallel.
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/meta_nh3.traj',
         sample_calculator='shell',
         sample_calculator_args = {
@@ -889,7 +894,7 @@ if flag_sampler_shell:
             'execute_file': '../asparagus/templates/shell/run_orca.sh',
             'charge': 0,
             'multiplicity': 1,
-            'directory': 'test/shell',
+            'directory': os.path.join(directory_test, 'shell'),
             'result_properties': ['energy', 'forces', 'dipole']
             },
         sample_num_threads=4,
@@ -905,9 +910,9 @@ if flag_sampler_slurm:
     # Calculate properties of a sample system with multiple conformations
     # using the slurm calculator with template files for a MOLPRO calculation.
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/nh3_c3v.xyz',
         sample_systems_format='xyz',
         sample_calculator='slurm',
@@ -926,7 +931,7 @@ if flag_sampler_slurm:
             'execute_file': 'run_molpro.sh',
             'charge': 0,
             'multiplicity': 1,
-            'directory': 'test/slurm',
+            'directory': os.path.join(directory_test, 'slurm'),
             'result_properties': ['energy', 'forces', 'dipole'],
             },
         sample_num_threads=1,
@@ -960,9 +965,9 @@ if flag_sampler_slurm:
         return int(proc.stdout.decode().split()[-1])
     
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/nh3_c3v.xyz',
         sample_systems_format='xyz',
         sample_calculator='slurm',
@@ -981,7 +986,7 @@ if flag_sampler_slurm:
             'execute_file': 'run_molpro.sh',
             'charge': 0,
             'multiplicity': 1,
-            'directory': 'test/slurm',
+            'directory': os.path.join(directory_test, 'slurm'),
             'result_properties': ['energy', 'forces', 'dipole']
             },
         sample_num_threads=1,
@@ -993,9 +998,9 @@ if flag_sampler_slurm:
     # Calculate properties of a sample system with multiple conformations
     # using the Slurm calculator with template files for a MOLPRO calculation.
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/nms_nh3.db',
         sample_systems_format='db',
         sample_systems_indices=[0, 1, 2, 3, -4, -3, -2, -1],
@@ -1015,7 +1020,7 @@ if flag_sampler_slurm:
             'execute_file': 'run_molpro.sh',
             'charge': 0,
             'multiplicity': 1,
-            'directory': 'test/slurm',
+            'directory': os.path.join(directory_test, 'slurm'),
             'result_properties': ['energy', 'forces', 'dipole']
             },
         sample_num_threads=4,
@@ -1030,32 +1035,32 @@ if flag_sampler_shell_case:
     # Test the predefined case shell calculator using template file
     # in asparagus/template/shell
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/nh3_c3v.xyz',
         sample_systems_format='xyz',
         sample_calculator='shell:mp2',
         sample_calculator_args = {
             'charge': 0,
             'multiplicity': 1,
-            'directory': 'test/shell',
+            'directory': os.path.join(directory_test, 'shell'),
             'result_properties': ['energy', 'forces', 'dipole']
             },
         sample_num_threads=1,
         )
     sampler.run()
 
-    if os.path.exists('test/calc_nh3.json'):
-        os.remove('test/calc_nh3.json')
+    if os.path.exists(os.path.join(directory_test, 'calc_nh3.json')):
+        os.remove(os.path.join(directory_test, 'calc_nh3.json'))
 
     # Test the predefined case shell calculator using template file
     # in asparagus/template/shell with additional parameter 'basis' and
     # changed property list.
     sampler = Sampler(
-        config='test/calc_nh3.json',
-        sample_directory='test',
-        sample_data_file='test/smpl_nh3.db',
+        config=os.path.join(directory_test, 'calc_nh3.json'),
+        sample_directory=directory_test,
+        sample_data_file=os.path.join(directory_test, 'smpl_nh3.db'),
         sample_systems='data/meta_nh3.traj',
         sample_calculator='shell:mp2',
         sample_calculator_args = {
@@ -1065,7 +1070,7 @@ if flag_sampler_shell_case:
             'charge': 0,
             'multiplicity': 1,
             'basis': 'cc-pVDZ',
-            'directory': 'test/shell',
+            'directory': os.path.join(directory_test, 'shell'),
             'result_properties': ['energy', 'forces']
             },
         sample_num_threads=4,
@@ -1080,27 +1085,28 @@ if flag_sampler_shell_case:
 #==============================================================================
 
 # Initialize PhysNet model calculator
-config_file1 = 'test/model_physnet.json'
+config_file1 = os.path.join(directory_test, 'model_physnet.json')
 if flag_model_physnet:
     
     model = asparagus.Asparagus(
         config_file=config_file1,
         model_type='physnet')
     mcalc = model.get_model_calculator(
-        model_directory='test/physnet') # Default model type: 'PhysNet'
+        model_directory=os.path.join(directory_test, 'physnet'))
+        # Default model type: 'PhysNet'
     model.set_model_calculator(
-        model_directory='test/physnet')
+        model_directory=os.path.join(directory_test, 'physnet'))
     model.set_model_calculator(
         model_calculator=mcalc)
 
 # Initialize PhysNet model training
 if flag_train_physnet_sql:
     
-    config_file2 = 'test/train_physnet.json'
+    config_file2 = os.path.join(directory_test, 'train_physnet.json')
     model = asparagus.Asparagus(
         config=config_file1,
         config_file=config_file2,
-        data_file='test/test.db',
+        data_file=os.path.join(directory_test, 'test.db'),
         data_source=[
             'data/nms_nh3.db',
             'data/h2co_B3LYP_cc-pVDZ_4001.npz'
@@ -1109,22 +1115,22 @@ if flag_train_physnet_sql:
         data_num_train=200,
         data_num_valid=40,
         data_num_test=40,
-        model_directory='test/physnet_sql',
+        model_directory=os.path.join(directory_test, 'physnet_sql'),
         model_num_threads=2,
         trainer_max_epochs=10,
         trainer_debug_mode=False,
         )
     trainer = model.get_trainer()
     model.train()
-    model.test(test_directory='test/physnet_sql')
+    model.test(test_directory=os.path.join(directory_test, 'physnet_sql'))
 
 if flag_train_physnet_npz:
     
-    config_file2 = 'test/train_physnet_npz.json'
+    config_file2 = os.path.join(directory_test, 'train_physnet_npz.json')
     model = asparagus.Asparagus(
         config=config_file1,
         config_file=config_file2,
-        data_file='test/test.db.npz',
+        data_file=os.path.join(directory_test, 'test.db.npz'),
         data_source=[
             'data/nms_nh3.db',
             'data/h2co_B3LYP_cc-pVDZ_4001.npz'
@@ -1133,7 +1139,7 @@ if flag_train_physnet_npz:
         data_num_train=0.2,
         data_num_valid=0.05,
         data_num_test=0.05,
-        model_directory='test/physnet_npz',
+        model_directory=os.path.join(directory_test, 'physnet_npz'),
         model_num_threads=2,
         trainer_max_epochs=10,
         trainer_debug_mode=False,
@@ -1143,7 +1149,7 @@ if flag_train_physnet_npz:
     model.train(
         trainer_max_epochs=15,
         reset_energy_shift=True)
-    model.test(test_directory='test/physnet_npz')
+    model.test(test_directory=os.path.join(directory_test, 'physnet_npz'))
 
 # Test ASE calculator
 if flag_ase_physnet:
@@ -1151,7 +1157,7 @@ if flag_ase_physnet:
     from ase import Atoms
     
     # Get ASE model calculator
-    config_file = 'test/train_physnet.json'
+    config_file = os.path.join(directory_test, 'train_physnet.json')
     model = asparagus.Asparagus(
         config_file=config_file)
     calc = model.get_ase_calculator()
@@ -1217,34 +1223,35 @@ if flag_ase_physnet:
     print(f"RMSE(energy) = {rmse_energy:.4f} eV")
 
 # Initialize PaiNN model calculator
-config_file1 = 'test/model_painn.json'
+config_file1 = os.path.join(directory_test, 'model_painn.json')
 if flag_model_painn:
 
     model = asparagus.Asparagus(
         config_file=config_file1,
         model_type='painn')
+    # Default model type: 'PhysNet'
     mcalc = model.get_model_calculator(
-        model_directory='test/painn') # Default model type: 'PhysNet'
+        model_directory=os.path.join(directory_test, 'painn'))
     model.set_model_calculator(
-        model_directory='test/painn')
+        model_directory=os.path.join(directory_test, 'painn'))
     model.set_model_calculator(
         model_calculator=mcalc)
 
 # Initialize PaiNN model training
 if flag_train_painn:
 
-    config_file2 = 'test/train_painn.json'
+    config_file2 = os.path.join(directory_test, 'train_painn.json')
     model = asparagus.Asparagus(
         config=config_file1,
         config_file=config_file2,
         data_file='data/nms_nh3.db',
-        model_directory='test/painn',
+        model_directory=os.path.join(directory_test, 'painn'),
         model_num_threads=2,
         trainer_max_epochs=10,
         )
     trainer = model.get_trainer()
     model.train()
-    model.test(test_directory='test/painn')
+    model.test(test_directory=os.path.join(directory_test, 'painn'))
 
 #==============================================================================
 # Test Transfer Learning
@@ -1255,30 +1262,43 @@ if flag_train_painn:
 if flag_transfer_learning:
     
     # Base Model
-    config_file1 = 'test/trans_learn1.json'
+    config_file1 = os.path.join(directory_test, 'trans_learn1.json')
     model = asparagus.Asparagus(
         config=config_file1,
         data_file='data/nms_nh3.db',
-        model_directory='test/trans_learn/model_base',
+        model_directory=os.path.join(
+            directory_test, 'trans_learn', 'model_base'
+        ),
         trainer_max_epochs=10,
         )
     model.train()
-    model.test(test_directory='test/trans_learn/model_base')
+    model.test(
+        test_directory=os.path.join(
+            directory_test, 'trans_learn', 'model_base'
+        )
+    )
     
-    config_file2 = 'test/trans_learn2.json'
+    config_file2 = os.path.join(directory_test, 'trans_learn2.json')
     model = asparagus.Asparagus(
         config=config_file1,
         config_file=config_file2,
         data_file='data/nms_nh3.db',
-        model_directory='test/trans_learn/model_trans_learn',
-        #model_checkpoint='test/trans_learn/model_base/best/best_model.pt',
+        model_directory=os.path.join(
+            directory_test, 'trans_learn', 'model_trans_learn'
+        ),
         trainer_max_epochs=10,
-        )
+    )
     model.train(
-        model_checkpoint='test/trans_learn/model_base/best/best_model.pt',
+        model_checkpoint=os.path.join(
+            directory_test, 'trans_learn', 'model_base', 'best/best_model.pt'
+        ),
         reset=True,
         reset_energy_shift=True)
-    model.test(test_directory='test/trans_learn/model_trans_learn')
+    model.test(
+        test_directory=os.path.join(
+            directory_test, 'trans_learn', 'model_trans_learn'
+        )
+    )
 
 #==============================================================================
 # Test Asparagus Model Calculator - PhysNet in Cuda
@@ -1287,14 +1307,14 @@ if flag_transfer_learning:
 # Initialize PhysNet model training
 if flag_train_cuda:
     
-    config_file = 'test/train_cuda.json'
+    config_file = os.path.join(directory_test, 'train_cuda.json')
     model = asparagus.Asparagus(
         config_file=config_file,
         data_file='data/nms_nh3.db',
-        model_directory='test/cuda',
+        model_directory=os.path.join(directory_test, 'cuda'),
         trainer_max_epochs=10,
         device='cuda',
         model_device='cuda',
         )
     model.train()
-    model.test(test_directory='test/cuda')
+    model.test(test_directory=os.path.join(directory_test, 'cuda'))

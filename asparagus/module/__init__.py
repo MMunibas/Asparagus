@@ -20,7 +20,7 @@ from .repulsion import (
 )
 
 from .electrostatics import (
-    Damped_electrostatics, MLMM_electrostatics
+    Damped_electrostatics, MLMM_electrostatics, MLMM_identity
 )
 
 from .dispersion import (

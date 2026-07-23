@@ -618,8 +618,6 @@ class Asparagus():
             data_container = self.get_data_container(
                 config=config,
                 **kwargs)
-        else:
-            data_container = self.data_container
 
         ###################################
         # # # Assign Model Calculator # # #
@@ -629,8 +627,6 @@ class Asparagus():
             model_calculator = self.get_model_calculator(
                 config=config,
                 **kwargs)
-        else:
-            model_calculator = self.model_calculator
 
         ###########################################
         # # # Assign Model Calculator Trainer # # #
@@ -857,6 +853,8 @@ class Asparagus():
         config: Optional[
             Union[str, Dict[str, Any], settings.Configuration]] = None,
         config_file: Optional[str] = None,
+        model_calculator:
+            Optional[Union[model.BaseModel, model.EnsembleModel]] = None,
         **kwargs,
     ):
         """
@@ -869,6 +867,8 @@ class Asparagus():
             settings.config class object of model parameters
         config_file: str, optional, default see settings.default['config_file']
             Path to config json file (str)
+        model_calculator: torch.nn.Module, optional, default None
+            Model or ensemble model calculator for property predictions.
 
         """
 
@@ -876,13 +876,11 @@ class Asparagus():
         # # # Assign Model Calculator # # #
         ###################################
 
-        if self.model_calculator is None:
+        if model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,
                 config_file=config_file,
                 **kwargs)
-        else:
-            model_calculator = self.model_calculator
 
         ##########################################
         # # # Assign Model Calculator Tester # # #

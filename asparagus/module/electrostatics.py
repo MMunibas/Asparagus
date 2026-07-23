@@ -10,6 +10,7 @@ from asparagus import settings
 __all__ = [
     'Damped_electrostatics',
     'MLMM_electrostatics',
+    'MLMM_identity',
     ]
 
 # ======================================
@@ -1268,3 +1269,58 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
 
         return Eelec
 
+
+class MLMM_identity(torch.nn.Identity):
+    """
+    Just an Identity module accepting the batch dictionary which is returned
+    unchanged.
+
+    """
+
+    def __init__(
+        self,
+    ):
+
+        super(MLMM_identity, self).__init__()
+        
+        return
+
+    def __str__(self):
+        return "Identity Module"
+
+    def get_info(self) -> Dict[str, Any]:
+        """
+        Return class information
+        """
+        return {}
+
+    def set_unit_properties(
+        self,
+        unit_properties: Dict[str, str],
+    ):
+        return
+
+    def forward(
+        self,
+        batch: Dict[str, torch.Tensor],
+        verbose: bool = False,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Return batch unchanged
+
+        Parameters
+        ----------
+        batch: dict(str, torch.Tensor)
+            Dictionary of data tensors
+        verbose: bool, optional, default False
+            If True, store extended model property contributions in the data
+            dictionary.
+
+        Returns
+        -------
+        dict(str, torch.Tensor)
+            Dictionary same as input
+
+        """
+
+        return batch

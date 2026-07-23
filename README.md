@@ -15,10 +15,12 @@
 - Requirements:
   - Python <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 3.8
   - PyTorch <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 1.10
-  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " == 3.22.1
+  - Atomic Simulation Environment (ASE) <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " />
   - Torch-ema <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 0.3
   - TensorBoardX <img src="https://latex.codecogs.com/svg.image?\geq&space;" title="\geq " /> 2.4
   - numpy, scipy, pandas, ...
+  - OpenMM, OpenMM-ML (for OpenMM potential model interface)
+  - pyCHARMM API of the CHARMM MD program (for (py)CHARMM potential model interface)
   
 ### Setting up the environment
 
