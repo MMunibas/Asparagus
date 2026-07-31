@@ -52,12 +52,14 @@ class Asparagus():
         # Initialize model parameter configuration dictionary
         # Keyword arguments overwrite entries in the configuration dictionary
         config = settings.get_config(
-            config, config_file, config_from=self, **kwargs)
+            config, config_file, config_from=self, **kwargs
+        )
 
         # Check model parameter configuration and set default
         config.check(
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Get configuration file path
         self.config_file = config.get('config_file')
@@ -137,16 +139,19 @@ class Asparagus():
 
         if config is None:
             config = settings.get_config(
-                self.config, config_file, config_from=self)
+                self.config, config_file, config_from=self
+            )
         else:
             config = settings.get_config(
-                config, config_file, config_from=self)
+                config, config_file, config_from=self
+            )
 
         # Check model parameter configuration and set default
         config_update = config.set(
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Update configuration dictionary
         config.update(config_update)
@@ -171,7 +176,8 @@ class Asparagus():
             data_container = self._get_data_container(
                 config,
                 data_container=data_container,
-                **kwargs)
+                **kwargs
+            )
 
             # Assign data container
             self.loaded_data_container = data_container
@@ -209,16 +215,19 @@ class Asparagus():
 
         if config is None:
             config = settings.get_config(
-                self.config, config_file, config_from=self)
+                self.config, config_file, config_from=self
+            )
         else:
             config = settings.get_config(
-                config, config_file, config_from=self)
+                config, config_file, config_from=self
+            )
 
         # Check model parameter configuration and set default
         config_update = config.set(
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Update configuration dictionary
         config.update(config_update)
@@ -229,7 +238,8 @@ class Asparagus():
 
         data_container = self._get_data_container(
             config,
-            **kwargs)
+            **kwargs
+        )
 
         return data_container
 
@@ -259,7 +269,8 @@ class Asparagus():
 
         data_container = data.DataContainer(
             config,
-            **kwargs)
+            **kwargs
+        )
 
         return data_container
 
@@ -333,16 +344,19 @@ class Asparagus():
 
         if config is None:
             config = settings.get_config(
-                self.config, config_file, config_from=self)
+                self.config, config_file, config_from=self
+            )
         else:
             config = settings.get_config(
-                config, config_file, config_from=self)
+                config, config_file, config_from=self
+            )
 
         # Check model parameter configuration and set default
         config_update = config.set(
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Update configuration dictionary
         config.update(config_update)
@@ -362,7 +376,7 @@ class Asparagus():
             model_checkpoint=model_checkpoint,
             model_compile=model_compile,
             **kwargs,
-            )
+        )
 
         # Assign model calculator
         self.loaded_model_calculator = model_calculator
@@ -431,16 +445,19 @@ class Asparagus():
         # Assign model parameter configuration library
         if config is None:
             config = settings.get_config(
-                self.config, config_file, config_from=self)
+                self.config, config_file, config_from=self
+            )
         else:
             config = settings.get_config(
-                config, config_file, config_from=self)
+                config, config_file, config_from=self
+            )
 
         # Check model parameter configuration and set default
         config_update = config.set(
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Update configuration dictionary
         config.update(config_update)
@@ -460,7 +477,7 @@ class Asparagus():
             model_checkpoint=model_checkpoint,
             model_compile=model_compile,
             **kwargs,
-            )
+        )
 
         return model_calculator
 
@@ -528,13 +545,15 @@ class Asparagus():
                 model_ensemble=model_ensemble,
                 model_ensemble_num=model_ensemble_num,
                 model_checkpoint=model_checkpoint,
-                **kwargs)
+                **kwargs
             )
+        )
 
         # Load model checkpoint file
         model_calculator.load(
             checkpoint_state,
-            checkpoint_file=checkpoint_file)
+            checkpoint_file=checkpoint_file
+        )
 
         # Compile model calculator if requested
         if model_compile:
@@ -596,16 +615,19 @@ class Asparagus():
         # Assign model parameter configuration library
         if config is None:
             config = settings.get_config(
-                self.config, config_file, config_from=self)
+                self.config, config_file, config_from=self
+            )
         else:
             config = settings.get_config(
-                config, config_file, config_from=self)
+                config, config_file, config_from=self
+            )
 
         # Check model parameter configuration and set default
         config_update = config.set(
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Update configuration dictionary
         config.update(config_update)
@@ -617,7 +639,8 @@ class Asparagus():
         if data_container is None:
             data_container = self.get_data_container(
                 config=config,
-                **kwargs)
+                **kwargs
+            )
 
         ###################################
         # # # Assign Model Calculator # # #
@@ -626,7 +649,8 @@ class Asparagus():
         if model_calculator is None:
             model_calculator = self.get_model_calculator(
                 config=config,
-                **kwargs)
+                **kwargs
+            )
 
         ###########################################
         # # # Assign Model Calculator Trainer # # #
@@ -637,7 +661,8 @@ class Asparagus():
             config=config,
             data_container=data_container,
             model_calculator=model_calculator,
-            **kwargs)
+            **kwargs
+        )
 
         return trainer
 
@@ -696,13 +721,15 @@ class Asparagus():
                 config=config,
                 data_container=data_container,
                 model_calculator=model_calculator,
-                **kwargs)
+                **kwargs
+            )
         else:
             trainer = training.Trainer(
                 config=config,
                 data_container=data_container,
                 model_calculator=model_calculator,
-                **kwargs)
+                **kwargs
+            )
 
         return trainer
 
@@ -733,7 +760,8 @@ class Asparagus():
         trainer = self.get_trainer(
             config=config,
             config_file=config_file,
-            **kwargs)
+            **kwargs
+        )
 
         ########################################
         # # # Run Model Calculator Trainer # # #
@@ -775,16 +803,19 @@ class Asparagus():
         # Assign model parameter configuration library
         if config is None:
             config = settings.get_config(
-                self.config, config_file, config_from=self)
+                self.config, config_file, config_from=self
+            )
         else:
             config = settings.get_config(
-                config, config_file, config_from=self)
+                config, config_file, config_from=self
+            )
 
         # Check model parameter configuration and set default
         config_update = config.set(
             argitems=utils.get_input_args(),
             check_default=utils.get_default_args(self, None),
-            check_dtype=utils.get_dtype_args(self, None))
+            check_dtype=utils.get_dtype_args(self, None)
+        )
 
         # Update configuration dictionary
         config.update(config_update)
@@ -796,7 +827,8 @@ class Asparagus():
         if self.data_container is None:
             data_container = self.get_data_container(
                 config=config,
-                **kwargs)
+                **kwargs
+            )
         else:
             data_container = self.data_container
 
@@ -808,7 +840,8 @@ class Asparagus():
         tester = self._get_tester(
             config,
             data_container=data_container,
-            **kwargs)
+            **kwargs
+        )
 
         return tester
 
@@ -844,7 +877,8 @@ class Asparagus():
         tester = training.Tester(
             config=config,
             data_container=data_container,
-            **kwargs)
+            **kwargs
+        )
 
         return tester
 
@@ -880,7 +914,8 @@ class Asparagus():
             model_calculator = self.get_model_calculator(
                 config=config,
                 config_file=config_file,
-                **kwargs)
+                **kwargs
+            )
 
         ##########################################
         # # # Assign Model Calculator Tester # # #
@@ -889,7 +924,8 @@ class Asparagus():
         tester = self.get_tester(
             config=config,
             config_file=config_file,
-            **kwargs)
+            **kwargs
+        )
 
         #######################################
         # # # Run Model Calculator Tester # # #
@@ -897,7 +933,8 @@ class Asparagus():
 
         tester.test(
             model_calculator,
-            **kwargs)
+            **kwargs
+        )
 
         return
 
@@ -939,7 +976,8 @@ class Asparagus():
             config=config,
             config_file=config_file,
             model_checkpoint=model_checkpoint,
-            **kwargs)
+            **kwargs
+        )
 
         ##################################
         # # # Prepare ASE Calculator # # #
@@ -947,7 +985,8 @@ class Asparagus():
 
         ase_calculator = interface.ASE_Calculator(
             model_calculator,
-            **kwargs)
+            **kwargs
+        )
 
         return ase_calculator
 
@@ -993,7 +1032,8 @@ class Asparagus():
             config=config,
             config_file=config_file,
             model_checkpoint=model_checkpoint,
-            **kwargs)
+            **kwargs
+        )
 
         #######################################
         # # # Prepare PyCHARMM Calculator # # #
@@ -1001,7 +1041,8 @@ class Asparagus():
 
         pycharmm_calculator = interface.PyCharmm_Calculator(
             model_calculator,
-            **kwargs)
+            **kwargs
+        )
 
         return pycharmm_calculator
 
@@ -1047,23 +1088,31 @@ class Asparagus():
             config=config,
             config_file=config_file,
             model_checkpoint=model_checkpoint,
-            **kwargs)
+            **kwargs
+        )
 
         ####################################
         # # # Prepare OpenMM Potential # # #
         ####################################
 
         # Load OpenMM-ML modules
-        from openmmml import mlpotential
+        try:
+            from openmmml import mlpotential
+        except ModuleNotFoundError as e:
+            raise ImportError(
+                "OpenMM-ML is not installed. Install it before continuing."
+            ) from e
 
         # Register Asparagus potential factory to OpenMM-ML registry
         mlpotential.MLPotential.registerImplFactory(
-            'asparagus', interface.AsparagusPotentialImplFactory())
+            'asparagus', interface.AsparagusPotentialImplFactory()
+        )
 
         # Return OpenMM model potential
         return mlpotential.MLPotential(
             'asparagus',
-            model_calculator=model_calculator)
+            model_calculator=model_calculator
+        )
 
     def get_openmm_calculator(
         self,

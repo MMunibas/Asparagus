@@ -639,13 +639,16 @@ class Model_AMP(model.BaseModel):
                 batch['positions'] = batch['mlmm_positions'][batch['ml_sys_p']]
             else:
                 batch['positions'].requires_grad_(True)
+                batch['mlmm_positions'] = batch['positions']
         elif batch['fragmented']:
             batch['positions'] = batch['mlmm_positions'][batch['ml_sys_p']]
+        else:
+            batch['mlmm_positions'] = batch['positions']
 
         # Run modules
         for module in self.module_dict.values():
             batch = module(batch, verbose=verbose_results)
-        
+
         # Compute property - Energy
         if self.model_energy:
             batch = self.compute_energy(batch, verbose=verbose_results)

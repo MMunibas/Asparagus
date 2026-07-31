@@ -4,8 +4,11 @@
 
 <img src="https://github.com/LIVazquezS/Asparagus/blob/main/data/logo.png" width="50%">
 
+## Latest Developments
+- A bug in the AMP model potential was fixed that lead to different atomic force predictions between the non-compiled model applied for training (and ASE, CHARMM interfaces) and the TorchScript compiled version applied in the OpenMM interface. Retrainingis required.
+
 ## What is this?
- - A refined implementation of PhysNet and PainNN (and more atomistic NN to come) in PyTorch. 
+ - A refined implementation of PhysNet, PainNN and AMP (and more atomistic NN to come) in PyTorch. 
  - A Suit for the automatic construction of Potential Energy Surface (PES) from sampling to production.
  - Provides interfaces for trained PES for use with ASE, PyCHARMM, OpenMM
 

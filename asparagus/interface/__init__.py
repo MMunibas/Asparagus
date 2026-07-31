@@ -5,6 +5,8 @@
     #- ASE to Asparagus (ase_model.py)
     #- Asparagus to ASE (model_ase.py)
     #- Asparagus to PyCHARMM (model_pycharmm.py)
+    #- Asparagus via OpenMM to ASE (openmm_ase.py)
+    #- Asparagus to OpenMM (model_openmm.py)
     #- ORCA to ASE (orca_ase.py)
     #- Shell file to ASE (shell_ase.py)
     #- Slurm batch file to ASE (slurm_ase.py)

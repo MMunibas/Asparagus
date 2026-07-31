@@ -293,7 +293,7 @@ class Input_PaiNN(torch.nn.Module):
         batch['rbfs'] = rbfs
         batch['distances_uv'] = distances_uv
         batch['vectors_uv'] = vectors_uv
-        
+
         return batch
 
 
@@ -706,32 +706,32 @@ class Output_PaiNN(torch.nn.Module):
         'energy': [
             None,
             ['atomic_energies']
-            ],
+        ],
         'atomic_energies': [
             _property_output_options['atomic_energies']
-            ],
+        ],
         'forces': [
             None,
             ['energy']
-            ],
+        ],
         'dipole': [
             None,
             ['atomic_charges', 'atomic_dipoles']
-            ],
+        ],
         'atomic_charges': {
             'default': [
                 _property_output_options['atomic_charges']
-                ],
+            ],
             'atomic_dipoles': [
                 _property_output_options['atomic_dipoles'],
                 0
-                ],
-            },
+            ],
+        },
         'atomic_dipoles': [
             _property_output_options['atomic_dipoles'],
             1
-            ],
-        }
+        ],
+    }
     
     def __init__(
         self,

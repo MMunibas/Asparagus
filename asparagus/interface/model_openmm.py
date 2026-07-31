@@ -139,6 +139,15 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         ml_cutoff_shell: Optional[float] = 0.2,
         mlmm_cutoff_shell: Optional[float] = 0.2,
         mlmm_lambda: Optional[float] = None,
+        reporter_requested: Optional[bool] = False,
+        reporter_properties: Optional[Union[str, List[str]]] = None,
+        reporter_properties_dims: Optional[Dict[str, Tuple[int]]] = None,
+        reporter_file: Optional[str] = None,
+        reporter_interval: Optional[int] = 1,
+        reporter_save_interval: Optional[int] = 1000,
+        reporter_data_size: Optional[int] = 2_000_000,
+        reporter_device: str = 'cpu',
+        reporter_dtype: 'dtype' = torch.float64,
         **kwargs,
     ):
         """
@@ -188,6 +197,27 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         mlmm_lambda: float, optional, default None
             ML/MM electrostatic interactions scaling factor. If None, no
             scaling is applied.
+        reporter_requested: bool, optional, default False
+            If True, report ML model properties to an output file.
+        reporter_properties: (list(str), str)
+            If defined by a list of ML model property labels or a single
+            label string, the properties, if available, are written to the
+            reporter file.
+        reporter_properties_dims: dict(str, tuple(int)), optional, default None
+            Property value dimensions as a tuple for each property to report.
+            E.g.: {energy: (1, ), dipole: (3, ), forces: ({N_atoms}, 3, )}
+            with 'N_atoms' replaced by the actual number of atoms.
+        reporter_file: str, optional, default None
+            If ML model properties to report are requested, write the
+            properties to this file path. If None, write to standard output.
+        reporter_interval: int, optional, default 1
+            Reporter time step interval if properties are requested.
+            If None, every time step is written.
+        reporter_data_size: int, optional, default 2_000_000
+            Torch tensor shape of the initial data tensors for each property.
+        reporter_dtype: dtype object, optional, torch.float64
+            Model prediction data type to store
+
         **kwargs
             Additional keyword arguments.
 
@@ -439,12 +469,20 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         # calculator, disable it there by replacing the module with 
         # torch.nn.Identity.
         if self.model_calculator.model_mlmm_embedding:
+
             if self.model_calculator.model_ensemble:
-                for model_calculator in self.model_calculator.model_calculator_list:
+
+                model_calculator_list = (
+                    self.model_calculator.model_calculator_list
+                )
+                for model_calculator in model_calculator_list:
+
                     model_calculator.module_dict['mlmm_electrostatic'] = (
                         module.MLMM_identity()
                     )
+
             else:
+
                 self.model_calculator.module_dict['mlmm_electrostatic'] = (
                     module.MLMM_identity()
                 )
@@ -566,6 +604,15 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 conversion_energy: float,
                 device: str,
                 dtype: 'dtype',
+                reporter_requested: bool,
+                reporter_properties: Union[str, List[str]],
+                reporter_properties_dims: Dict[str, Tuple[int]],
+                reporter_file: str,
+                reporter_interval: int,
+                reporter_save_interval: int,
+                reporter_data_size: int,
+                reporter_device: str,
+                reporter_dtype: 'dtype',
             ):
 
                 super(ModelForce, self).__init__()
@@ -683,13 +730,32 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.ml_old_positions = torch.zeros(
                     (ml_atoms_number, 3),
                     device=self.device,
-                    dtype=self.dtype)
+                    dtype=self.dtype
+                )
                 self.mlmm_old_positions = torch.zeros(
                     (mlmm_atoms_number, 3),
                     device=self.device,
-                    dtype=self.dtype)
+                    dtype=self.dtype
+                )
                 self.torch_true = torch.tensor(
-                    True, device=self.device, dtype=torch.bool)
+                    True, device=self.device, dtype=torch.bool
+                )
+
+                # Check data reporter input
+                self.reporter_requested = reporter_requested
+                if reporter_requested:
+                    self.reporter = MLDataReporter(
+                        reporter_properties,
+                        reporter_properties_dims,
+                        reporter_file=reporter_file,
+                        reporter_interval=reporter_interval,
+                        reporter_save_interval=reporter_save_interval,
+                        reporter_data_size=reporter_data_size,
+                        reporter_device=reporter_device,
+                        reporter_dtype=reporter_dtype,
+                    )
+                else:
+                    self.reporter = DummyReporter()
 
                 return
 
@@ -756,7 +822,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     0.0,
                     dtype=self.dtype,
                     device=self.device
-                    )
+                )
                 
                 # Check input device and dtype
                 positions = positions.to(device=self.device, dtype=self.dtype)
@@ -795,12 +861,16 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 # Predict ML energy
                 self.batch = self.model_calculator(
                     self.batch,
-                    no_derivation=True
+                    no_derivation=True,
+                    verbose_results=False,
                 )
                 energy = self.batch['energy']
 
                 # Compute ML-MM electrostatic Coulumb potential
-                if self.mlmm_electrostatics_calc is not None:
+                if (
+                    self.mlmm_electrostatics_calc is not None
+                    and self.batch['fragmented']
+                ):
                     
                     # Compute ML-MM electrostatic Coulomb potential
                     self.batch = self.mlmm_electrostatics_calc(self.batch)
@@ -808,6 +878,11 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
 
                 # Convert energy from model unit to OpenMM energy unit
                 energy = energy*self.conversion_energy
+
+                # Check and, eventually, report ML model properties
+                if self.reporter_requested:
+                    if self.reporter.next_report():
+                        self.reporter.report(self.batch)
 
                 return energy
 
@@ -830,7 +905,16 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             self.model2openmm_unit_conversion['energy'],
             self.device,
             self.dtype,
-            )
+            reporter_requested,
+            reporter_properties,
+            reporter_properties_dims,
+            reporter_file,
+            reporter_interval,
+            reporter_save_interval,
+            reporter_data_size,
+            self.device,
+            reporter_dtype,
+        )
 
         # Convert model force instance to TorchScript
         torch_model = torch.jit.script(modelForce)
@@ -1028,6 +1112,10 @@ class MLMM_electrostatics(torch.nn.Module):
             Dictionary added by module results
         
         """
+
+        # Skip for not fragmented systems
+        if not batch['fragmented']:
+            return batch
 
         # Compute ML-MM atom pair vectors and distances if not done
         positions = batch['mlmm_positions']
@@ -1531,3 +1619,233 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
 
         return Eelec
 
+
+class MLDataReporter(torch.nn.Module):
+    """
+    ML model data reporter class to write ML model prediction to a file during
+    the simulation.
+
+    Parameters
+    ----------
+    reporter_properties: (list(str), str)
+        If defined by a list of ML model property labels or a single
+        label string, the properties, if available, are written to the
+        reporter file.
+    reporter_properties_dims: dict(str, tuple(int))
+        Property value dimensions as a tuple for each property to report.
+        E.g.: {energy: (1, ), dipole: (3, ), forces: ({N_atoms}, 3, )}
+        with 'N_atoms' replaced by the actual number of atoms.
+    reporter_file: str, optional, default None
+        If ML model properties to report are requested, write the
+        properties to this file path. If None, write to standard output.
+    reporter_interval: int, optional, default 1
+        Reporter time step interval if properties are requested.
+        If None, every time step is written.
+    reporter_save_interval: int, optional, default 1000
+        Reporter time step interval to store current values to file.
+        Values should be also stored when the reporter is closed.
+    reporter_data_size: int, optional, default 2_000_000
+        Torch tensor shape of the initial data tensors for each property.
+    reporter_dtype: dtype object, optional, torch.float64
+        Model prediction data type to store
+
+    """
+
+    def __init__(
+        self,
+        reporter_properties: Union[str, List[str]],
+        reporter_properties_dims: Dict[str, Tuple[int]],
+        reporter_file: str = None,
+        reporter_interval: int = 1,
+        reporter_save_interval: int = 1000,
+        reporter_data_size: int = 2_000_000,
+        reporter_device: str = 'cpu',
+        reporter_dtype: 'dtype' = torch.float64,
+    ):
+        
+        super().__init__()
+
+        # Assign property variables
+        if utils.is_string(reporter_properties):
+            self.reporter_properties = [reporter_properties]
+        elif utils.is_string_array(reporter_properties):
+            self.reporter_properties = reporter_properties
+        else:
+            raise ValueError(
+                "ML model properties for the data reporter are not a string "
+                + "or list of strings!"
+            )
+        if utils.is_dictionary(reporter_properties_dims):
+            self.reporter_properties_dims = {}
+            for prop in self.reporter_properties:
+                if prop not in reporter_properties_dims:
+                    raise KeyError(
+                        f"No value dimension for property {prop:s} is "
+                        + "provided for the data reporter!"
+                    )
+                self.reporter_properties_dims[prop] = (
+                    reporter_properties_dims[prop]
+                )
+        else:
+            raise ValueError(
+                "Data reporter property dimensions input must be a dictionary "
+                + "with property (key) and dimension (item) information!"
+            )
+
+        # Any properties defined
+        if len(self.reporter_properties):
+            self.any_report = True
+        else:
+            self.any_report = False
+
+        # Assign data management variables
+        if reporter_file is None:
+            self.is_file = False
+            self.reporter_file = sys.stdout
+        elif utils.is_string(reporter_file):
+            self.is_file = True
+            self.reporter_file = reporter_file
+        else:
+            raise ValueError(
+                "Data reporter file path is not a valid string!"
+            )
+        if utils.is_integer(reporter_interval):
+            self.reporter_interval = reporter_interval    
+        else:
+            raise ValueError(
+                "Data reporter interval is not a valid integer!"
+            )
+        if utils.is_integer(reporter_save_interval):
+            self.reporter_save_interval = reporter_save_interval    
+        else:
+            raise ValueError(
+                "Data reporter save interval is not a valid integer!"
+            )
+        if utils.is_integer(reporter_data_size):
+            self.reporter_data_size = reporter_data_size
+        else:
+            raise ValueError(
+                "Reporter data size is not a valid integer!"
+            )
+        self.reporter_dtype = reporter_dtype
+
+        # Set initialization flag
+        self.reporter_initialized = False
+
+        # Set write and index counter (write counter starts at -1 to negate the
+        # first run when torchscript is compiling the module)
+        self.reporter_write_counter = -1
+        self.reporter_index_counter = 0
+
+        # Build reporter value list
+        self.reporter_values = {
+            prop: torch.zeros(
+                (
+                    (self.reporter_data_size, ) + 
+                    tuple(self.reporter_properties_dims[prop])
+                ),
+                requires_grad=False,
+                # device=reporter_device,
+                dtype=self.reporter_dtype,
+            )
+            for prop in self.reporter_properties
+        }
+
+        return
+
+    def next_report(
+        self
+    ) -> bool:
+        """
+        Check for next report step
+    
+        Returns
+        -------
+        bool
+            True if the next report step is due
+
+        """
+
+        if self.any_report:
+
+            # Check report condition
+            do_report = not bool(
+                self.reporter_write_counter % self.reporter_interval
+            )
+
+            # Increment report counter
+            self.reporter_write_counter = self.reporter_write_counter + 1
+
+            return do_report
+
+        else:
+            
+            return False
+
+    def report(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ):
+        """
+        Generate a report.
+
+        Parameters
+        ----------
+        batch: dict(str, torch.tensor)
+            ML model dictionary including input and result data
+
+        """
+
+        # Skip if no properties are to report
+        if not self.any_report:
+            return
+
+        # Writing of the property values
+        with torch.no_grad():
+            for prop, dims in self.reporter_properties_dims.items():
+                self.reporter_values[prop][self.reporter_index_counter] = (
+                    batch[prop].cpu().detach().clone().to(
+                        dtype=self.reporter_dtype
+                    ).reshape(dims)
+                )
+        self.reporter_index_counter = self.reporter_index_counter + 1
+
+        # Write the values
+        if (
+            not bool(self.reporter_index_counter % self.reporter_save_interval)
+        ):
+            torch.save(self.reporter_values, self.reporter_file)
+        
+        return
+
+    def __del__(self):
+        """
+        When deleting the instance, store the last values to file
+
+        """
+        if self.any_report:
+            torch.save(self.reporter_values, self.reporter_file)
+        return
+
+
+class DummyReporter(torch.nn.Module):
+    
+    def __init__(
+        self,
+    ):
+        super().__init__()
+        return
+
+    def next_report(
+        self
+    ) -> bool:
+        return False
+
+    def report(
+        self,
+        batch: Dict[str, torch.Tensor],
+    ):        
+        return
+
+    def __del__(self):
+        return

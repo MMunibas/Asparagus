@@ -218,6 +218,11 @@ class ASE_Calculator(ase_calc.Calculator):
             np.array([atms.get_cell()[:]*fconv for atms in atoms]),
             dtype=self.model_dtype, device=self.model_device)
 
+        # Rearrange system properties to match fragmented system properties
+        # convention
+        if batch['fragmented']:
+            batch = utils.check_fragmented_properties(batch)
+
         # Create and assign atom pair indices and periodic offsets
         batch = self.neighbor_list(batch)
         
@@ -229,7 +234,7 @@ class ASE_Calculator(ase_calc.Calculator):
         properties: Optional[List[str]] = None,
         system_changes: Optional[List[str]] = ase_calc.all_changes,
         charge: Optional[Union[float, List[float]]] = None,
-        verbose_results: Optional[bool] = False
+        verbose_results: Optional[bool] = False,
     ) -> Dict[str, Any]:
         """
         Calculate model properties
@@ -284,7 +289,7 @@ class ASE_Calculator(ase_calc.Calculator):
             self.atoms_batch,
             atoms,
             charge=charge,
-            )
+        )
 
         # Compute model properties
         self.atoms_batch = self.model_calculator(

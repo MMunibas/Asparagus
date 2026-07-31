@@ -977,13 +977,13 @@ class MLMM_electrostatics(torch.nn.Module):
         Truncation method of the Coulomb potential at the cutoff range:
             None, 'None': 
                 No Coulomb potential shift applied
-            'potential':
-                Apply shifted Coulomb potential method
-                    V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
-            'force', 'forces':
-                Apply shifted Coulomb force method
-                    V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
-                        - (dV_Coulomb/dr)|r_cutoff  * (r - r_cutoff)
+            # 'potential':
+            #     Apply shifted Coulomb potential method
+            #         V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
+            # 'force', 'forces':
+            #     Apply shifted Coulomb force method
+            #         V_shifted(r) = V_Coulomb(r) - V_Coulomb(r_cutoff)
+            #             - (dV_Coulomb/dr)|r_cutoff  * (r - r_cutoff)
     atomic_dipoles: bool, optional, default False
         Flag if atomic dipoles are predicted and to include in the
         electrostatic interaction potential computation
@@ -1026,16 +1026,17 @@ class MLMM_electrostatics(torch.nn.Module):
                 self.ke,
                 atomic_dipoles,
                 atomic_quadrupoles)
-        elif truncation.lower() == 'potential':
-            self.potential_fn = MLMM_electrostatics_NoShift(
-                self.ke,
-                atomic_dipoles,
-                atomic_quadrupoles)
-        elif truncation.lower() in ['force', 'forces']:
-            self.potential_fn = MLMM_electrostatics_NoShift(
-                self.ke,
-                atomic_dipoles,
-                atomic_quadrupoles)
+        # elif truncation.lower() == 'potential':
+        #     self.potential_fn = MLMM_electrostatics_NoShift(
+        #         self.ke,
+        #         atomic_dipoles,
+        #         atomic_quadrupoles)
+        # elif truncation.lower() in ['force', 'forces']:
+        #     self.potential_fn = MLMM_electrostatics_ShiftedPotential(
+        #         self.cutoff,
+        #         self.ke,
+        #         atomic_dipoles,
+        #         atomic_quadrupoles)
         else:
             raise SyntaxError(
                 "Truncation method of the Coulomb potential "
@@ -1119,6 +1120,10 @@ class MLMM_electrostatics(torch.nn.Module):
             Dictionary added by module results
         
         """
+
+        # Skip for not fragmented systems
+        if not batch['fragmented']:
+            return batch
 
         # Compute damped Coulomb potential
         mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
@@ -1279,6 +1284,7 @@ class MLMM_identity(torch.nn.Identity):
 
     def __init__(
         self,
+        **kwargs,
     ):
 
         super(MLMM_identity, self).__init__()

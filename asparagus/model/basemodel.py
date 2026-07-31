@@ -434,13 +434,6 @@ class BaseModel(torch.nn.Module):
                 mlmm_cutoffs = [short_range_cutoff, long_range_cutoff]
             else:
                 mlmm_cutoffs = [short_range_cutoff]
-        elif hasattr(self.module_dict['input'], 'input_radial_cutoff'):
-            short_range_cutoff = (
-                self.module_dict['input'].input_radial_cutoff)
-            if short_range_cutoff != long_range_cutoff:
-                mlmm_cutoffs = [short_range_cutoff, long_range_cutoff]
-            else:
-                mlmm_cutoffs = [short_range_cutoff]
         else:
             mlmm_cutoffs = [long_range_cutoff]
 
@@ -764,7 +757,7 @@ class BaseModel(torch.nn.Module):
             ).to(
                 device=self.device, dtype=torch.int64
             )
-            
+
             # If more than one fragment, add fragment numbers and set
             # 'fragmented' flag
             if torch.unique(fragment_numbers).shape[0] > 1:
@@ -1213,7 +1206,7 @@ class BaseModel(torch.nn.Module):
         batch = self.neighbor_list(batch)
 
         # Compute ML-MM neighbor list
-        if self.model_mlmm_embedding:
+        if batch['fragmented']:
             if not hasattr(self, 'mlmm_neighbor_list'):
                 self.mlmm_neighbor_list = (
                     module.TorchNeighborListRangeSeparatedMLMM(

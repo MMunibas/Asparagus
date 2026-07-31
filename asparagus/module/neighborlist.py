@@ -65,7 +65,7 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
             List of cutoff distances
 
         """
-        
+
         # Check and set cutoffs
         if utils.is_torch_tensor(cutoffs):
             if cutoffs.dim():
@@ -82,14 +82,14 @@ class TorchNeighborListRangeSeparated(torch.nn.Module):
                 cutoffs, device=self.device, dtype=self.dtype)
 
         self.max_cutoff = torch.max(self.cutoffs)
-        
+
         # Check max cutoff and, if infinite, disable periodic boundary 
         # conditions forcefully
         if torch.isinf(self.max_cutoff):
             self.no_pbc = True
         else:
             self.no_pbc = False
-        
+
         return
 
     def forward(
@@ -577,6 +577,10 @@ class TorchNeighborListRangeSeparatedMLMM(torch.nn.Module):
             Updated system batch with atom pair information
 
         """
+
+        # Skip for not fragmented systems
+        if not batch['fragmented']:
+            return batch
 
         # Assign batch data
         atoms_number = batch['mlmm_atoms_number']

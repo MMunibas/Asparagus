@@ -359,6 +359,10 @@ class Input_AMP(torch.nn.Module):
         batch['distances_uv'] = distances_uv
         batch['vectors_uv'] = vectors_uv
 
+        # Skip for not fragmented systems
+        if not batch['fragmented']:
+            return batch
+
         # Assign ML-MM input data for ML charge polarization
         mlmm_positions = batch['mlmm_positions']
         mlmm_idx_i = batch['mlmm_idx_i']
@@ -828,7 +832,7 @@ class Graph_AMP(torch.nn.Module):
 
         # Apply one-hot embedding of the interacting features
         embedded_rbfs = self.embedding_rbfs(rbfs_features)
-        rbfs_features = embedded_rbfs.clone().detach()
+        rbfs_features = embedded_rbfs#.clone()#.detach()
 
         # Apply message passing model
         for ii, (eq_message, in_message, in_update) in enumerate(
@@ -865,7 +869,8 @@ class Graph_AMP(torch.nn.Module):
             # Predict ML electrostatic atomic multipole polarization by the
             # MM atom charges duirng the last message passing step
             if (
-                self.graph_max_multipole_order
+                batch['fragmented']
+                and self.graph_max_multipole_order
                 and ii == (self.graph_n_blocks - 1) 
             ):
                 batch = self.get_ml_polarization(

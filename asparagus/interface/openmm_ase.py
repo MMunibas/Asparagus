@@ -212,6 +212,7 @@ class ASE_OpenMM_Calculator(ase_calc.Calculator):
             getEnergy=True,
             getForces=True,
         )
+
         self.results = {
             'energy': (
                 state.getPotentialEnergy()._value*self.openmm_conversion_energy
