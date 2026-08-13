@@ -795,7 +795,7 @@ class Trainer:
                     )
 
                 # Predict model properties from data batch
-                batch = self.model_calculator(batch, verbose_results=True)
+                batch = self.model_calculator(batch)
 
                 # Check for NaN predictions
                 if self.trainer_debug_mode:
