@@ -378,13 +378,13 @@ class PyCharmm_Calculator:
             device=self.device,
             dtype=self.dtype,
         )
-        
+
+        # First, get the primary cell indices for pair atom j
+        ml_idx_j = self.ml_idxp[ml_idxjp]
+
         # Only apply, if PBC are enabled
         if Ntrans:
-            
-            # First, get the primary cell indices for pair atom j
-            ml_idx_j = self.ml_idxp[ml_idxjp]
-            
+
             # Next, compute offset by vectors
             # v(primary i to image j) - v(primary i to primary j)
             selection = ml_idxj >= Natom
@@ -401,7 +401,7 @@ class PyCharmm_Calculator:
             )
 
         else:
-            
+
             # Set inactive pbc flag
             pbc = torch.tensor(
                 [[False, False, False]],

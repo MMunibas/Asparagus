@@ -306,13 +306,26 @@ class D3_dispersion(torch.nn.Module):
             torch.gather(self.d3_rcov, 0, atomic_numbers_i)
             + torch.gather(self.d3_rcov, 0, atomic_numbers_j))
 
+        # Compute atom pair coordination number contributions
         cn_uv = (
             1.0/(1.0 + torch.exp(-self.d3_k1 * (rcov_uv/distances - 1.0))))
         if self.use_switch:
             cn_uv = cn_uv*switch_off
 
-        return utils.scatter_sum(
-            cn_uv, idx_u, dim=0)
+        # Sum up to atoms coordination number
+        cn = (
+            torch.zeros_like(
+                atomic_numbers,
+                device=self.device,
+                dtype=self.dtype
+            ).scatter_add_(
+                0,
+                idx_u,
+                cn_uv,
+            )
+        )
+
+        return cn
 
     def get_weights(
         self,
@@ -451,13 +464,15 @@ class D3_dispersion(torch.nn.Module):
             distances_d3,
             switch_off,
             idx_u,
-            idx_v)
+            idx_v
+        )
 
         # Compute atomic weights
         weights = self.get_weights(
             atomic_numbers,
             idx_u,
-            cn)
+            cn
+        )
 
         # Compute atomic C6 and C8 coefficients
         c6 = self.get_c6(
@@ -465,7 +480,8 @@ class D3_dispersion(torch.nn.Module):
             atomic_numbers_j,
             weights,
             idx_u,
-            idx_v)
+            idx_v
+        )
         qq = (
             3.0
             * torch.gather(self.d3_r2r4, 0, atomic_numbers_i)
@@ -496,13 +512,15 @@ class D3_dispersion(torch.nn.Module):
             fct6,
             fct8,
             damp_c6,
-            damp_c8)
+            damp_c8,
+        )
 
         # Sum up dispersion atom pair contributions of each atom
         Edisp_atom = torch.zeros_like(batch['atomic_energies']).scatter_add_(
             0,
             idx_u,
-            Edisp_pair)
+            Edisp_pair,
+        )
 
         # Convert to model energy unit
         Edisp_atom = Edisp_atom*self.energies_Hatree2model

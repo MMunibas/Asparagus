@@ -335,8 +335,8 @@ class Sampler:
         if self.sample_systems_optimize:
 
             # Assign ASE optimizer
-            self.optimizer_tag = 'fire'
-            self.ase_optimizer = optimize.FIRE
+            self.optimizer_tag = 'bfgs'
+            self.ase_optimizer = optimize.BFGS
 
         #####################################
         # # # Initialize Sample DataSet # # #

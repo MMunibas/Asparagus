@@ -397,13 +397,13 @@ class DMC:
         batch_initial = self.model_calculator(
             batch_initial,
             no_derivation=True)
-        energy_initial = (
+        energy_initial = float(
             batch_initial['energy'].cpu().detach().numpy()
             * self.dmc_conversion['energy'])
         batch_minimum = self.model_calculator(
             batch_minimum,
             no_derivation=True)
-        energy_minimum = (
+        energy_minimum = float(
             batch_minimum['energy'].cpu().detach().numpy()
             * self.dmc_conversion['energy'])
 

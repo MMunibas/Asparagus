@@ -139,6 +139,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         ml_cutoff_shell: Optional[float] = 0.2,
         mlmm_cutoff_shell: Optional[float] = 0.2,
         mlmm_lambda: Optional[float] = None,
+        ml_force_uncertainty: Optional[bool] = False,
+        ml_force_uncertainty_lambda: Optional[float] = 0.25,
         reporter_requested: Optional[bool] = False,
         reporter_properties: Optional[Union[str, List[str]]] = None,
         reporter_properties_dims: Optional[Dict[str, Tuple[int]]] = None,
@@ -197,6 +199,12 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         mlmm_lambda: float, optional, default None
             ML/MM electrostatic interactions scaling factor. If None, no
             scaling is applied.
+        ml_force_uncertainty: bool, optional, default False
+            If True, add the negative uncertainty derivation with respect to
+            the forces scaled by the factor 'ml_force_uncertainty_lambda'.
+        ml_force_uncertainty_lambda: float, optional, default 0.25
+            If 'ml_force_uncertainty' is True, it is the factor to add the
+            negative uncertainty derivation to the forces.
         reporter_requested: bool, optional, default False
             If True, report ML model properties to an output file.
         reporter_properties: (list(str), str)
@@ -312,12 +320,18 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         self.mlmm_num_atoms = torch.tensor(
             topology._numAtoms, device=self.device, dtype=torch.int64)
 
+        # Get periodic boundary conditions
+        self.pbc = (
+            topology.getPeriodicBoxVectors() is not None
+        ) or system.usesPeriodicBoundaryConditions()
+
         # ML and MM atom charges
         if mlmm_atomic_charges is None:
             for force in system.getForces():
                 if (
                     'NonbondedForce' in str(force)
                     and hasattr(force, 'getParticleParameters')
+                    and not 'CustomNonbondedForce' in str(force)
                 ):
                     mlmm_atomic_charges = torch.tensor(
                         [
@@ -362,6 +376,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 if (
                     'NonbondedForce' in str(force)
                     and hasattr(force, 'getParticleParameters')
+                    and not 'CustomNonbondedForce' in str(force)
                 ):
                     for index in self.ml_atom_indices:
                         nb_params = force.getParticleParameters(index)
@@ -425,10 +440,15 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             self.mlmm_lambda = torch.tensor(
                 mlmm_lambda, device=self.device, dtype=self.dtype)
 
-        # Get periodic boundary condtions
-        self.pbc = (
-            topology.getPeriodicBoxVectors() is not None
-        ) or system.usesPeriodicBoundaryConditions()
+        # Check uncertainty derivative flag
+        if ml_force_uncertainty and not self.model_calculator.model_ensemble:
+            raise SyntaxError(
+                "Model uncertainty devirvates can only be computed by a "
+                + "model ensemble which is not provided!"
+            )
+        else:
+            self.ml_force_uncertainty = ml_force_uncertainty
+            self.ml_force_uncertainty_lambda = ml_force_uncertainty_lambda
 
         ###########################
         # # # Prepare Modules # # #
@@ -546,7 +566,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
 
             Parameters
             ----------
-            model_calculator: callable
+            model_calculator: torch.nn.Module
                 The prepared Asparagus potential model calculation funcion
             ml_atom_indices: torch.Tensor(int)
                 Indices of the atoms to use with the model. 
@@ -602,6 +622,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 mm_fragment: int,
                 conversion_positions: float,
                 conversion_energy: float,
+                ml_force_uncertainty: bool,
+                ml_force_uncertainty_lambda: float,
                 device: str,
                 dtype: 'dtype',
                 reporter_requested: bool,
@@ -627,6 +649,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.mm_fragment = mm_fragment
                 self.conversion_positions = conversion_positions
                 self.conversion_energy = conversion_energy
+                self.ml_force_uncertainty = ml_force_uncertainty
+                self.ml_force_uncertainty_lambda = ml_force_uncertainty_lambda
                 self.device = device
                 self.dtype = dtype
 
@@ -823,7 +847,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     dtype=self.dtype,
                     device=self.device
                 )
-                
+
                 # Check input device and dtype
                 positions = positions.to(device=self.device, dtype=self.dtype)
                 if boxvectors is not None and boxvectors.device != self.device:
@@ -862,9 +886,19 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.batch = self.model_calculator(
                     self.batch,
                     no_derivation=True,
-                    verbose_results=False,
+                    verbose_results=True#,self.ml_force_uncertainty,
                 )
                 energy = self.batch['energy']
+
+                # Add uncertainty to energy to add uncertainty forces
+                if self.ml_force_uncertainty:
+                    energy = (
+                        energy 
+                        - (
+                            self.ml_force_uncertainty_lambda
+                            * self.batch['std_energy']
+                        )
+                    )
 
                 # Compute ML-MM electrostatic Coulumb potential
                 if (
@@ -903,6 +937,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             self.mm_fragment,
             self.model2openmm_unit_conversion['positions'],
             self.model2openmm_unit_conversion['energy'],
+            self.ml_force_uncertainty,
+            self.ml_force_uncertainty_lambda,
             self.device,
             self.dtype,
             reporter_requested,

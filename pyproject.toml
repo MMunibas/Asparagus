@@ -4,7 +4,7 @@ build-backend = "flit_core.buildapi"
 
 [project]
 name = "asparagus"
-version = "0.7.1"
+version = "0.7.2"
 authors = [{name="K. Toepfer", email="kai.toepfer@fu-berlin.de"},
            {name="L.I.Vazquez-Salazar", email="luisitza.vazquezsalazar@unibas.ch"},
            {name="Valerii Andreichev", email="valerii.andreichev@unibas.ch"},

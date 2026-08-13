@@ -956,6 +956,9 @@ class BaseModel(torch.nn.Module):
         batch = {}
 
         # First, check for atomic fragments and consider if number is larger 1
+        batch['fragmented'] = torch.tensor(
+            False, device=self.device, dtype=torch.bool
+        )
         if 'fragment' in atoms.arrays:
             
             # Combine fragment numbers
