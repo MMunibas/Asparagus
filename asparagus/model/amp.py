@@ -80,6 +80,21 @@ class Model_AMP(model.BaseModel):
         in the input and property requirements are matched.
         If None, ML/MM embedding scheme is applied if atomic charges are 
         available.
+    model_mlmm_polarization_damping: float, optional, default 1.0
+        ML multipoles polarization dampling factor by the MM electric field.
+        By default or if None, a damplng factor of 1 (no damping) is assigned.
+        Adjusting the polarization damping factor is only useful after the
+        training of the model potential to scale the external MM polarization
+        to match ML/MM interaction properties such as hydration free energy.
+    model_mlmm_charge_scaling: float, optional, default 1.0
+        MM charge scaling factor to tune the MM electric field acting with the
+        ML atoms mono- and multipoles. Note that it only affects the MM
+        electric field interacting with the ML atoms but NOT to polarize ML
+        atoms (for this use model_mlmm_polarization_damping).
+        By default or if None, a scaling factor of 1 (no scaling) is assigned.
+        Adjusting the MM charge scaling factor is only useful after the
+        training of the model potential to scale the external MM electric field
+        to match ML/MM interaction properties such as hydration free energy.
     model_num_threads: int, optional, default 4
         Sets the number of threads used for intraop parallelism on CPU.
     device: str, optional, default global setting
@@ -114,8 +129,11 @@ class Model_AMP(model.BaseModel):
         'model_dispersion':             True,
         'model_dispersion_trainable':   False,
         'model_mlmm_embedding':         None,
+        'model_mlmm_polarization_damping':
+            1.0,
+        'model_mlmm_charge_scaling':    1.0,
         'model_num_threads':            4,
-        }
+    }
 
     # Expected data types of input variables
     _dtypes_args = {
@@ -136,8 +154,11 @@ class Model_AMP(model.BaseModel):
         'model_dispersion':             [utils.is_bool],
         'model_dispersion_trainable':   [utils.is_bool],
         'model_mlmm_embedding':         [utils.is_bool],
+        'model_mlmm_polarization_damping':
+            [utils.is_numeric, utils.is_None],
+        'model_mlmm_charge_scaling':    [utils.is_numeric, utils.is_None],
         'model_num_threads':            [utils.is_integer],
-        }
+    }
     
     # Model type label
     _model_type = 'AMP'
@@ -147,7 +168,7 @@ class Model_AMP(model.BaseModel):
         'input_type':                   'AMP',
         'graph_type':                   'AMP',
         'output_type':                  'AMP',
-        }
+    }
 
     _default_model_properties = ['energy', 'forces', 'dipole']
 
@@ -160,7 +181,7 @@ class Model_AMP(model.BaseModel):
         'atomic_dipoles',
         'quadrupole',
         'atomic_quadrupoles',
-        ]
+    ]
 
     _required_input_properties = ['atomic_charges']
 
@@ -256,13 +277,15 @@ class Model_AMP(model.BaseModel):
         self.model_unit_properties = self.check_model_property_units(
             self.model_properties,
             self.model_unit_properties,
-            model_default_properties=['positions', 'charge'])
+            model_default_properties=['positions', 'charge']
+        )
 
         # Check lower cutoff switch-off range
         self.model_cuton, self.model_switch_range = self.check_cutoff_ranges(
             self.model_cutoff,
             self.model_cuton,
-            self.model_switch_range)
+            self.model_switch_range
+        )
 
         # Check ML-MM cutoff
         if self.model_mlmm_cutoff is None:
@@ -275,7 +298,8 @@ class Model_AMP(model.BaseModel):
             'model_cutoff': self.model_cutoff,
             'model_cuton': self.model_cuton,
             'model_switch_range': self.model_switch_range,
-            'model_mlmm_cutoff': self.model_mlmm_cutoff}
+            'model_mlmm_cutoff': self.model_mlmm_cutoff
+        }
         config.update(
             config_update,
             verbose=verbose)
@@ -289,15 +313,18 @@ class Model_AMP(model.BaseModel):
             self.base_modules_setup(
                 config,
                 verbose=verbose,
-                **kwargs)
+                **kwargs
             )
+        )
 
         # Initialize module dictionary with base modules
-        self.module_dict = torch.nn.ModuleDict({
-            'input': input_module,
-            'graph': graph_module,
-            'output': output_module,
-            })
+        self.module_dict = torch.nn.ModuleDict(
+            {
+                'input': input_module,
+                'graph': graph_module,
+                'output': output_module,
+            }
+        )
         
         # If electrostatic energy contribution is undefined, activate 
         # contribution if atomic charges are predicted.
@@ -419,13 +446,15 @@ class Model_AMP(model.BaseModel):
                 truncation='None',
                 atomic_dipoles=self.model_atomic_dipoles,
                 atomic_quadrupoles=self.model_atomic_quadrupoles,
-                **kwargs)
+                mm_charge_scaling=self.model_mlmm_charge_scaling,
+                **kwargs
+            )
             self.module_dict['mlmm_electrostatic'] = mlmm_electrostatic_module
 
         ###################################
         # # # AMP Miscellaneous Setup # # #
         ###################################
-        
+
         # Assign atomic masses list for center of mass recentering
         if self.model_dipole:
             
@@ -490,6 +519,9 @@ class Model_AMP(model.BaseModel):
             'model_electrostatic': self.model_electrostatic,
             'model_dispersion': self.model_dispersion,
             'model_dispersion_trainable': self.model_dispersion_trainable,
+            'model_mlmm_embedding'; self.model_mlmm_embedding
+            'model_mlmm_polarization_damping': 
+                self.model_mlmm_polarization_damping,
         }
 
     def set_model_electrostatic_properties(

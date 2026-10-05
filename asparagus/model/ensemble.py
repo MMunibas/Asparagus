@@ -45,13 +45,13 @@ class EnsembleModel(torch.nn.Module):
     _default_args = {
         'model_calculator_class':       None,
         'model_ensemble_num':           3,
-        }
+    }
 
     # Expected data types of input variables
     _dtypes_args = {
         'model_calculator_class':       [utils.is_None, utils.is_callable],
         'model_ensemble_num':           [utils.is_integer],
-        }
+    }
 
     def __init__(
         self,

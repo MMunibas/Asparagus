@@ -1386,12 +1386,14 @@ class Tester:
                     prediction=pred,
                     reference=reference[prop],
                     shift=shifts[prop],
+                    atoms_number=prediction['mlmm_atoms_number'],
                 )
             else:
                 np.savez(
                     npz_file_prop,
                     prediction=pred,
                     reference=reference[prop],
+                    atoms_number=prediction['mlmm_atoms_number'],
                 )
 
             # Print info
@@ -1463,20 +1465,29 @@ class Tester:
 
             # Prepare data
             if prop in shifts:
-                results_np = np.column_stack((
-                    np.array(pred).reshape(-1),
-                    np.array(reference[prop]).reshape(-1),
-                    np.array(shifts[prop]).reshape(-1))
+                results_np = np.column_stack(
+                    (
+                        np.array(pred).reshape(-1),
+                        np.array(reference[prop]).reshape(-1),
+                        np.array(shifts[prop]).reshape(-1),
+                    )
                 )
                 columns_np=[
-                    f"{prop:s} prediction", " reference", " shift"]
+                    "prediction",
+                    "reference",
+                    "shift",
+                ]
             else:
-                results_np = np.column_stack((
-                    np.array(pred).reshape(-1),
-                    np.array(reference[prop]).reshape(-1))
+                results_np = np.column_stack(
+                    (
+                        np.array(pred).reshape(-1),
+                        np.array(reference[prop]).reshape(-1),
+                    )
                 )
                 columns_np=[
-                    f"{prop:s} prediction", " reference"]
+                    "prediction",
+                    "reference",
+                ]
             
             # Store data in csv format generated via the pandas data frame
             if self.is_imported("pandas"):

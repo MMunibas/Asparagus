@@ -544,6 +544,32 @@ class Graph_AMP(torch.nn.Module):
         self.n_atombasis = config.get('input_n_atombasis')
         self.n_radialbasis = config.get('input_n_radialbasis')
 
+        # Get model hyperparameters
+        self.polarization_damping = config.get(
+            'model_mlmm_polarization_damping'
+        )
+        self.charge_scaling = config.get(
+            'model_mlmm_charge_scaling'
+        )
+        if self.polarization_damping is None:
+            self.polarization_damping = torch.tensor(
+                1.0, device=self.device, dtype=self.dtype)
+        else:
+            self.polarization_damping = torch.tensor(
+                self.polarization_damping,
+                device=self.device, 
+                dtype=self.dtype
+            )
+        if self.charge_scaling is None:
+            self.charge_scaling = torch.tensor(
+                1.0, device=self.device, dtype=self.dtype)
+        else:
+            self.charge_scaling = torch.tensor(
+                self.charge_scaling,
+                device=self.device, 
+                dtype=self.dtype
+            )
+
         # Get maximum degree of atomic multipoles
         if config.get('model_properties') is None:
             raise SyntaxError(
@@ -1021,7 +1047,8 @@ class Graph_AMP(torch.nn.Module):
         dipoles_vectors = torch.sum(
             ml_atomic_dipoles*batch['mlmm_vectors_normalized'].unsqueeze(1),
             dim=-1,
-            keepdim=True)
+            keepdim=True
+        )
 
         # Combine auxiliaries to a MM atom structural feature variable
         if self.graph_atomic_quadrupoles:
@@ -1064,11 +1091,14 @@ class Graph_AMP(torch.nn.Module):
         # Compute MM electric field coefficients
         mm_atomic_charges_j = mlmm_atomic_charges[batch['mlmm_idx_j']]
         mm_electric_field = (
-            mm_atomic_charges_j/batch['mlmm_distances']**2).unsqueeze(-1)
+            mm_atomic_charges_j/batch['mlmm_distances']**2
+        ).unsqueeze(-1)
         mm_coefficients = (
-            mm_b_coefficients*mm_electric_field).tensor_split(
-                self.graph_max_multipole_order,
-                dim=-1)
+            self.polarization_damping*mm_b_coefficients*mm_electric_field
+        ).tensor_split(
+            self.graph_max_multipole_order,
+            dim=-1
+        )
 
         # Compute polarization factors
         ml_atomic_alphas = self.ml_alpha_block(batch['features'])

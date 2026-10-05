@@ -33,7 +33,8 @@ class BaseModel(torch.nn.Module):
     _supported_model_properties = [
         'energy',
         'atomic_energies',
-        'forces']
+        'forces',
+    ]
 
     _required_input_properties = []
 
@@ -868,13 +869,13 @@ class BaseModel(torch.nn.Module):
 
         # Periodic boundary conditions
         batch['pbc'] = torch.tensor(
-            [image.get_pbc() for image in atoms],
+            np.array([image.get_pbc() for image in atoms]),
             dtype=torch.bool, device=self.device
         )
 
         # Unit cell sizes
         batch['cell'] = torch.tensor(
-            [image.get_cell()[:]*fconv_p for image in atoms],
+            np.array([image.get_cell()[:]*fconv_p for image in atoms]),
             dtype=self.dtype, device=self.device
         )
 

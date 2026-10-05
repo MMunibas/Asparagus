@@ -49,13 +49,13 @@ class FileManager():
     _default_args = {
         'model_directory':              None,
         'model_max_checkpoints':        1,
-        }
+    }
 
     # Expected data types of input variables
     _dtypes_args = {
         'model_directory':              [utils.is_string, utils.is_None],
         'model_max_checkpoints':        [utils.is_integer],
-        }
+    }
 
     def __init__(
         self,

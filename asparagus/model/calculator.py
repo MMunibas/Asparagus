@@ -34,7 +34,7 @@ model_available = {
     'PhysNet'.lower(): get_Model_PhysNet,
     'PaiNN'.lower(): get_Model_PaiNN,
     'AMP'.lower(): get_Model_AMP,
-    }
+}
 
 def _get_model_calculator(
     model_type: str,

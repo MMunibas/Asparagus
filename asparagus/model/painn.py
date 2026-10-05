@@ -92,7 +92,7 @@ class Model_PaiNN(model.BaseModel):
         'model_dispersion':             True,
         'model_dispersion_trainable':   False,
         'model_num_threads':            4,
-        }
+    }
 
     # Expected data types of input variables
     _dtypes_args = {
@@ -110,7 +110,7 @@ class Model_PaiNN(model.BaseModel):
         'model_dispersion':             [utils.is_bool],
         'model_dispersion_trainable':   [utils.is_bool],
         'model_num_threads':            [utils.is_integer],
-        }
+    }
 
     # Model type label
     _model_type = 'PaiNN'
@@ -120,7 +120,7 @@ class Model_PaiNN(model.BaseModel):
         'input_type':                   'PaiNN',
         'graph_type':                   'PaiNN',
         'output_type':                  'PaiNN',
-        }
+    }
 
     _default_model_properties = ['energy', 'forces', 'dipole']
 
@@ -130,7 +130,8 @@ class Model_PaiNN(model.BaseModel):
         'forces',
         'atomic_charges',
         'dipole',
-        'atomic_dipoles']
+        'atomic_dipoles',
+    ]
 
     def __init__(
         self,

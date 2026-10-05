@@ -1004,6 +1004,7 @@ class MLMM_electrostatics(torch.nn.Module):
         truncation: str = 'None',
         atomic_dipoles: bool = False,
         atomic_quadrupoles: bool = False,
+        mm_charge_scaling: float = 1.0,
         **kwargs
     ):
 
@@ -1016,6 +1017,8 @@ class MLMM_electrostatics(torch.nn.Module):
         # Assign variables
         self.cutoff = torch.tensor(
             cutoff, device=self.device, dtype=self.dtype)
+        self.mm_charge_scaling = torch.tensor(
+            mm_charge_scaling, device=self.device, dtype=self.dtype)
 
         # Set property units for parameter scaling
         self.set_unit_properties(unit_properties)
@@ -1025,18 +1028,24 @@ class MLMM_electrostatics(torch.nn.Module):
             self.potential_fn = MLMM_electrostatics_NoShift(
                 self.ke,
                 atomic_dipoles,
-                atomic_quadrupoles)
+                atomic_quadrupoles,
+                mm_charge_scaling,
+            )
         # elif truncation.lower() == 'potential':
         #     self.potential_fn = MLMM_electrostatics_NoShift(
         #         self.ke,
         #         atomic_dipoles,
-        #         atomic_quadrupoles)
+        #         atomic_quadrupoles,
+        #         mm_charge_scaling,
+        # )
         # elif truncation.lower() in ['force', 'forces']:
-        #     self.potential_fn = MLMM_electrostatics_ShiftedPotential(
+        #     self.potential_fn = MLMM_electrostatics_NoShift(
         #         self.cutoff,
         #         self.ke,
         #         atomic_dipoles,
-        #         atomic_quadrupoles)
+        #         atomic_quadrupoles,
+        #         mm_charge_scaling,
+        # )
         else:
             raise SyntaxError(
                 "Truncation method of the Coulomb potential "
@@ -1135,7 +1144,8 @@ class MLMM_electrostatics(torch.nn.Module):
         Eelec_atom = torch.zeros_like(batch['atomic_energies']).scatter_add_(
             0,
             mlmm_ml_idx_u,
-            Eelec_pair)
+            Eelec_pair
+        )
 
         # Add electrostatic atomic energy contributions
         batch['atomic_energies'] = batch['atomic_energies'] + Eelec_atom
@@ -1174,6 +1184,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         ke: float,
         atomic_dipoles: bool,
         atomic_quadrupoles: bool,
+        mm_charge_scaling: float,
         **kwargs
     ):
 
@@ -1183,6 +1194,7 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         self.ke = ke
         self.atomic_dipoles = atomic_dipoles
         self.atomic_quadrupoles = atomic_quadrupoles
+        self.mm_charge_scaling = mm_charge_scaling
         
         # Atomic quadrupoles can only be included if atomic dipoles are 
         # included as well
@@ -1219,7 +1231,10 @@ class MLMM_electrostatics_NoShift(torch.nn.Module):
         # Gather atomic pair charges
         mlmm_ml_idx_u = batch['ml_idx_p'][batch['mlmm_idx_u']]
         ml_atomic_charges_u = batch['atomic_charges'][mlmm_ml_idx_u]
-        mm_atomic_charges_v = batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
+        mm_atomic_charges_v = (
+            self.mm_charge_scaling
+            * batch['mlmm_atomic_charges'][batch['mlmm_idx_v']]
+        )
 
         # Compute B terms, G terms and MLMM electrostatic interaction potential
         # according to expressions in https://doi.org/10.3390/ijms21010277 
