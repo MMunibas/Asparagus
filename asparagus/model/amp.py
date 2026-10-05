@@ -207,6 +207,8 @@ class Model_AMP(model.BaseModel):
         model_dispersion: Optional[bool] = None,
         model_dispersion_trainable: Optional[bool] = None,
         model_mlmm_embedding: Optional[bool] = None,
+        model_mlmm_polarization_damping: Optional[float] = None,
+        model_mlmm_charge_scaling: Optional[float] = None,
         model_num_threads: Optional[int] = None,
         device: Optional[str] = None,
         dtype: Optional['dtype'] = None,
@@ -519,9 +521,10 @@ class Model_AMP(model.BaseModel):
             'model_electrostatic': self.model_electrostatic,
             'model_dispersion': self.model_dispersion,
             'model_dispersion_trainable': self.model_dispersion_trainable,
-            'model_mlmm_embedding'; self.model_mlmm_embedding
+            'model_mlmm_embedding': self.model_mlmm_embedding,
             'model_mlmm_polarization_damping': 
                 self.model_mlmm_polarization_damping,
+            'model_mlmm_charge_scaling': self.model_mlmm_charge_scaling,
         }
 
     def set_model_electrostatic_properties(
