@@ -22,14 +22,25 @@ from .model_ase import(
     ASE_Calculator
 )
 
-from .openmm_ase import(
-    ASE_OpenMM_Calculator
-)
-
 from .model_pycharmm import (
     PyCharmm_Calculator
 )
 
-from .model_openmm import (
-    OpenMM_Calculator, AsparagusPotentialImplFactory
-)
+# Only import if OpenMM modules are available
+try:
+
+    import openmm
+    import openmmtorch
+    from openmmml import mlpotential
+
+    from .openmm_ase import(
+        ASE_OpenMM_Calculator
+    )
+
+    from .model_openmm import (
+        OpenMM_Calculator, AsparagusPotentialImplFactory
+    )
+
+except ModuleNotFoundError as e:
+
+    pass

@@ -227,7 +227,7 @@ class CosineCutoff(torch.nn.Module):
 
 
 class CosineCutoff_range(torch.nn.Module):
-    """
+    r"""
     Behler-style cosine cutoff module.
     [source https://github.com/atomistic-machine-learning/schnetpack/blob/
         master/src/schnetpack/nn/cutoff.py]

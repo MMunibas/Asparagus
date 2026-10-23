@@ -424,7 +424,7 @@ class FileManager():
         # Gather checkpoint files
         num_checkpoints = []
         for ckpt_file in os.listdir(ckpt_dir):
-            ckpt_num = re.findall("model_(\d+).pt", ckpt_file)
+            ckpt_num = re.findall(r"model_(\d+).pt", ckpt_file)
             if ckpt_num:
                 num_checkpoints.append(int(ckpt_num[0]))
         num_checkpoints = sorted(num_checkpoints)
@@ -488,7 +488,7 @@ class FileManager():
             list_backups = []
             for f in os.listdir(self.model_directory):
                 num_backup = re.findall(
-                    "(\d+)_" + default_file, f)
+                    r"(\d+)_" + default_file, f)
                 num_backup = (int(num_backup[0]) if num_backup else -1)
                 if num_backup >= 0:
                     list_backups.append(num_backup)
@@ -625,7 +625,7 @@ class FileManager():
                 ckpt_max = -1
                 if os.path.exists(ckpt_dir):
                     for ckpt_file in os.listdir(ckpt_dir):
-                        ckpt_num = re.findall("model_(\d+).pt", ckpt_file)
+                        ckpt_num = re.findall(r"model_(\d+).pt", ckpt_file)
                         ckpt_num = (int(ckpt_num[0]) if ckpt_num else -1)
                         if ckpt_max < ckpt_num:
                             ckpt_max = ckpt_num
@@ -660,7 +660,7 @@ class FileManager():
             ckpt_max = -1
             if os.path.exists(ckpt_dir):
                 for ckpt_file in os.listdir(ckpt_dir):
-                    ckpt_num = re.findall("model_(\d+).pt", ckpt_file)
+                    ckpt_num = re.findall(r"model_(\d+).pt", ckpt_file)
                     ckpt_num = (int(ckpt_num[0]) if ckpt_num else -1)
                     if ckpt_max < ckpt_num:
                         ckpt_max = ckpt_num

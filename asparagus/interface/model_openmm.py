@@ -138,7 +138,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         mlmm_cuton: Optional[float] = None,
         ml_cutoff_shell: Optional[float] = 0.2,
         mlmm_cutoff_shell: Optional[float] = 0.2,
-        mlmm_lambda: Optional[float] = None,
+        mlmm_alchemical_lambda: Optional[float] = None,
         ml_force_uncertainty: Optional[bool] = False,
         ml_force_uncertainty_lambda: Optional[float] = 0.25,
         reporter_requested: Optional[bool] = False,
@@ -196,9 +196,9 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         mlmm_cutoff_shell: float, optional, default 0.2 nm
             Buffer region range, that ML and MM atoms positions can change
             before a neighbor list update is performed.
-        mlmm_lambda: float, optional, default None
-            ML/MM electrostatic interactions scaling factor. If None, no
-            scaling is applied.
+        mlmm_alchemical_lambda: float, optional, default None
+            ML/MM electrostatic interactions scaling factor of the MM charges.
+            If None, no scaling is applied.
         ml_force_uncertainty: bool, optional, default False
             If True, add the negative uncertainty derivation with respect to
             the forces scaled by the factor 'ml_force_uncertainty_lambda'.
@@ -243,7 +243,10 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 dtype=torch.int64)
         else:
             self.ml_atom_indices = torch.tensor(
-                atoms, device=self.device, dtype=torch.int64)
+                atoms,
+                device=self.device,
+                dtype=torch.int64
+            )
 
         # Number of ML atoms
         self.ml_num_atoms = torch.tensor(
@@ -310,7 +313,10 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
 
         # Set cutoff shell parameter
         self.ml_cutoff_shell = torch.tensor(
-            ml_cutoff_shell, device=self.device, dtype=self.dtype)
+            ml_cutoff_shell,
+            device=self.device,
+            dtype=self.dtype
+        )
 
         ##########################################
         # # # Prepare ML/MM system Parameter # # #
@@ -318,7 +324,20 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
 
         # Number of ML and MM atoms
         self.mlmm_num_atoms = torch.tensor(
-            topology._numAtoms, device=self.device, dtype=torch.int64)
+            topology._numAtoms,
+            device=self.device,
+            dtype=torch.int64
+        )
+
+        # MM atom indices list
+        self.mm_atom_indices = torch.tensor(
+            [
+                ii for ii in range(topology._numAtoms)
+                if ii not in self.ml_atom_indices
+            ],
+            device=self.device,
+            dtype=torch.int64
+        )
 
         # Get periodic boundary conditions
         self.pbc = (
@@ -339,7 +358,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                             for index in range(topology._numAtoms)
                         ],
                         device=self.device,
-                        dtype=self.dtype)
+                        dtype=self.dtype
+                    )
             if self.ml_num_atoms == topology._numAtoms:
                 mlmm_atomic_charges = torch.zeros(
                     self.ml_num_atoms, device=self.device, dtype=self.dtype)
@@ -353,7 +373,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.mlmm_atomic_charges = mlmm_atomic_charges
         else:
             self.mlmm_atomic_charges = torch.tensor(
-                mlmm_atomic_charges, device=self.device, dtype=self.dtype)
+                mlmm_atomic_charges, device=self.device, dtype=self.dtype
+            )
 
         # Check again the ML atom total charge
         if ml_charge is None:
@@ -395,12 +416,12 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                     self.mlmm_cutoff = (
                         force.getCutoffDistance()._value
                         / self.model2openmm_unit_conversion['positions']
-                        )
+                    )
         elif hasattr(mlmm_cutoff, '_value'):
             self.mlmm_cutoff = (
                 mlmm_cutoff._value
                 / self.model2openmm_unit_conversion['positions']
-                )
+            )
         else:
             self.mlmm_cutoff = (
                 mlmm_cutoff/self.model2openmm_unit_conversion['positions'])
@@ -417,13 +438,13 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                         self.mlmm_cutoff - (
                             force.getSwitchingDistance()._value
                             / self.model2openmm_unit_conversion['positions']
-                            )
                         )
+                    )
         elif hasattr(mlmm_cuton, '_value'):
             self.mlmm_cuton = (
                 mlmm_cuton._value
                 / self.model2openmm_unit_conversion['positions']
-                )
+            )
         else:
             self.mlmm_cuton = (
                 mlmm_cuton/self.model2openmm_unit_conversion['positions'])
@@ -432,13 +453,13 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         self.mlmm_cutoff_shell = torch.tensor(
             mlmm_cutoff_shell, device=self.device, dtype=self.dtype)
 
-        # Non-bonding electrostatic scaling factor
-        if mlmm_lambda is None:
-            self.mlmm_lambda = torch.tensor(
+        # ML/MM electrostatic scaling factor done by scaling the MM charges
+        if mlmm_alchemical_lambda is None:
+            self.mlmm_alchemical_lambda = torch.tensor(
                 1.0, device=self.device, dtype=self.dtype)
         else:
-            self.mlmm_lambda = torch.tensor(
-                mlmm_lambda, device=self.device, dtype=self.dtype)
+            self.mlmm_alchemical_lambda = torch.tensor(
+                mlmm_alchemical_lambda, device=self.device, dtype=self.dtype)
 
         # Check uncertainty derivative flag
         if ml_force_uncertainty and not self.model_calculator.model_ensemble:
@@ -453,35 +474,6 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
         ###########################
         # # # Prepare Modules # # #
         ###########################
-
-#         # If fluctuating charge option is enabled, initialize the 
-#         # ML-MM electrostatic interaction calculator if not already covered
-#         # by the model potential
-#         if (
-#             self.ml_fluctuating_charges
-#             and self.model_calculator.model_mlmm_embedding
-#         ):
-#             
-#             self.mlmm_electrostatics_calc = None
-#         
-#         elif self.ml_fluctuating_charges:
-# 
-#             self.mlmm_electrostatics_calc = MLMM_electrostatics(
-#                 self.mlmm_cutoff,
-#                 self.mlmm_cuton,
-#                 self.device,
-#                 self.dtype,
-#                 self.model_unit_properties,
-#                 self.mlmm_lambda,
-#                 atomic_dipoles=self.model_calculator.model_atomic_dipoles,
-#                 atomic_quadrupoles=(
-#                     self.model_calculator.model_atomic_quadrupoles),
-#                 **kwargs
-#             )
-# 
-#         else:
-# 
-#             self.mlmm_electrostatics_calc = None
 
         # If fluctuating charge option is enabled, initialize the OpenMM
         # ML-MM electrostatic interaction calculator.
@@ -515,7 +507,6 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.device,
                 self.dtype,
                 self.model_unit_properties,
-                self.mlmm_lambda,
                 atomic_dipoles=self.model_calculator.model_atomic_dipoles,
                 atomic_quadrupoles=(
                     self.model_calculator.model_atomic_quadrupoles),
@@ -576,7 +567,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             ml_charge: int
                 Total charge of the ML atom system
             mlmm_atomic_charges: torch.Tensor
-                Atom centred point charges of the ML and MM atoms
+                Atom centered point charges of the ML and MM atoms
             pbc: bool
                 Perdiodic boundary conditions of the system
             ml_neighbor_list_calc: callable
@@ -598,6 +589,8 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 nanometers
             conversion_energy: float
                 The energy conversion factor from the model units to kJ/mol
+            mm_charges_lambda: torch.Tensor
+                MM charge scaling factor
             device: str
                 Device type for variable allocation
             dtype: dtype object
@@ -622,6 +615,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 mm_fragment: int,
                 conversion_positions: float,
                 conversion_energy: float,
+                mm_charges_lambda: torch.Tensor,
                 ml_force_uncertainty: bool,
                 ml_force_uncertainty_lambda: float,
                 device: str,
@@ -649,6 +643,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                 self.mm_fragment = mm_fragment
                 self.conversion_positions = conversion_positions
                 self.conversion_energy = conversion_energy
+                self.mm_charges_lambda = mm_charges_lambda
                 self.ml_force_uncertainty = ml_force_uncertainty
                 self.ml_force_uncertainty_lambda = ml_force_uncertainty_lambda
                 self.device = device
@@ -708,6 +703,13 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
                         False, device=self.device, dtype=torch.bool
                     )
                 self.ml_mask = (fragment_numbers == self.ml_fragment)
+                self.mm_mask = (fragment_numbers == self.mm_fragment)
+
+                # Scale MM charges
+                self.mlmm_atomic_charges[self.mm_mask] = (
+                    self.mm_charges_lambda
+                    * self.mlmm_atomic_charges[self.mm_mask]
+                )
 
                 # If multiple fragments are defined, create index pointer from
                 # full ML/MM system to fragment ML system
@@ -937,6 +939,7 @@ class OpenMM_Calculator(mlpotential.MLPotentialImpl):
             self.mm_fragment,
             self.model2openmm_unit_conversion['positions'],
             self.model2openmm_unit_conversion['energy'],
+            self.mlmm_alchemical_lambda,
             self.ml_force_uncertainty,
             self.ml_force_uncertainty_lambda,
             self.device,
@@ -983,8 +986,6 @@ class MLMM_electrostatics(torch.nn.Module):
     unit_properties: dict, optional, default None
         Dictionary with the units of the model properties to initialize correct
         conversion factors.
-    lambda_value: torch.Tensor
-        Scaling factor for the ML/MM interaction energy
     switch_fn: (str, callable), optional, default 'Poly6_range'
         Type of switch off function
     truncation: str, optional, default 'force'
@@ -1016,7 +1017,6 @@ class MLMM_electrostatics(torch.nn.Module):
         device: str,
         dtype: 'dtype',
         unit_properties: Dict[str, str],
-        lambda_value: torch.Tensor,
         switch_fn: Union[str, object] = 'Poly6_range',
         truncation: str = 'potential',
         atomic_dipoles: bool = False,
@@ -1029,7 +1029,6 @@ class MLMM_electrostatics(torch.nn.Module):
         # Assign variables
         self.cutoff = cutoff
         self.cuton = cuton
-        self.lambda_value = lambda_value
 
         # Assign module variable parameters from configuration
         self.dtype = dtype
@@ -1378,7 +1377,6 @@ class MLMM_electrostatics_ShiftedPotential(torch.nn.Module):
         switch_fn: Callable,
         atomic_dipoles: bool,
         atomic_quadrupoles: bool,
-        **kwargs
     ):
 
         super(MLMM_electrostatics_ShiftedPotential, self).__init__()
@@ -1530,6 +1528,7 @@ class MLMM_electrostatics_ShiftedForce(torch.nn.Module):
         ke: float,
         switch_fn: Callable,
         atomic_dipoles: bool,
+        atomic_quadrupoles: bool,
     ):
 
         super(MLMM_electrostatics_ShiftedForce, self).__init__()
